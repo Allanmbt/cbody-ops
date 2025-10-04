@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "CBODY 后台管理系统",
-  description: "移动端优先的 CBODY 管理后台",
+  title: "CBODY Admin Panel",
+  description: "CBODY后台管理系统",
 }
 
 export default function RootLayout({

@@ -1,5 +1,5 @@
-import { getSupabaseClient } from "./supabase"
-import type { AdminProfile, AdminRole } from "./types"
+import { getSupabaseClient, getSupabaseAdminClient } from "./supabase"
+import type { AdminProfile, AdminRole } from "./types/admin"
 
 export const AUTH_COOKIE_KEY = "cbody-ops-auth-token" as const
 
@@ -31,8 +31,16 @@ export async function getCurrentUser() {
   return { user, error }
 }
 
+export async function getCurrentUserFromServerAction() {
+  // 在 Server Action 中使用，避免 RLS 递归问题
+  const supabase = getSupabaseAdminClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  return { user, error }
+}
+
 export async function getAdminProfile(userId: string): Promise<AdminProfile | null> {
-  const supabase = getSupabaseClient()
+  // 使用admin客户端绕过RLS限制
+  const supabase = getSupabaseAdminClient()
 
   console.log('Fetching admin profile for user:', userId)
 
@@ -69,6 +77,28 @@ export async function getAdminProfile(userId: string): Promise<AdminProfile | nu
 
 export async function getCurrentAdminProfile(): Promise<AdminProfile | null> {
   const { user, error } = await getCurrentUser()
+
+  if (error) {
+    console.error('Error getting current user:', error)
+    return null
+  }
+
+  if (!user) {
+    console.log('No authenticated user found')
+    return null
+  }
+
+  return getAdminProfile(user.id)
+}
+
+// Alias for getCurrentAdminProfile for consistency with user management
+export async function getCurrentAdmin(): Promise<AdminProfile | null> {
+  return getCurrentAdminProfile()
+}
+
+// 专门用于 Server Actions 的版本，避免 RLS 递归
+export async function getCurrentAdminFromServerAction(): Promise<AdminProfile | null> {
+  const { user, error } = await getCurrentUserFromServerAction()
 
   if (error) {
     console.error('Error getting current user:', error)

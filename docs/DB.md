@@ -139,23 +139,6 @@
 **外键约束**：
 - FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE CASCADE
 
-**已在supabase中创建了触发器**（自动更新location_geom）
-<!--
-CREATE OR REPLACE FUNCTION update_girls_status_location()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    IF NEW.current_lat IS NOT NULL AND NEW.current_lng IS NOT NULL THEN
-        NEW.location_geom = ST_SetSRID(ST_MakePoint(NEW.current_lng, NEW.current_lat), 4326);
-    END IF;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
-CREATE TRIGGER update_girls_status_location_trigger
-    BEFORE INSERT OR UPDATE ON girls_status
-    FOR EACH ROW
-    EXECUTE FUNCTION update_girls_status_location();-->
 
 ## girls_media（女孩媒体表）
 
@@ -285,32 +268,95 @@ CREATE TRIGGER update_girls_status_location_trigger
 - FOREIGN KEY (service_duration_id) REFERENCES service_durations(id) ON DELETE CASCADE
 
 
-<!-- 价格范围验证触发器
-CREATE OR REPLACE FUNCTION validate_girl_service_price()
-RETURNS TRIGGER AS $$
-DECLARE
-    duration_record service_durations%ROWTYPE;
-BEGIN
-    IF NEW.custom_price IS NOT NULL THEN
-        SELECT * INTO duration_record 
-        FROM service_durations sd
-        JOIN admin_girl_services ags ON ags.service_id = sd.service_id
-        WHERE ags.id = NEW.admin_girl_service_id 
-        AND sd.id = NEW.service_duration_id;
-        
-        IF NEW.custom_price < duration_record.min_price OR NEW.custom_price > duration_record.max_price THEN
-            RAISE EXCEPTION 'Custom price % is not within allowed range % - %', 
-                NEW.custom_price, duration_record.min_price, duration_record.max_price;
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+## user_profiles（用户资料表）
 
-CREATE TRIGGER validate_girl_service_price_trigger
-    BEFORE INSERT OR UPDATE ON girl_service_durations
-    FOR EACH ROW
-    EXECUTE FUNCTION validate_girl_service_price();--> 
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | - | 主键，关联auth.users(id) |
+| username | TEXT | 否 | NULL | 公开用户名，可重复可改，默认从auth.users的Display name获取 |
+| display_name | TEXT | 否 | NULL | 显示名称，个人中心抬头用，默认从auth.users的Display name获取 |
+| avatar_url | TEXT | 否 | NULL | 头像URL |
+| country_code | VARCHAR(2) | 否 | NULL | ISO 3166-1 alpha-2，如TH/CN |
+| language_code | VARCHAR(5) | 否 | 'en' | 语言偏好：en/zh/th |
+| timezone | VARCHAR(50) | 否 | NULL | IANA时区，如Asia/Bangkok |
+| gender | SMALLINT | 否 | 2 | 性别：0=男,1=女,2=不愿透露 |
+| level | SMALLINT | 是 | 1 | 用户等级 |
+| experience | INTEGER | 是 | 0 | 经验/积分累计 |
+| credit_score | INTEGER | 是 | 100 | 信用分(技师评价影响) |
+| notification_settings | JSONB | 否 | '{"email":true,"push":true,"sms":false}' | 通知偏好 |
+| preferences | JSONB | 否 | '{}' | 其他前端偏好设置 |
+| is_banned | BOOLEAN | 是 | false | 是否被封禁 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_profiles_username (username) WHERE username IS NOT NULL
+- INDEX idx_user_profiles_country (country_code)
+- INDEX idx_user_profiles_level (level)
+- INDEX idx_user_profiles_banned (id) WHERE is_banned = true
+
+**外键约束**：
+- FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
+
+**CHECK约束**：
+- CHECK (gender IN (0, 1, 2))
+- CHECK (level >= 1 AND level <= 10)
+- CHECK (experience >= 0)
+- CHECK (credit_score >= 0 AND credit_score <= 1000)
+
+
+## user_login_events（登录审计表）
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | gen_random_uuid() | 主键 |
+| user_id | UUID | 是 | - | 关联用户ID |
+| device_id | VARCHAR(100) | 否 | NULL | 设备标识 |
+| ip_address | INET | 否 | NULL | 登录IP |
+| user_agent | TEXT | 否 | NULL | 记录 用户登录时客户端的环境信息：如浏览器类型/设备信息 |
+| login_method | VARCHAR(20) | 否 | NULL | 登录方式：phone/google/apple/facebook |
+| logged_at | TIMESTAMPTZ | 是 | NOW() | 登录时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_login_events_user_id (user_id, logged_at DESC)
+- INDEX idx_user_login_events_ip (ip_address)
+- INDEX idx_user_login_events_device (device_id) WHERE device_id IS NOT NULL
+
+**外键约束**：
+- FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+
+**CHECK约束**：
+- CHECK (login_method IN ('phone', 'google', 'apple', 'facebook', 'line'))
+
+## user_connected_accounts（第三方账户绑定表）
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | gen_random_uuid() | 主键 |
+| user_id | UUID | 是 | - | 关联用户ID |
+| provider | VARCHAR(20) | 是 | - | 提供商：google/apple/facebook/line/kakao/wechat |
+| provider_user_id | TEXT | 是 | - | 第三方用户ID |
+| provider_email | VARCHAR(255) | 否 | NULL | 第三方邮箱 |
+| is_primary | BOOLEAN | 否 | false | 是否为主登录方式 |
+| linked_at | TIMESTAMPTZ | 是 | NOW() | 绑定时间 |
+| last_used_at | TIMESTAMPTZ | 否 | NULL | 最后使用时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_connected_accounts_user_id (user_id)
+- UNIQUE INDEX idx_user_connected_accounts_provider (provider, provider_user_id)
+- INDEX idx_user_connected_accounts_primary (user_id) WHERE is_primary = true
+
+**外键约束**：
+- FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+
+**CHECK约束**：
+- CHECK (provider IN ('google', 'apple', 'facebook', 'line', 'kakao', 'wechat'))
+
+**触发器**：
+- 确保每个用户只有一个主登录方式的触发器ensure_single_primary_account()
 
 
 ## admin_role（管理员角色枚举类型）
@@ -366,26 +412,3 @@ CREATE TRIGGER validate_girl_service_price_trigger
 **外键约束**：
 - FOREIGN KEY (operator_id) REFERENCES auth.users(id) ON DELETE CASCADE
 - FOREIGN KEY (target_admin_id) REFERENCES auth.users(id) ON DELETE CASCADE
-
-
-## 业务需求概要说明
-
-本服务项目管理系统采用四层架构设计，实现了完整的服务项目生命周期管理：
-
-### 服务项目的核心业务流程
-
-1. **服务项目创建**：管理员在后台创建服务项目（如"泰式按摩"），设置多语言标题和简介，绑定分类，配置可见性和推荐状态。
-
-2. **时长价格配置**：管理员为每个服务配置多个时长选项（60/90/120分钟等），每个时长设定默认价格、最低价格和最高价格，确保技师定价在合理范围内。
-
-3. **技师资质审核**：管理员审核技师资质后，将合格技师与相应服务进行绑定，确保只有具备专业技能的技师才能提供特定服务。
-
-4. **技师服务配置**：技师在管理员授权的服务范围内，选择提供哪些时长的服务，并在允许的价格区间内设定自己的收费标准。
-
-### 关键设计特点
-
-- **权限分离**：管理员负责服务创建和技师资质审核，技师负责服务上架和价格调整
-- **价格控制**：所有价格以100泰铢为最小单位，技师定价必须在管理员设定的范围内
-- **多语言支持**：服务标题和描述支持中英泰三语，适应不同用户群体
-- **灵活扩展**：支持新增服务类型、时长选项和语言版本
-- **数据完整性**：通过触发器确保价格范围验证和数据一致性

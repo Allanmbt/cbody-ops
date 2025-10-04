@@ -10,6 +10,13 @@ export async function debugAuth() {
   console.log('Current session:', session)
   console.log('Session error:', sessionError)
 
+  // Only check user if we have a valid session
+  if (!session) {
+    console.log('No session found, skipping user checks')
+    console.log('=== End Debug Info ===')
+    return
+  }
+
   // Check current user
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   console.log('Current user:', user)

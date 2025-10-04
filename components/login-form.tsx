@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
+import { ButtonLoading } from "@/components/ui/loading"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -46,7 +47,7 @@ export function LoginForm() {
       // Check if user is admin
       const adminProfile = await getAdminProfile(data.user.id)
       if (!adminProfile) {
-        setError("您没有管理员权限，请联系超级管理员。用户ID: " + data.user.id)
+        setError("您没有管理员权限，请联系超级管理员")
         return
       }
 
@@ -57,7 +58,6 @@ export function LoginForm() {
 
       toast.success(`欢迎回来，${adminProfile.display_name}!`)
       router.push("/dashboard")
-      router.refresh()
     } catch (err) {
       console.error("Login error:", err)
       setError("登录时发生错误，请重试")
@@ -114,7 +114,14 @@ export function LoginForm() {
         </Button>
       </div>
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "登录中..." : "立即登录"}
+        {loading ? (
+          <div className="flex items-center gap-2">
+            <ButtonLoading />
+            <span>登录中...</span>
+          </div>
+        ) : (
+          "立即登录"
+        )}
       </Button>
     </form>
   )

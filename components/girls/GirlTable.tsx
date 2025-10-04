@@ -1,0 +1,258 @@
+"use client"
+
+import { useState } from "react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { LoadingSpinner } from "@/components/ui/loading"
+import { Eye, EyeOff, Edit, Shield, ShieldCheck, MapPin } from "lucide-react"
+import type { GirlWithStatus } from "@/lib/types/girl"
+
+interface GirlTableProps {
+    girls: GirlWithStatus[]
+    loading: boolean
+    onEdit: (girl: GirlWithStatus) => void
+    onToggleBlocked: (girl: GirlWithStatus) => void
+    onToggleVerified: (girl: GirlWithStatus) => void
+    onManageStatus: (girl: GirlWithStatus) => void
+    onManageMedia: (girl: GirlWithStatus) => void
+}
+
+export function GirlTable({
+    girls,
+    loading,
+    onEdit,
+    onToggleBlocked,
+    onToggleVerified,
+    onManageStatus,
+    onManageMedia
+}: GirlTableProps) {
+    const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
+
+    const handleAction = async (actionKey: string, action: () => Promise<void>) => {
+        setActionLoading(prev => ({ ...prev, [actionKey]: true }))
+        try {
+            await action()
+        } finally {
+            setActionLoading(prev => ({ ...prev, [actionKey]: false }))
+        }
+    }
+
+    const getGirlName = (girl: GirlWithStatus): string => {
+        return girl.name || girl.username || `#${girl.girl_number}`
+    }
+
+    const getCityName = (girl: GirlWithStatus): string => {
+        if (!girl.city) return '-'
+        return girl.city.name?.zh || girl.city.name?.en || girl.city.name?.th || '-'
+    }
+
+    const getCategoryName = (girl: GirlWithStatus): string => {
+        if (!girl.category) return '-'
+        return girl.category.name?.zh || girl.category.name?.en || girl.category.name?.th || '-'
+    }
+
+    const getStatusBadge = (girl: GirlWithStatus) => {
+        const status = girl.status?.status || 'offline'
+        const statusMap = {
+            available: { text: '在线', variant: 'default' as const, className: 'bg-green-100 text-green-800 hover:bg-green-200' },
+            busy: { text: '忙碌', variant: 'secondary' as const, className: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' },
+            offline: { text: '离线', variant: 'outline' as const, className: 'bg-gray-100 text-gray-600' }
+        }
+
+        const config = statusMap[status as keyof typeof statusMap] || statusMap.offline
+        return (
+            <Badge variant={config.variant} className={config.className}>
+                {config.text}
+            </Badge>
+        )
+    }
+
+    const getBadgeDisplay = (badge: string | null | undefined) => {
+        if (!badge) return null
+
+        const badgeMap = {
+            new: { text: '新人', className: 'bg-blue-100 text-blue-800' },
+            hot: { text: '热门', className: 'bg-red-100 text-red-800' },
+            top_rated: { text: '优质', className: 'bg-purple-100 text-purple-800' }
+        }
+
+        const config = badgeMap[badge as keyof typeof badgeMap]
+        if (!config) return null
+
+        return (
+            <Badge variant="secondary" className={config.className}>
+                {config.text}
+            </Badge>
+        )
+    }
+
+    const formatAge = (birthDate: string | null | undefined): string => {
+        if (!birthDate) return '-'
+        const age = new Date().getFullYear() - new Date(birthDate).getFullYear()
+        return `${age}岁`
+    }
+
+    const formatRating = (rating: number): string => {
+        return rating > 0 ? rating.toFixed(1) : '-'
+    }
+
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center py-12">
+                <LoadingSpinner size="lg" />
+            </div>
+        )
+    }
+
+    if (girls.length === 0) {
+        return (
+            <div className="text-center py-12">
+                <div className="text-muted-foreground text-sm">暂无技师</div>
+                <div className="text-xs text-muted-foreground mt-1">点击上方"新建技师"按钮添加第一个技师</div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="rounded-md border overflow-x-auto">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="min-w-[120px]">技师信息</TableHead>
+                        <TableHead className="min-w-[80px] hidden sm:table-cell">城市</TableHead>
+                        <TableHead className="min-w-[80px] hidden md:table-cell">分类</TableHead>
+                        <TableHead className="min-w-[80px]">状态</TableHead>
+                        <TableHead className="min-w-[60px] hidden lg:table-cell">徽章</TableHead>
+                        <TableHead className="min-w-[80px] hidden md:table-cell">评分</TableHead>
+                        <TableHead className="min-w-[80px] hidden lg:table-cell">销量</TableHead>
+                        <TableHead className="min-w-[80px] hidden sm:table-cell">认证</TableHead>
+                        <TableHead className="w-[140px] sm:w-[160px]">操作</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {girls.map((girl) => (
+                        <TableRow key={girl.id}>
+                            <TableCell className="font-medium">
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        {girl.avatar_url && (
+                                            <img
+                                                src={girl.avatar_url}
+                                                alt={getGirlName(girl)}
+                                                className="w-8 h-8 rounded-full object-cover"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none'
+                                                }}
+                                            />
+                                        )}
+                                        <div>
+                                            <div className="font-medium">{getGirlName(girl)}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                                #{girl.girl_number} • {girl.username}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground sm:hidden">
+                                        {getCityName(girl)} • {formatAge(girl.birth_date)}
+                                    </div>
+                                </div>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell">{getCityName(girl)}</TableCell>
+                            <TableCell className="hidden md:table-cell">{getCategoryName(girl)}</TableCell>
+                            <TableCell>{getStatusBadge(girl)}</TableCell>
+                            <TableCell className="hidden lg:table-cell">
+                                {getBadgeDisplay(girl.badge)}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell">
+                                <div className="flex flex-col text-sm">
+                                    <span>{formatRating(girl.rating)}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {girl.total_reviews}条评价
+                                    </span>
+                                </div>
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell">
+                                <div className="flex flex-col text-sm">
+                                    <span>{girl.total_sales}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {girl.booking_count}次预订
+                                    </span>
+                                </div>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell">
+                                <div className="flex flex-col gap-1">
+                                    <Badge
+                                        variant={girl.is_verified ? "default" : "secondary"}
+                                        className={girl.is_verified ? "bg-green-100 text-green-800 hover:bg-green-200" : ""}
+                                    >
+                                        {girl.is_verified ? "已认证" : "未认证"}
+                                    </Badge>
+                                    {girl.is_blocked && (
+                                        <Badge variant="destructive" className="text-xs">
+                                            已屏蔽
+                                        </Badge>
+                                    )}
+                                </div>
+                            </TableCell>
+                            <TableCell>
+                                <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => onEdit(girl)}
+                                        className="h-8 w-8 p-0"
+                                        title="编辑"
+                                    >
+                                        <Edit className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleAction(`verified-${girl.id}`, async () => await onToggleVerified(girl))}
+                                        disabled={actionLoading[`verified-${girl.id}`]}
+                                        className="h-8 w-8 p-0"
+                                        title={girl.is_verified ? "取消认证" : "认证"}
+                                    >
+                                        {actionLoading[`verified-${girl.id}`] ? (
+                                            <LoadingSpinner size="sm" />
+                                        ) : girl.is_verified ? (
+                                            <ShieldCheck className="h-3 w-3 text-green-600" />
+                                        ) : (
+                                            <Shield className="h-3 w-3" />
+                                        )}
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleAction(`blocked-${girl.id}`, async () => await onToggleBlocked(girl))}
+                                        disabled={actionLoading[`blocked-${girl.id}`]}
+                                        className="h-8 w-8 p-0"
+                                        title={girl.is_blocked ? "解除屏蔽" : "屏蔽"}
+                                    >
+                                        {actionLoading[`blocked-${girl.id}`] ? (
+                                            <LoadingSpinner size="sm" />
+                                        ) : girl.is_blocked ? (
+                                            <Eye className="h-3 w-3 text-green-600" />
+                                        ) : (
+                                            <EyeOff className="h-3 w-3" />
+                                        )}
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => onManageStatus(girl)}
+                                        className="h-8 w-8 p-0"
+                                        title="位置状态"
+                                    >
+                                        <MapPin className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </div>
+    )
+}
