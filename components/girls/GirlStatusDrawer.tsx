@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { MapPin, Clock, Wifi } from "lucide-react"
+import { MapPin, Clock, Wifi, ExternalLink } from "lucide-react"
 import { girlStatusSchema, type GirlStatusData } from "@/lib/validations/girl"
 import { getGirlStatus, updateGirlStatus } from "@/app/dashboard/girls/actions"
 import type { GirlWithStatus, GirlStatus, GirlStatusType } from "@/lib/types/girl"
@@ -153,22 +153,14 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
         }
     }
 
-    const getCurrentLocation = () => {
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    form.setValue('current_lat', position.coords.latitude)
-                    form.setValue('current_lng', position.coords.longitude)
-                    toast.success("位置获取成功")
-                },
-                (error) => {
-                    console.error('获取位置失败:', error)
-                    toast.error("无法获取当前位置")
-                }
-            )
-        } else {
-            toast.error("浏览器不支持地理位置")
+    // 查看位置（打开Google Maps）
+    const handleViewLocation = (lat?: number | null, lng?: number | null, label: string = '位置') => {
+        if (!lat || !lng) {
+            toast.error(`${label}坐标未设置`)
+            return
         }
+        const url = `https://www.google.com/maps?q=${lat},${lng}`
+        window.open(url, '_blank')
     }
 
     return (
@@ -286,11 +278,15 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={getCurrentLocation}
+                                                onClick={() => handleViewLocation(
+                                                    form.getValues('current_lat'),
+                                                    form.getValues('current_lng'),
+                                                    '当前位置'
+                                                )}
                                                 disabled={loading}
                                             >
-                                                <MapPin className="w-3 h-3 mr-1" />
-                                                获取位置
+                                                <ExternalLink className="w-3 h-3 mr-1" />
+                                                查看当前位置
                                             </Button>
                                         </div>
 
@@ -341,7 +337,23 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
 
                                     {/* 基地位置 */}
                                     <div className="space-y-4">
-                                        <h3 className="text-sm font-medium text-muted-foreground">基地位置</h3>
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-sm font-medium text-muted-foreground">基地位置</h3>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleViewLocation(
+                                                    form.getValues('standby_lat'),
+                                                    form.getValues('standby_lng'),
+                                                    '打卡位置'
+                                                )}
+                                                disabled={loading}
+                                            >
+                                                <ExternalLink className="w-3 h-3 mr-1" />
+                                                查看打卡位置
+                                            </Button>
+                                        </div>
 
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             <FormField

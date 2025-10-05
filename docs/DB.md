@@ -68,9 +68,8 @@
 | id | UUID | 是 | uuid_generate_v4() | 主键 |
 | user_id | UUID | 否 | NULL | Supabase 用户ID |
 | city_id | INTEGER | 否 | NULL | 城市ID |
-| category_id | INTEGER | 否 | NULL | 分类ID |
 | telegram_id | BIGINT | 否 | NULL | Telegram 群组 ID |
-| girl_number | INTEGER | 是 | - | 女孩工号，用于搜索 |
+| girl_number | SERIAL / INTEGER | 否 | 1001起 | 数据库触发器自增 |
 | username | VARCHAR(50) | 是 | - | 唯一用户名，用于URL路径 |
 | name | VARCHAR(50) | 是 | - | 显示昵称，可重复 |
 | profile | JSONB | 是 | '{"en":"","zh":"","th":""}' | 多语言简介 |
@@ -86,7 +85,6 @@
 | rating | DECIMAL(3,2) | 否 | 0 | 评分 |
 | total_sales | INTEGER | 否 | 0 | 接单总量 |
 | total_reviews | INTEGER | 否 | 0 | 评论总数 |
-| booking_count | INTEGER | 否 | 0 | 预订次数 |
 | max_travel_distance | INTEGER | 否 | 10 | 最大服务距离（km） |
 | work_hours | JSONB | 否 | '{"start": "19:00", "end": "10:00"}' | 工作时间段 |
 | is_verified | BOOLEAN | 否 | false | 是否已认证 |
@@ -101,10 +99,9 @@
 - UNIQUE INDEX idx_girls_username (username)
 - UNIQUE INDEX idx_girls_girl_number (girl_number)
 - INDEX idx_girls_city_id (city_id)
-- INDEX idx_girls_category_id (category_id)
+- INDEX idx_girls_category_array ON public.girls USING GIN (category_id);
 - INDEX idx_girls_rating (rating DESC)
 - INDEX idx_girls_badge (badge) WHERE badge IS NOT NULL
-- INDEX idx_girls_booking_count (booking_count DESC)
 - INDEX idx_girls_total_sales (total_sales DESC)
 - INDEX idx_girls_name_search ON girls USING GIN(to_tsvector('english', name))
 - INDEX idx_girls_tags_gin ON girls USING GIN(tags)
@@ -140,26 +137,72 @@
 - FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE CASCADE
 
 
-## girls_media（女孩媒体表）
+## girls_media（技师媒体表）
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
 |--------|----------|------|--------|------|
-| id | UUID | 是 | uuid_generate_v4() | 主键 |
-| girl_id | UUID | 是 | - | 关联女孩ID |
-| media_type | VARCHAR(10) | 是 | - | 媒体类型（image/video） |
-| url | TEXT | 是 | - | 媒体URL |
-| thumbnail_url | TEXT | 否 | NULL | 缩略图URL |
-| sort_order | INTEGER | 否 | 0 | 排序优先级 |
+| id | UUID | 是 | gen_random_uuid() | 主键 |
+| girl_id | UUID | 是 | - | 关联技师ID |
+| kind | media_kind | 是 | - | 媒体类型（image/video/live_photo） |
+| storage_key | TEXT | 是 | - | 主资源路径（如 image.jpg 或 video.mp4） |
+| thumb_key | TEXT | 否 | NULL | 缩略图/封面路径 |
+| meta | JSONB | 是 | '{}'::jsonb | 轻元数据（mime/size/width/height/duration/live_photo配对信息） |
+| min_user_level | SMALLINT | 是 | 0 | 会员最低可见等级（0=公开） |
+| status | media_status | 是 | 'pending' | 审核状态（pending/approved/rejected） |
+| reviewed_by | UUID | 否 | NULL | 审核人ID |
+| reviewed_at | TIMESTAMPTZ | 否 | NULL | 审核时间 |
+| reject_reason | TEXT | 否 | NULL | 审核驳回原因 |
+| sort_order | INTEGER | 是 | 0 | 技师可调整排序 |
+| created_by | UUID | 是 | - | 创建者（技师对应的 auth.uid） |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
 
 **索引**：
 - PRIMARY KEY (id)
-- INDEX idx_girls_media_girl_id (girl_id)
-- INDEX idx_girls_media_type (media_type)
-- INDEX idx_girls_media_sort (girl_id, sort_order)
+- INDEX idx_gm_girl_sort (girl_id, sort_order)
+- INDEX idx_gm_status (status)
+- INDEX idx_gm_level (min_user_level)
 
 **外键约束**：
 - FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE CASCADE
+- FOREIGN KEY (reviewed_by) REFERENCES auth.users(id) ON DELETE SET NULL
+
+**枚举类型**：
+- media_kind: 'image', 'video', 'live_photo'
+- media_status: 'pending', 'approved', 'rejected'
+
+**meta 字段结构示例**：
+```json
+{
+  "mime": "image/jpeg",
+  "size": 1024000,
+  "width": 1920,
+  "height": 1080,
+  "duration": 15,
+  "live": {
+    "image_key": "path/to/image.jpg",
+    "video_key": "path/to/video.mov"
+  }
+}
+
+```
+
+## girls_categories（技师分类关联表）
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| girl_id | UUID | 是 | - | 技师ID，关联girls表 |
+| category_id | INTEGER | 是 | - | 分类ID，关联categories表 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+
+**索引**：
+- PRIMARY KEY (girl_id, category_id)
+- INDEX idx_girls_categories_girl_id (girl_id)
+- INDEX idx_girls_categories_category_id (category_id)
+
+**外键约束**：
+- FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE CASCADE
+- FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT
 
 
 ## services（服务项目表）
@@ -267,17 +310,16 @@
 - FOREIGN KEY (admin_girl_service_id) REFERENCES admin_girl_services(id) ON DELETE CASCADE
 - FOREIGN KEY (service_duration_id) REFERENCES service_durations(id) ON DELETE CASCADE
 
-
 ## user_profiles（用户资料表）
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
 |--------|----------|------|--------|------|
 | id | UUID | 是 | - | 主键，关联auth.users(id) |
-| username | TEXT | 否 | NULL | 公开用户名，可重复可改，默认从auth.users的Display name获取 |
-| display_name | TEXT | 否 | NULL | 显示名称，个人中心抬头用，默认从auth.users的Display name获取 |
+| username | TEXT | 否 | NULL | 公开用户名，可重复可改 |
+| display_name | TEXT | 否 | NULL | 显示名称，个人中心抬头用 |
 | avatar_url | TEXT | 否 | NULL | 头像URL |
 | country_code | VARCHAR(2) | 否 | NULL | ISO 3166-1 alpha-2，如TH/CN |
-| language_code | VARCHAR(5) | 否 | 'en' | 语言偏好：en/zh/th |
+| language_code | VARCHAR(10) | 否 | 'en' | 语言偏好：en/zh/th |
 | timezone | VARCHAR(50) | 否 | NULL | IANA时区，如Asia/Bangkok |
 | gender | SMALLINT | 否 | 2 | 性别：0=男,1=女,2=不愿透露 |
 | level | SMALLINT | 是 | 1 | 用户等级 |
@@ -285,6 +327,9 @@
 | credit_score | INTEGER | 是 | 100 | 信用分(技师评价影响) |
 | notification_settings | JSONB | 否 | '{"email":true,"push":true,"sms":false}' | 通知偏好 |
 | preferences | JSONB | 否 | '{}' | 其他前端偏好设置 |
+| last_device_id | VARCHAR(100) | 否 | NULL | 最后登录设备ID |
+| last_ip_address | INET | 否 | NULL | 最后登录IP |
+| last_login_at | TIMESTAMPTZ | 否 | NULL | 最后登录时间 |
 | is_banned | BOOLEAN | 是 | false | 是否被封禁 |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
 | updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
@@ -295,6 +340,8 @@
 - INDEX idx_user_profiles_country (country_code)
 - INDEX idx_user_profiles_level (level)
 - INDEX idx_user_profiles_banned (id) WHERE is_banned = true
+- INDEX idx_user_profiles_last_login (last_login_at DESC)
+- INDEX idx_user_profiles_last_ip (last_ip_address)
 
 **外键约束**：
 - FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
@@ -305,30 +352,6 @@
 - CHECK (experience >= 0)
 - CHECK (credit_score >= 0 AND credit_score <= 1000)
 
-
-## user_login_events（登录审计表）
-
-| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
-|--------|----------|------|--------|------|
-| id | UUID | 是 | gen_random_uuid() | 主键 |
-| user_id | UUID | 是 | - | 关联用户ID |
-| device_id | VARCHAR(100) | 否 | NULL | 设备标识 |
-| ip_address | INET | 否 | NULL | 登录IP |
-| user_agent | TEXT | 否 | NULL | 记录 用户登录时客户端的环境信息：如浏览器类型/设备信息 |
-| login_method | VARCHAR(20) | 否 | NULL | 登录方式：phone/google/apple/facebook |
-| logged_at | TIMESTAMPTZ | 是 | NOW() | 登录时间 |
-
-**索引**：
-- PRIMARY KEY (id)
-- INDEX idx_user_login_events_user_id (user_id, logged_at DESC)
-- INDEX idx_user_login_events_ip (ip_address)
-- INDEX idx_user_login_events_device (device_id) WHERE device_id IS NOT NULL
-
-**外键约束**：
-- FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-
-**CHECK约束**：
-- CHECK (login_method IN ('phone', 'google', 'apple', 'facebook', 'line'))
 
 ## user_connected_accounts（第三方账户绑定表）
 
@@ -358,6 +381,36 @@
 **触发器**：
 - 确保每个用户只有一个主登录方式的触发器ensure_single_primary_account()
 
+## user_addresses（用户地址簿）
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | gen_random_uuid() | 主键 |
+| user_id | UUID | 是 | - | 所属用户ID，关联auth.users |
+| place_id | TEXT | 否 | NULL | Google Place ID |
+| place_name | TEXT | 是 | NULL | 地点名称（如酒店/公寓名） |
+| formatted_address | TEXT | 否 | - | 统一展示用详细地址 |
+| lat | DOUBLE PRECISION | 是 | - | 纬度 |
+| lng | DOUBLE PRECISION | 是 | - | 经度 |
+| location_type | TEXT | 否 | 'hotel' | 地址类型：hotel/condo_apartment/house/office/other |
+| contact_name | TEXT | 否 | NULL | 联系人姓名（不填则沿用用户资料） |
+| contact_phone | TEXT | 否 | NULL | 联系电话（不填则沿用用户资料） |
+| note | TEXT | 否 | NULL | 备注（房号/门禁/车位/如何到达） |
+| requires_lobby_pickup | BOOLEAN | 否 | NULL | 是否需大厅接送/带卡上楼 |
+| entrance_photo_url | TEXT | 否 | NULL | 入口/门牌照片 |
+| is_default | BOOLEAN | 是 | false | 是否默认地址（每用户唯一） |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_addresses_user_id (user_id)
+- INDEX idx_user_addresses_place_id (place_id) WHERE place_id IS NOT NULL
+- UNIQUE INDEX idx_user_addresses_default (user_id) WHERE is_default = true
+- INDEX idx_user_addresses_location (lat, lng) WHERE lat IS NOT NULL
+
+**外键约束**：
+- FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
 
 ## admin_role（管理员角色枚举类型）
 

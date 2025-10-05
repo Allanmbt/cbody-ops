@@ -1,53 +1,79 @@
-## 管理员资料访问策略
+## 公共函数
+
+### 1) 角色判断函数：只读、可被策略安全调用
+```sql
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_profiles ap
+    WHERE ap.id = auth.uid()
+      AND ap.is_active = true
+      AND ap.role IN ('admin','superadmin')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_superadmin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_profiles ap
+    WHERE ap.id = auth.uid()
+      AND ap.is_active = true
+      AND ap.role = 'superadmin'
+  );
+$$;
+
+-- 2) 基础 GRANT（表级权限 + 函数可执行）
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_superadmin() TO authenticated;
+
+-- user_profiles / user_connected_accounts 表权限
+GRANT SELECT, INSERT, UPDATE ON public.user_profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.user_connected_accounts TO authenticated;
+
+```
+
+## admin_profiles 策略
 
 ### 1. 超级管理员可以查看所有管理员
 ```sql
--- 这里写 SQL
-CREATE POLICY "superadmin_can_view_all_admins" ON admin_profiles
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() AND role = 'superadmin' AND is_active = true
-        )
-    );
 
-```
+CREATE POLICY "admin.self.select"
+  ON public.admin_profiles
+  FOR SELECT
+  USING (id = auth.uid());
 
-### 2. 管理员可以查看自己的资料
-```sql
-CREATE POLICY "admin_can_view_own_profile" ON admin_profiles
-    FOR SELECT USING (id = auth.uid());
+CREATE POLICY "admin.self.update"
+  ON public.admin_profiles
+  FOR UPDATE
+  USING (id = auth.uid())
+  WITH CHECK (id = auth.uid());
 
-```
+CREATE POLICY "admin.super.select"
+  ON public.admin_profiles
+  FOR SELECT
+  USING (public.is_superadmin());
 
-### 3. 超级管理员可以更新其他管理员资料
-```sql
-CREATE POLICY "superadmin_can_update_admins" ON admin_profiles
-    FOR UPDATE USING (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() AND role = 'superadmin' AND is_active = true
-        )
-    );
+CREATE POLICY "admin.super.update"
+  ON public.admin_profiles
+  FOR UPDATE
+  USING (public.is_superadmin())
+  WITH CHECK (public.is_superadmin());
 
-```
-
-### 4. 管理员可以更新自己的显示名（通过应用层控制具体可更新的字段）
-```sql
-CREATE POLICY "admin_can_update_own_profile" ON admin_profiles
-    FOR UPDATE USING (id = auth.uid());
-
-```
-
-### 5. 超级管理员可以插入新的管理员资料（当通过代码创建时）
-```sql
-CREATE POLICY "superadmin_can_insert_admin_profiles" ON admin_profiles
-    FOR INSERT WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() AND role = 'superadmin' AND is_active = true
-        )
-    );
+CREATE POLICY "admin.super.insert"
+  ON public.admin_profiles
+  FOR INSERT
+  WITH CHECK (public.is_superadmin());
 
 ```
 
@@ -159,30 +185,107 @@ CREATE POLICY "Girls status are manageable by admins"
 
 ## girls_media表策略
 
-### 读取权限
 ```sql
+-- 所有人可查看已审核通过的媒体
 CREATE POLICY "Girls media are viewable by everyone" 
-    ON girls_media FOR SELECT 
+  ON girls_media FOR SELECT 
+  USING (status = 'approved');
+
+-- 技师可查看自己的所有媒体
+CREATE POLICY "Girls can view their own media" 
+  ON girls_media FOR SELECT 
+  USING (EXISTS (
+    SELECT 1 FROM girls g 
+    WHERE g.id = girl_id AND g.user_id = auth.uid()
+  ));
+
+  -- 技师可插入媒体
+CREATE POLICY "Girls can insert their own media" 
+  ON girls_media FOR INSERT 
+  WITH CHECK (
+    created_by = auth.uid() AND
+    EXISTS (
+      SELECT 1 FROM girls g 
+      WHERE g.id = girl_id AND g.user_id = auth.uid()
+    )
+  );
+
+-- 技师可更新自己的媒体
+CREATE POLICY "Girls can update their own media" 
+  ON girls_media FOR UPDATE 
+  USING (
+    created_by = auth.uid() AND
+    EXISTS (
+      SELECT 1 FROM girls g 
+      WHERE g.id = girl_id AND g.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    created_by = auth.uid() AND
+    EXISTS (
+      SELECT 1 FROM girls g 
+      WHERE g.id = girl_id AND g.user_id = auth.uid()
+    )
+  );
+
+-- 技师可删除待审核的媒体
+CREATE POLICY "Girls can delete their pending media" 
+  ON girls_media FOR DELETE 
+  USING (
+    status = 'pending' AND 
+    created_by = auth.uid() AND
+    EXISTS (
+      SELECT 1 FROM girls g 
+      WHERE g.id = girl_id AND g.user_id = auth.uid()
+    )
+  );
+
+  -- tmp-uploads 桶策略
+CREATE POLICY "技师可上传到自己目录"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'tmp-uploads' 
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+CREATE POLICY "技师可读取自己目录"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'tmp-uploads' 
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+CREATE POLICY "技师可删除自己目录"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'tmp-uploads' 
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+  -- 管理员全权限
+  CREATE POLICY "Girls media are manageable by admins" 
+  ON girls_media FOR ALL 
+  USING (public.is_admin());
+
+```
+
+
+## girls_categories表策略
+
+```sql
+CREATE POLICY "Girls categories are viewable by everyone" 
+    ON girls_categories FOR SELECT 
     USING (true);
 
-```
-### 女孩自己可以更新
-```sql
-CREATE POLICY "Girls can manage their own media" 
-    ON girls_media FOR ALL 
-    USING (EXISTS (
-        SELECT 1 FROM girls g 
-        WHERE g.id = girl_id AND g.user_id = auth.uid()
-    ));
+CREATE POLICY "Girls categories are manageable by admins" 
+    ON girls_categories FOR ALL 
+    USING (public.is_admin());
 
 ```
-### 管理员全权限
-```sql
-CREATE POLICY "Girls media are manageable by admins" 
-    ON girls_media FOR ALL 
-    USING (auth.jwt() ->> 'role' = 'admin');
 
-```
 
 ## services表策略
 
@@ -265,111 +368,103 @@ CREATE POLICY "Girl service durations are manageable by admins"
 
 ## user_profiles 表策略
 ```sql
--- 用户可以查看自己的资料
-CREATE POLICY "Users can view own profile" ON user_profiles
-    FOR SELECT USING (auth.uid() = id);
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 
--- 用户可以更新自己的资料
-CREATE POLICY "Users can update own profile" ON user_profiles
-    FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "user_profiles.self.select"
+  ON public.user_profiles
+  FOR SELECT
+  USING (auth.uid() = id);
 
--- 用户可以插入自己的资料（通过触发器自动创建）
-CREATE POLICY "Users can insert own profile" ON user_profiles
-    FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "user_profiles.self.update"
+  ON public.user_profiles
+  FOR UPDATE
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
--- 超级管理员可以查看所有用户资料
-CREATE POLICY "Superadmin can view all profiles" ON user_profiles
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() 
-            AND role = 'superadmin' 
-            AND is_active = true
-        )
-    );
+CREATE POLICY "user_profiles.self.insert"
+  ON public.user_profiles
+  FOR INSERT
+  WITH CHECK (auth.uid() = id);
 
--- 超级管理员可以更新所有用户资料
-CREATE POLICY "Superadmin can update all profiles" ON user_profiles
-    FOR UPDATE USING (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() 
-            AND role = 'superadmin' 
-            AND is_active = true
-        )
-    );
+CREATE POLICY "user_profiles.admin.select"
+  ON public.user_profiles
+  FOR SELECT
+  USING (public.is_admin());
 
--- 管理员可以查看用户资料（用于订单管理等）
-CREATE POLICY "Admin can view user profiles" ON user_profiles
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() 
-            AND role IN ('superadmin', 'admin') 
-            AND is_active = true
-        )
-    );
-
--- 技师可以查看已完成订单客户的基本信息（用于评价客户） 暂未添加 等orders表做好再添加！！！！！！！！！！！！！！！！！！！！！！！
-CREATE POLICY "Girls can view customer profiles for completed orders" ON user_profiles
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM orders o
-            JOIN girls g ON g.id = o.girl_id
-            WHERE g.user_id = auth.uid()
-            AND o.user_id = user_profiles.id
-            AND o.status = 'completed'
-        )
-    );
-
-```
-
-## user_login_events  表策略
-```sql
--- 用户可以查看自己的登录历史
-CREATE POLICY "Users can view own login events" ON user_login_events
-    FOR SELECT USING (auth.uid() = user_id);
-
--- 系统可以插入登录记录（通过服务端函数）
-CREATE POLICY "System can insert login events" ON user_login_events
-    FOR INSERT WITH CHECK (true);
-
--- 管理员可以查看所有登录记录
-CREATE POLICY "Admin can view all login events" ON user_login_events
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() 
-            AND role IN ('superadmin', 'admin') 
-            AND is_active = true
-        )
-    );
+CREATE POLICY "user_profiles.admin.update"
+  ON public.user_profiles
+  FOR UPDATE
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 ```
 
 ## user_connected_accounts  表策略
+
 ```sql
--- 用户可以查看自己的绑定账户
-CREATE POLICY "Users can view own connected accounts" ON user_connected_accounts
-    FOR SELECT USING (auth.uid() = user_id);
+-- 每人仅一个 is_primary（建议用部分唯一索引替代触发器）
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_primary_account_per_user
+  ON public.user_connected_accounts (user_id)
+  WHERE is_primary = true;
 
--- 用户可以管理自己的绑定账户
-CREATE POLICY "Users can manage own connected accounts" ON user_connected_accounts
-    FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "uconn.self.select"
+  ON public.user_connected_accounts
+  FOR SELECT
+  USING (auth.uid() = user_id);
 
--- 管理员可以查看所有绑定账户
-CREATE POLICY "Admin can view all connected accounts" ON user_connected_accounts
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM admin_profiles 
-            WHERE id = auth.uid() 
-            AND role IN ('superadmin', 'admin') 
-            AND is_active = true
-        )
-    );
+CREATE POLICY "uconn.self.mutate"
+  ON public.user_connected_accounts
+  FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "uconn.admin.select"
+  ON public.user_connected_accounts
+  FOR SELECT
+  USING (public.is_admin());
 
 ```
 
+## user_addresses 表策略
+```sql
+-- 5. 用户可以查看自己的地址
+CREATE POLICY "user_addresses.self.select"
+  ON user_addresses
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+-- 6. 用户可以插入自己的地址
+CREATE POLICY "user_addresses.self.insert"
+  ON user_addresses
+  FOR INSERT
+  WITH CHECK (user_id = auth.uid());
+
+-- 7. 用户可以更新自己的地址
+CREATE POLICY "user_addresses.self.update"
+  ON user_addresses
+  FOR UPDATE
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+-- 8. 用户可以删除自己的地址
+CREATE POLICY "user_addresses.self.delete"
+  ON user_addresses
+  FOR DELETE
+  USING (user_id = auth.uid());
+
+-- 9. 管理员可以查看所有地址
+CREATE POLICY "user_addresses.admin.select"
+  ON user_addresses
+  FOR SELECT
+  USING (public.is_admin());
+
+-- 10. 管理员可以删除任何地址
+CREATE POLICY "user_addresses.admin.delete"
+  ON user_addresses
+  FOR DELETE
+  USING (public.is_admin());
+
+```
 ## 触发器
 
 ### 价格范围验证
@@ -443,5 +538,119 @@ CREATE TRIGGER ensure_single_primary_account_trigger
     BEFORE INSERT OR UPDATE ON user_connected_accounts
     FOR EACH ROW
     EXECUTE FUNCTION ensure_single_primary_account();
+
+ ```
+
+### 当有新用户插入 auth.users 时触发
+```sql
+-- 函数：当 auth.users 插入新用户时，自动在 user_profiles 建档
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  -- 避免重复插入
+  if exists (select 1 from public.user_profiles where id = new.id) then
+    return new;
+  end if;
+
+  insert into public.user_profiles (
+    id,
+    username,
+    display_name,
+    avatar_url,
+    language_code,
+    level,
+    experience,
+    credit_score,
+    notification_settings,
+    preferences,
+    is_banned,
+    created_at,
+    updated_at
+  )
+  values (
+    new.id,
+    null,
+    coalesce(new.raw_user_meta_data->>'full_name', 'Guest'),
+    coalesce(new.raw_user_meta_data->>'avatar_url', ''),
+    coalesce(new.raw_user_meta_data->>'language', 'en'),
+    1, 0, 100,
+    '{"email":true,"push":true,"sms":false}'::jsonb,
+    '{}'::jsonb,
+    false, now(), now()
+  );
+
+  return new;
+end;
+$$;
+
+-- 触发器：监听 auth.users 新增
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row
+execute function public.handle_new_user();
+ ```
+
+
+### 地址数量限制（新增）
+
+```sql
+-- 限制每个用户最多 5 条地址
+create or replace function enforce_max_5_addresses()
+returns trigger as $$
+begin
+  if (select count(*) from user_addresses where user_id = new.user_id) >= 5 then
+    raise exception 'You can only save up to 5 addresses.';
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_enforce_max_5_addresses on user_addresses;
+
+create trigger trg_enforce_max_5_addresses
+before insert on user_addresses
+for each row
+execute procedure enforce_max_5_addresses();
+
+ ```
+
+### 女孩自动生成工号
+
+```sql
+ -- 创建函数：在插入前自动生成工号
+CREATE OR REPLACE FUNCTION assign_girl_number()
+RETURNS TRIGGER AS $$
+DECLARE
+  max_number INTEGER;
+BEGIN
+  -- 若已有手动指定值，则直接使用
+  IF NEW.girl_number IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- 查找当前最大工号
+  SELECT MAX(girl_number) INTO max_number FROM public.girls;
+
+  -- 若无记录，从1001开始
+  IF max_number IS NULL THEN
+    NEW.girl_number := 1001;
+  ELSE
+    NEW.girl_number := max_number + 1;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 创建新触发器
+CREATE TRIGGER trg_assign_girl_number
+BEFORE INSERT ON public.girls
+FOR EACH ROW
+EXECUTE FUNCTION assign_girl_number();
 
  ```

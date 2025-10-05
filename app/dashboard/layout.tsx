@@ -224,14 +224,38 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   useEffect(() => {
     async function checkAuth() {
       try {
+        // 尝试从 sessionStorage 读取缓存的用户信息
+        const cachedProfile = sessionStorage.getItem('admin_profile')
+        const cacheTime = sessionStorage.getItem('admin_profile_time')
+        
+        // 如果缓存存在且在1小时内
+        if (cachedProfile && cacheTime) {
+          const cacheAge = Date.now() - parseInt(cacheTime)
+          if (cacheAge < 60 * 60 * 1000) { // 1小时 = 60分钟 * 60秒 * 1000毫秒
+            const profile = JSON.parse(cachedProfile) as AdminProfile
+            setAdminProfile(profile)
+            setLoading(false)
+            return
+          }
+        }
+
+        // 缓存过期或不存在，重新获取
         const profile = await getCurrentAdminProfile()
         if (!profile) {
+          sessionStorage.removeItem('admin_profile')
+          sessionStorage.removeItem('admin_profile_time')
           router.push('/login')
           return
         }
+        
+        // 缓存用户信息
+        sessionStorage.setItem('admin_profile', JSON.stringify(profile))
+        sessionStorage.setItem('admin_profile_time', Date.now().toString())
         setAdminProfile(profile)
       } catch (error) {
         console.error('Auth check failed:', error)
+        sessionStorage.removeItem('admin_profile')
+        sessionStorage.removeItem('admin_profile_time')
         router.push('/login')
       } finally {
         setLoading(false)
@@ -243,6 +267,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const handleSignOut = async () => {
     try {
+      // 清除缓存
+      sessionStorage.removeItem('admin_profile')
+      sessionStorage.removeItem('admin_profile_time')
+      
       await signOut()
       toast.success("已安全退出")
       router.push('/login')

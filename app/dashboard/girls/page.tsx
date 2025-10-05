@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { Plus, Search, Filter } from "lucide-react"
+import { Plus, Search } from "lucide-react"
 import { GirlTable } from "@/components/girls/GirlTable"
 import { GirlFormDialog } from "@/components/girls/GirlFormDialog"
 import { GirlStatusDrawer } from "@/components/girls/GirlStatusDrawer"
@@ -46,8 +47,7 @@ export default function GirlsPage() {
         category_id: undefined,
         status: undefined as GirlStatusType | undefined,
         is_verified: undefined,
-        is_blocked: undefined,
-        badge: undefined,
+        is_blocked: undefined, // 改为is_blocked筛选: all/true/false
         sort_by: 'sort_order',
         sort_order: 'asc'
     })
@@ -146,7 +146,6 @@ export default function GirlsPage() {
             status: undefined as GirlStatusType | undefined,
             is_verified: undefined,
             is_blocked: undefined,
-            badge: undefined,
             sort_by: 'sort_order' as const,
             sort_order: 'asc' as const
         }
@@ -221,167 +220,164 @@ export default function GirlsPage() {
     }
 
     return (
-        <div className="space-y-4 sm:space-y-6">
+        <>
             {/* 页面标题 */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">技师管理</h1>
+                    <h1 className="text-2xl font-semibold">技师管理</h1>
+                    <p className="text-muted-foreground">管理技师信息、状态和位置</p>
                 </div>
-                <Button onClick={handleAdd} className="w-full sm:w-auto">
-                    <Plus className="mr-2 h-4 w-4" />
+                <Button onClick={handleAdd} className="gap-2">
+                    <Plus className="size-4" />
                     新建技师
                 </Button>
             </div>
 
-            {/* 筛选工具栏 */}
-            <div className="flex flex-col gap-4 p-4 bg-muted/50 rounded-lg">
-                {/* 第一行：搜索 */}
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="搜索工号、用户名或昵称..."
-                            value={filters.search}
-                            onChange={(e) => handleSearch(e.target.value)}
-                            className="pl-10"
-                        />
-                    </div>
-                    <Button
-                        variant="outline"
-                        onClick={handleResetFilters}
-                        className="w-full sm:w-auto"
-                    >
-                        刷新
-                    </Button>
-                </div>
+            <div className="grid gap-6">
+                <div>
+                    <Card>
+                        <CardHeader>
+                            <h2 className="text-lg font-semibold">技师列表</h2>
+                            <p className="text-sm text-muted-foreground">
+                                当前共有 {pagination.total} 个技师
+                            </p>
+                        </CardHeader>
+                        <CardContent>
+                            {/* 搜索和筛选 */}
+                            <div className="flex items-center gap-4 mb-6">
+                                <div className="relative flex-1 max-w-sm">
+                                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="搜索工号、用户名..."
+                                        value={filters.search}
+                                        onChange={(e) => handleSearch(e.target.value)}
+                                        className="pl-10"
+                                    />
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    onClick={handleResetFilters}
+                                >
+                                    刷新
+                                </Button>
+                            </div>
 
-                {/* 第二行：筛选器 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-4">
-                    <Select
-                        value={filters.city_id?.toString() || 'all'}
-                        onValueChange={(value) => handleFilter('city_id', value === 'all' ? undefined : parseInt(value))}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="选择城市" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">全部城市</SelectItem>
-                            {cities.map((city) => (
-                                <SelectItem key={city.id} value={city.id.toString()}>
-                                    {city.name.zh || city.name.en || city.name.th}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                            {/* 筛选器 */}
+                            <div className="flex flex-wrap gap-2 mb-6">
+                                <Select
+                                    value={filters.city_id?.toString() || 'all'}
+                                    onValueChange={(value) => handleFilter('city_id', value === 'all' ? undefined : parseInt(value))}
+                                >
+                                    <SelectTrigger className="w-[140px]">
+                                        <SelectValue placeholder="选择城市" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">全部城市</SelectItem>
+                                        {cities.map((city) => (
+                                            <SelectItem key={city.id} value={city.id.toString()}>
+                                                {city.name.zh || city.name.en || city.name.th}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
 
-                    <Select
-                        value={filters.category_id?.toString() || 'all'}
-                        onValueChange={(value) => handleFilter('category_id', value === 'all' ? undefined : parseInt(value))}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="选择分类" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">全部分类</SelectItem>
-                            {categories.map((category) => (
-                                <SelectItem key={category.id} value={category.id.toString()}>
-                                    {category.name.zh || category.name.en || category.name.th}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                                <Select
+                                    value={filters.category_id?.toString() || 'all'}
+                                    onValueChange={(value) => handleFilter('category_id', value === 'all' ? undefined : parseInt(value))}
+                                >
+                                    <SelectTrigger className="w-[140px]">
+                                        <SelectValue placeholder="选择分类" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">全部分类</SelectItem>
+                                        {categories.map((category) => (
+                                            <SelectItem key={category.id} value={category.id.toString()}>
+                                                {category.name.zh || category.name.en || category.name.th}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
 
-                    <Select
-                        value={filters.status || 'all'}
-                        onValueChange={(value) => handleFilter('status', value === 'all' ? undefined : value)}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="在线状态" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">全部状态</SelectItem>
-                            <SelectItem value="available">在线</SelectItem>
-                            <SelectItem value="busy">忙碌</SelectItem>
-                            <SelectItem value="offline">离线</SelectItem>
-                        </SelectContent>
-                    </Select>
+                                <Select
+                                    value={filters.status || 'all'}
+                                    onValueChange={(value) => handleFilter('status', value === 'all' ? undefined : value)}
+                                >
+                                    <SelectTrigger className="w-[140px]">
+                                        <SelectValue placeholder="在线状态" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">全部状态</SelectItem>
+                                        <SelectItem value="available">在线</SelectItem>
+                                        <SelectItem value="busy">忙碌</SelectItem>
+                                        <SelectItem value="offline">离线</SelectItem>
+                                    </SelectContent>
+                                </Select>
 
-                    <Select
-                        value={filters.is_verified?.toString() || 'all'}
-                        onValueChange={(value) => handleFilter('is_verified', value === 'all' ? undefined : value === 'true')}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="认证状态" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">全部</SelectItem>
-                            <SelectItem value="true">已认证</SelectItem>
-                            <SelectItem value="false">未认证</SelectItem>
-                        </SelectContent>
-                    </Select>
+                                <Select
+                                    value={filters.is_verified?.toString() || 'all'}
+                                    onValueChange={(value) => handleFilter('is_verified', value === 'all' ? undefined : value === 'true')}
+                                >
+                                    <SelectTrigger className="w-[140px]">
+                                        <SelectValue placeholder="认证状态" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">全部</SelectItem>
+                                        <SelectItem value="true">已认证</SelectItem>
+                                        <SelectItem value="false">未认证</SelectItem>
+                                    </SelectContent>
+                                </Select>
 
-                    <Select
-                        value={filters.badge || 'all'}
-                        onValueChange={(value) => handleFilter('badge', value === 'all' ? undefined : value)}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="徽章" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">全部徽章</SelectItem>
-                            <SelectItem value="new">新人</SelectItem>
-                            <SelectItem value="hot">热门</SelectItem>
-                            <SelectItem value="top_rated">优质</SelectItem>
-                        </SelectContent>
-                    </Select>
+                                <Select
+                                    value={filters.is_blocked === undefined ? 'all' : filters.is_blocked ? 'blocked' : 'active'}
+                                    onValueChange={(value) => handleFilter('is_blocked', value === 'all' ? undefined : value === 'blocked')}
+                                >
+                                    <SelectTrigger className="w-[140px]">
+                                        <SelectValue placeholder="是否屏蔽" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">全部</SelectItem>
+                                        <SelectItem value="blocked">仅屏蔽</SelectItem>
+                                        <SelectItem value="active">仅活跃</SelectItem>
+                                    </SelectContent>
+                                </Select>
 
-                    <Select
-                        value={`${filters.sort_by}_${filters.sort_order}`}
-                        onValueChange={(value) => {
-                            const [sort_by, sort_order] = value.split('_')
-                            handleFilter('sort_by', sort_by)
-                            handleFilter('sort_order', sort_order)
-                        }}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="排序" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="sort_order_asc">权重升序</SelectItem>
-                            <SelectItem value="sort_order_desc">权重降序</SelectItem>
-                            <SelectItem value="created_at_desc">创建时间</SelectItem>
-                            <SelectItem value="rating_desc">评分高低</SelectItem>
-                            <SelectItem value="total_sales_desc">销量高低</SelectItem>
-                            <SelectItem value="booking_count_desc">预订次数</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
+                                <Select
+                                    value={`${filters.sort_by}_${filters.sort_order}`}
+                                    onValueChange={(value) => {
+                                        const [sort_by, sort_order] = value.split('_')
+                                        handleFilter('sort_by', sort_by)
+                                        handleFilter('sort_order', sort_order)
+                                    }}
+                                >
+                                    <SelectTrigger className="w-[140px]">
+                                        <SelectValue placeholder="排序" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="sort_order_asc">权重升序</SelectItem>
+                                        <SelectItem value="sort_order_desc">权重降序</SelectItem>
+                                        <SelectItem value="created_at_desc">创建时间</SelectItem>
+                                        <SelectItem value="rating_desc">评分高低</SelectItem>
+                                        <SelectItem value="total_sales_desc">销量高低</SelectItem>
+                                        <SelectItem value="booking_count_desc">预订次数</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                {/* 统计信息 */}
-                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span>共 {pagination.total} 个技师</span>
-                    {filters.search && <Badge variant="secondary">搜索: {filters.search}</Badge>}
-                    {filters.city_id && (
-                        <Badge variant="secondary">
-                            城市: {cities.find(c => c.id === filters.city_id)?.name?.zh || '未知'}
-                        </Badge>
-                    )}
-                    {filters.status && <Badge variant="secondary">状态: {filters.status}</Badge>}
-                </div>
-            </div>
-
-            {/* 技师列表 */}
-            <GirlTable
-                girls={girls}
-                loading={loading}
-                onEdit={handleEdit}
-                onToggleBlocked={handleToggleBlocked}
-                onToggleVerified={handleToggleVerified}
-                onManageStatus={handleManageStatus}
-                onManageMedia={handleManageMedia}
-            />
-
-            {/* 分页 */}
+                            {/* 技师表格 */}
+                            <div className="rounded-md border overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <GirlTable
+                                        girls={girls}
+                                        loading={loading}
+                                        onEdit={handleEdit}
+                                        onToggleBlocked={handleToggleBlocked}
+                                        onToggleVerified={handleToggleVerified}
+                                        onManageStatus={handleManageStatus}
+                                        onManageMedia={handleManageMedia}
+                                    />
+                                </div>
+                            </div>
+                               {/* 分页 */}
             {pagination.totalPages > 1 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div className="text-sm text-muted-foreground">
@@ -408,6 +404,12 @@ export default function GirlsPage() {
                 </div>
             )}
 
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+
+         
             {/* 表单对话框 */}
             <GirlFormDialog
                 open={showFormDialog}
@@ -423,6 +425,6 @@ export default function GirlsPage() {
                 girl={statusGirl}
                 onSuccess={handleStatusSuccess}
             />
-        </div>
+        </>
     )
 }

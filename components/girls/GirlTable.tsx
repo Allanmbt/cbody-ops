@@ -4,8 +4,21 @@ import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { Eye, EyeOff, Edit, Shield, ShieldCheck, MapPin } from "lucide-react"
+import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, MapPin, Image as ImageIcon } from "lucide-react"
 import type { GirlWithStatus } from "@/lib/types/girl"
 
 interface GirlTableProps {
@@ -28,6 +41,7 @@ export function GirlTable({
     onManageMedia
 }: GirlTableProps) {
     const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
+    const [previewImage, setPreviewImage] = useState<string | null>(null)
 
     const handleAction = async (actionKey: string, action: () => Promise<void>) => {
         setActionLoading(prev => ({ ...prev, [actionKey]: true }))
@@ -47,9 +61,9 @@ export function GirlTable({
         return girl.city.name?.zh || girl.city.name?.en || girl.city.name?.th || '-'
     }
 
-    const getCategoryName = (girl: GirlWithStatus): string => {
-        if (!girl.category) return '-'
-        return girl.category.name?.zh || girl.category.name?.en || girl.category.name?.th || '-'
+    const getCategoriesDisplay = (girl: GirlWithStatus): string => {
+        if (!girl.categories || girl.categories.length === 0) return '-'
+        return girl.categories.map(cat => cat.name?.zh || cat.name?.en || cat.name?.th || '').filter(Boolean).join(', ')
     }
 
     const getStatusBadge = (girl: GirlWithStatus) => {
@@ -97,6 +111,13 @@ export function GirlTable({
         return rating > 0 ? rating.toFixed(1) : '-'
     }
 
+    // 头像点击放大预览
+    const handleAvatarClick = (avatarUrl?: string | null) => {
+        if (avatarUrl) {
+            setPreviewImage(avatarUrl)
+        }
+    }
+
     if (loading) {
         return (
             <div className="flex justify-center items-center py-12">
@@ -115,144 +136,177 @@ export function GirlTable({
     }
 
     return (
-        <div className="rounded-md border overflow-x-auto">
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead className="min-w-[120px]">技师信息</TableHead>
-                        <TableHead className="min-w-[80px] hidden sm:table-cell">城市</TableHead>
-                        <TableHead className="min-w-[80px] hidden md:table-cell">分类</TableHead>
-                        <TableHead className="min-w-[80px]">状态</TableHead>
-                        <TableHead className="min-w-[60px] hidden lg:table-cell">徽章</TableHead>
-                        <TableHead className="min-w-[80px] hidden md:table-cell">评分</TableHead>
-                        <TableHead className="min-w-[80px] hidden lg:table-cell">销量</TableHead>
-                        <TableHead className="min-w-[80px] hidden sm:table-cell">认证</TableHead>
-                        <TableHead className="w-[140px] sm:w-[160px]">操作</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {girls.map((girl) => (
-                        <TableRow key={girl.id}>
-                            <TableCell className="font-medium">
-                                <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-2">
-                                        {girl.avatar_url && (
+        <>
+            <Table className="min-w-[800px] w-full">
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-[80px]">头像</TableHead>
+                            <TableHead className="min-w-[150px]">技师信息</TableHead>
+                            <TableHead className="min-w-[80px] hidden sm:table-cell">城市</TableHead>
+                            <TableHead className="min-w-[100px] hidden md:table-cell">分类</TableHead>
+                            <TableHead className="min-w-[80px]">状态</TableHead>
+                            <TableHead className="min-w-[80px] hidden md:table-cell">评分</TableHead>
+                            <TableHead className="min-w-[80px] hidden lg:table-cell">销量</TableHead>
+                            <TableHead className="min-w-[80px] hidden sm:table-cell">认证</TableHead>
+                            <TableHead className="w-[60px]">操作</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {girls.map((girl) => (
+                            <TableRow key={girl.id}>
+                                {/* 头像列 */}
+                                <TableCell>
+                                    <div
+                                        className="w-12 h-12 rounded-full overflow-hidden bg-muted cursor-pointer hover:ring-2 hover:ring-primary transition-all"
+                                        onClick={() => handleAvatarClick(girl.avatar_url)}
+                                    >
+                                        {girl.avatar_url ? (
                                             <img
                                                 src={girl.avatar_url}
                                                 alt={getGirlName(girl)}
-                                                className="w-8 h-8 rounded-full object-cover"
+                                                className="w-full h-full object-cover"
                                                 onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none'
+                                                    const target = e.target as HTMLImageElement
+                                                    target.style.display = 'none'
                                                 }}
                                             />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                                            </div>
                                         )}
+                                    </div>
+                                </TableCell>
+
+                                {/* 技师信息 */}
+                                <TableCell className="font-medium">
+                                    <div className="flex flex-col gap-1">
                                         <div>
                                             <div className="font-medium">{getGirlName(girl)}</div>
                                             <div className="text-xs text-muted-foreground">
                                                 #{girl.girl_number} • {girl.username}
                                             </div>
                                         </div>
+                                        <div className="text-xs text-muted-foreground sm:hidden">
+                                            {getCityName(girl)} • {formatAge(girl.birth_date)}
+                                        </div>
+                                        {girl.badge && (
+                                            <div className="lg:hidden">{getBadgeDisplay(girl.badge)}</div>
+                                        )}
                                     </div>
-                                    <div className="text-xs text-muted-foreground sm:hidden">
-                                        {getCityName(girl)} • {formatAge(girl.birth_date)}
+                                </TableCell>
+
+                                <TableCell className="hidden sm:table-cell">{getCityName(girl)}</TableCell>
+                                <TableCell className="hidden md:table-cell">
+                                    <div className="max-w-[200px] truncate" title={getCategoriesDisplay(girl)}>
+                                        {getCategoriesDisplay(girl)}
                                     </div>
-                                </div>
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">{getCityName(girl)}</TableCell>
-                            <TableCell className="hidden md:table-cell">{getCategoryName(girl)}</TableCell>
-                            <TableCell>{getStatusBadge(girl)}</TableCell>
-                            <TableCell className="hidden lg:table-cell">
-                                {getBadgeDisplay(girl.badge)}
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell">
-                                <div className="flex flex-col text-sm">
-                                    <span>{formatRating(girl.rating)}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                        {girl.total_reviews}条评价
-                                    </span>
-                                </div>
-                            </TableCell>
-                            <TableCell className="hidden lg:table-cell">
-                                <div className="flex flex-col text-sm">
-                                    <span>{girl.total_sales}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                        {girl.booking_count}次预订
-                                    </span>
-                                </div>
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                                <div className="flex flex-col gap-1">
-                                    <Badge
-                                        variant={girl.is_verified ? "default" : "secondary"}
-                                        className={girl.is_verified ? "bg-green-100 text-green-800 hover:bg-green-200" : ""}
-                                    >
-                                        {girl.is_verified ? "已认证" : "未认证"}
-                                    </Badge>
-                                    {girl.is_blocked && (
-                                        <Badge variant="destructive" className="text-xs">
-                                            已屏蔽
+                                </TableCell>
+                                <TableCell>{getStatusBadge(girl)}</TableCell>
+
+                                <TableCell className="hidden md:table-cell">
+                                    <div className="flex flex-col text-sm">
+                                        <span>{formatRating(girl.rating)}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {girl.total_reviews}条评价
+                                        </span>
+                                    </div>
+                                </TableCell>
+
+                                <TableCell className="hidden lg:table-cell">
+                                    <div className="flex flex-col text-sm">
+                                        <span>{girl.total_sales}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {girl.booking_count}次预订
+                                        </span>
+                                    </div>
+                                </TableCell>
+
+                                <TableCell className="hidden sm:table-cell">
+                                    <div className="flex flex-col gap-1">
+                                        <Badge
+                                            variant={girl.is_verified ? "default" : "secondary"}
+                                            className={girl.is_verified ? "bg-green-100 text-green-800 hover:bg-green-200" : ""}
+                                        >
+                                            {girl.is_verified ? "已认证" : "未认证"}
                                         </Badge>
-                                    )}
-                                </div>
-                            </TableCell>
-                            <TableCell>
-                                <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => onEdit(girl)}
-                                        className="h-8 w-8 p-0"
-                                        title="编辑"
-                                    >
-                                        <Edit className="h-3 w-3" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleAction(`verified-${girl.id}`, async () => await onToggleVerified(girl))}
-                                        disabled={actionLoading[`verified-${girl.id}`]}
-                                        className="h-8 w-8 p-0"
-                                        title={girl.is_verified ? "取消认证" : "认证"}
-                                    >
-                                        {actionLoading[`verified-${girl.id}`] ? (
-                                            <LoadingSpinner size="sm" />
-                                        ) : girl.is_verified ? (
-                                            <ShieldCheck className="h-3 w-3 text-green-600" />
-                                        ) : (
-                                            <Shield className="h-3 w-3" />
+                                        {girl.is_blocked && (
+                                            <Badge variant="destructive" className="text-xs">
+                                                已屏蔽
+                                            </Badge>
                                         )}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleAction(`blocked-${girl.id}`, async () => await onToggleBlocked(girl))}
-                                        disabled={actionLoading[`blocked-${girl.id}`]}
-                                        className="h-8 w-8 p-0"
-                                        title={girl.is_blocked ? "解除屏蔽" : "屏蔽"}
-                                    >
-                                        {actionLoading[`blocked-${girl.id}`] ? (
-                                            <LoadingSpinner size="sm" />
-                                        ) : girl.is_blocked ? (
-                                            <Eye className="h-3 w-3 text-green-600" />
-                                        ) : (
-                                            <EyeOff className="h-3 w-3" />
-                                        )}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => onManageStatus(girl)}
-                                        className="h-8 w-8 p-0"
-                                        title="位置状态"
-                                    >
-                                        <MapPin className="h-3 w-3" />
-                                    </Button>
-                                </div>
-                            </TableCell>
-                        </TableRow>
-                    ))}
-                </TableBody>
-            </Table>
-        </div>
+                                    </div>
+                                </TableCell>
+
+                                {/* 三点操作菜单 */}
+                                <TableCell>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                                <MoreVertical className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-48">
+                                            <DropdownMenuItem onClick={() => onEdit(girl)}>
+                                                <Edit className="mr-2 h-4 w-4" />
+                                                编辑
+                                            </DropdownMenuItem>
+
+                                            <DropdownMenuItem 
+                                                onClick={() => handleAction(`verified-${girl.id}`, async () => await onToggleVerified(girl))}
+                                                disabled={actionLoading[`verified-${girl.id}`]}
+                                            >
+                                                {girl.is_verified ? (
+                                                    <ShieldCheck className="mr-2 h-4 w-4 text-green-600" />
+                                                ) : (
+                                                    <Shield className="mr-2 h-4 w-4" />
+                                                )}
+                                                {girl.is_verified ? "取消认证" : "认证"}
+                                            </DropdownMenuItem>
+
+                                            <DropdownMenuItem 
+                                                onClick={() => handleAction(`blocked-${girl.id}`, async () => await onToggleBlocked(girl))}
+                                                disabled={actionLoading[`blocked-${girl.id}`]}
+                                            >
+                                                {girl.is_blocked ? (
+                                                    <Eye className="mr-2 h-4 w-4 text-green-600" />
+                                                ) : (
+                                                    <EyeOff className="mr-2 h-4 w-4" />
+                                                )}
+                                                {girl.is_blocked ? "解除屏蔽" : "屏蔽"}
+                                            </DropdownMenuItem>
+
+                                            <DropdownMenuSeparator />
+
+                                            <DropdownMenuItem onClick={() => onManageStatus(girl)}>
+                                                <MapPin className="mr-2 h-4 w-4" />
+                                                管理状态位置
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+
+            {/* 头像放大预览对话框 */}
+            <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+                <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle>头像预览</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex justify-center items-center">
+                        {previewImage && (
+                            <img
+                                src={previewImage}
+                                alt="头像预览"
+                                className="max-w-full max-h-[70vh] object-contain rounded-lg"
+                            />
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </>
     )
 }

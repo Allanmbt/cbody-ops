@@ -10,33 +10,31 @@ export interface LanguageContent {
 }
 
 export interface WorkHours {
-    start: string // "19:00"
-    end: string   // "10:00"
+    start: string // "19:00" 格式必须为 HH:00 或 HH:30
+    end: string   // "10:00" 格式必须为 HH:00 或 HH:30
 }
 
-export interface Languages {
-    [key: string]: number // 语言代码: 熟练度等级
-}
+// 语言代码数组: EN_Base, EN, ZH_Base, ZH, TH_Base, TH, KO_Base, KO, YUE_Base, YUE, JA_Base, JA
+export type Languages = string[]
 
 export interface Girl {
     id: string
-    user_id?: string
-    city_id?: number
-    category_id?: number
-    telegram_id?: number
-    girl_number: number
-    username: string
+    user_id?: string | null
+    city_id?: number | null
+    telegram_id?: number | null
+    girl_number: number // 只读,触发器生成,从1001开始
+    username: string // 唯一
     name: string
     profile: LanguageContent
-    avatar_url?: string
-    birth_date?: string
-    height?: number
-    weight?: number
-    measurements?: string
+    avatar_url?: string | null
+    birth_date?: string | null
+    height?: number | null
+    weight?: number | null
+    measurements?: string | null
     gender: Gender
-    languages?: Languages
+    languages?: Languages // 语言代码数组
     tags: LanguageContent
-    badge?: GirlBadge
+    badge?: GirlBadge | null
     rating: number
     total_sales: number
     total_reviews: number
@@ -82,10 +80,12 @@ export interface GirlWithStatus extends Girl {
         id: number
         name: LanguageContent
     }
-    category?: {
+    // 支持多对多分类关系
+    category_ids?: number[]
+    categories?: Array<{
         id: number
         name: LanguageContent
-    }
+    }>
 }
 
 // API 响应类型
@@ -105,40 +105,51 @@ export interface PaginatedResponse<T> {
 
 // 表单数据类型
 export interface GirlFormData {
-    girl_number: number
-    username: string
+    user_id?: string | null // 可绑定用户ID
+    telegram_id?: number | null // 可编辑
+    username: string // 必须唯一
     name: string
     profile: LanguageContent
-    avatar_url?: string
-    birth_date?: string
-    height?: number
-    weight?: number
-    measurements?: string
+    avatar_url?: string | null
+    birth_date?: string | null
+    height?: number | null
+    weight?: number | null
+    measurements?: string | null
     gender: Gender
-    languages?: Languages
+    languages?: Languages // 语言代码数组
     tags: LanguageContent
-    badge?: GirlBadge
+    badge?: GirlBadge | null
+    rating: number
+    total_sales: number
+    total_reviews: number
     max_travel_distance: number
-    work_hours?: WorkHours
+    work_hours?: WorkHours // {start: "HH:00|HH:30", end: "HH:00|HH:30"}
     is_verified: boolean
     is_blocked: boolean
     is_visible_to_thai: boolean
     sort_order: number
-    city_id?: number
-    category_id?: number
+    city_id?: number | null
+    category_ids?: number[] // 多对多分类
 }
 
 // 查询参数类型
 export interface GirlListParams {
     page: number
     limit: number
-    search?: string
+    search?: string // 搜索 username/girl_number/telegram_id
     city_id?: number
-    category_id?: number
+    category_id?: number // 单个分类筛选
     status?: GirlStatusType
     is_verified?: boolean
-    is_blocked?: boolean
-    badge?: GirlBadge
+    is_blocked?: boolean // 屏蔽状态筛选: all/blocked/active
     sort_by: 'created_at' | 'updated_at' | 'rating' | 'total_sales' | 'booking_count' | 'sort_order'
     sort_order: 'asc' | 'desc'
+}
+
+// 用户搜索结果类型 (用于user_id绑定)
+export interface UserSearchResult {
+    id: string
+    email?: string | null
+    phone?: string | null
+    display_name?: string | null
 }
