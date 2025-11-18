@@ -1,6 +1,7 @@
 "use server"
 
 import { getSupabaseAdminClient } from "@/lib/supabase"
+import { requireAdmin } from "@/lib/auth"
 import {
     girlFormSchema,
     girlStatusSchema,
@@ -10,7 +11,7 @@ import {
     type GirlStatusData,
     type GirlMediaData,
     type GirlListParams
-} from "@/lib/validations/girl"
+} from "@/lib/features/girls"
 import type {
     ApiResponse,
     PaginatedResponse,
@@ -20,23 +21,16 @@ import type {
     GirlMedia,
     GirlStatusType,
     UserSearchResult
-} from "@/lib/types/girl"
+} from "@/lib/features/girls"
 
-// 检查管理员权限 - 简化版本，使用管理员客户端绕过 RLS
-async function checkAdminPermission(): Promise<{ ok: boolean; error?: string; profile?: any }> {
-    try {
-        // 暂时跳过认证检查，直接允许操作（用于调试）
-        console.log('检查管理员权限 - 调试模式：跳过认证检查')
-        return { ok: true, profile: { role: 'superadmin', id: 'debug-admin' } }
-    } catch (error) {
-        console.error('权限检查失败:', error)
-        return { ok: false, error: "权限验证失败，请重新登录" }
-    }
-}
+// 注意：所有函数现在使用 requireAdmin() 进行统一的权限验证
+// 不再需要单独的 checkAdminPermission 函数
 
 // 获取城市列表
 export async function getCities(): Promise<ApiResponse<any[]>> {
     try {
+        // 验证管理员权限（客服也可以查看）
+        await requireAdmin(['superadmin', 'admin', 'support'])
         const supabase = getSupabaseAdminClient()
         const { data, error } = await supabase
             .from('cities')
@@ -59,6 +53,8 @@ export async function getCities(): Promise<ApiResponse<any[]>> {
 // 获取分类列表
 export async function getCategories(): Promise<ApiResponse<any[]>> {
     try {
+        // 验证管理员权限（客服也可以查看）
+        await requireAdmin(['superadmin', 'admin', 'support'])
         const supabase = getSupabaseAdminClient()
         const { data, error } = await supabase
             .from('categories')
@@ -82,15 +78,18 @@ export async function getCategories(): Promise<ApiResponse<any[]>> {
 // 支持通过 email、phone 或 user_id 搜索
 export async function searchUsers(query: string): Promise<ApiResponse<UserSearchResult[]>> {
     try {
+        // 验证管理员权限（只有管理员和超级管理员可以搜索用户）
+        await requireAdmin(['superadmin', 'admin'])
+
         if (!query || query.trim().length < 3) {
             return { ok: false, error: "搜索关键词至少3个字符" }
         }
 
         const supabase = getSupabaseAdminClient()
-        
+
         // 尝试多种搜索方式
         const results: UserSearchResult[] = []
-        
+
         // 1. 先从 user_profiles 搜索（按 display_name 或 id）
         const { data: profileData } = await supabase
             .from('user_profiles')
@@ -102,7 +101,7 @@ export async function searchUsers(query: string): Promise<ApiResponse<UserSearch
             for (const profile of profileData) {
                 // 获取 auth.users 中的 email 和 phone
                 const { data: authData } = await (supabase.auth.admin as any).getUserById((profile as any).id)
-                
+
                 results.push({
                     id: (profile as any).id,
                     display_name: (profile as any).display_name,
@@ -111,16 +110,16 @@ export async function searchUsers(query: string): Promise<ApiResponse<UserSearch
                 })
             }
         }
-        
+
         // 2. 如果 query 看起来像 email（包含@），从 auth.users 搜索
         if (query.includes('@') && results.length === 0) {
             const { data: { users }, error } = await supabase.auth.admin.listUsers()
-            
+
             if (!error && users) {
                 const matchedUsers = users
                     .filter(u => u.email?.toLowerCase().includes(query.toLowerCase()))
                     .slice(0, 10)
-                
+
                 for (const user of matchedUsers) {
                     // 获取对应的 profile
                     const { data: profile } = await supabase
@@ -128,7 +127,7 @@ export async function searchUsers(query: string): Promise<ApiResponse<UserSearch
                         .select('display_name')
                         .eq('id', user.id)
                         .single()
-                    
+
                     results.push({
                         id: user.id,
                         display_name: (profile as any)?.display_name || user.email || 'Unknown',
@@ -138,16 +137,16 @@ export async function searchUsers(query: string): Promise<ApiResponse<UserSearch
                 }
             }
         }
-        
+
         // 3. 如果 query 看起来像手机号（纯数字），从 auth.users 搜索
         if (/^\d+$/.test(query) && results.length === 0) {
             const { data: { users }, error } = await supabase.auth.admin.listUsers()
-            
+
             if (!error && users) {
                 const matchedUsers = users
                     .filter(u => u.phone?.includes(query))
                     .slice(0, 10)
-                
+
                 for (const user of matchedUsers) {
                     // 获取对应的 profile
                     const { data: profile } = await supabase
@@ -155,7 +154,7 @@ export async function searchUsers(query: string): Promise<ApiResponse<UserSearch
                         .select('display_name')
                         .eq('id', user.id)
                         .single()
-                    
+
                     results.push({
                         id: user.id,
                         display_name: (profile as any)?.display_name || user.phone || 'Unknown',
@@ -176,6 +175,8 @@ export async function searchUsers(query: string): Promise<ApiResponse<UserSearch
 // 检查username是否已存在
 export async function checkUsernameExists(username: string, excludeGirlId?: string): Promise<ApiResponse<boolean>> {
     try {
+        // 验证管理员权限
+        await requireAdmin(['superadmin', 'admin'])
         const supabase = getSupabaseAdminClient()
         let query = supabase
             .from('girls')
@@ -204,18 +205,21 @@ export async function checkUsernameExists(username: string, excludeGirlId?: stri
 // 获取技师列表
 export async function getGirls(params: GirlListParams): Promise<ApiResponse<PaginatedResponse<GirlWithStatus>>> {
     try {
+        // 验证管理员权限（客服也可以查看）
+        await requireAdmin(['superadmin', 'admin', 'support'])
+
         // 验证参数
         const validatedParams = girlListParamsSchema.parse(params)
         const { page, limit, search, city_id, category_id, status, is_verified, is_blocked, sort_by, sort_order } = validatedParams
 
         const supabase = getSupabaseAdminClient()
-        
+
         let query = (supabase as any)
             .from('girls')
             .select(`
                 *,
                 city:cities(id, name),
-                status:girls_status(status, current_lat, current_lng, standby_lat, standby_lng, next_available_time, updated_at)
+                status:girls_status(status, current_lat, current_lng, next_available_time, last_online_at, updated_at)
             `, { count: 'exact' })
 
         // 搜索条件: username / girl_number / telegram_id
@@ -301,11 +305,8 @@ export async function getGirls(params: GirlListParams): Promise<ApiResponse<Pagi
 // 创建技师
 export async function createGirl(formData: GirlFormData): Promise<ApiResponse<Girl>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以创建技师）
+        await requireAdmin(['superadmin', 'admin'])
 
         // 验证表单数据
         const validatedData = girlFormSchema.parse(formData)
@@ -359,11 +360,9 @@ export async function createGirl(formData: GirlFormData): Promise<ApiResponse<Gi
 // 更新技师
 export async function updateGirl(id: string, formData: GirlFormData): Promise<ApiResponse<Girl>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以更新技师）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         // 验证表单数据
         const validatedData = girlFormSchema.parse(formData)
@@ -418,11 +417,9 @@ export async function updateGirl(id: string, formData: GirlFormData): Promise<Ap
 // 切换技师屏蔽状态
 export async function toggleGirlBlockedStatus(id: string): Promise<ApiResponse<Girl>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以屏蔽/解封技师）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         const supabase = getSupabaseAdminClient()
 
@@ -483,11 +480,9 @@ export async function toggleGirlBlockedStatus(id: string): Promise<ApiResponse<G
 // 切换技师认证状态
 export async function toggleGirlVerifiedStatus(id: string): Promise<ApiResponse<Girl>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以验证技师）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         const supabase = getSupabaseAdminClient()
 
@@ -529,6 +524,8 @@ export async function toggleGirlVerifiedStatus(id: string): Promise<ApiResponse<
 // 获取技师状态
 export async function getGirlStatus(girlId: string): Promise<ApiResponse<GirlStatus>> {
     try {
+        // 验证管理员权限（客服也可以查看）
+        await requireAdmin(['superadmin', 'admin', 'support'])
         const supabase = getSupabaseAdminClient()
         const { data, error } = await (supabase as any)
             .from('girls_status')
@@ -551,43 +548,79 @@ export async function getGirlStatus(girlId: string): Promise<ApiResponse<GirlSta
 // 更新技师状态
 export async function updateGirlStatus(girlId: string, statusData: GirlStatusData): Promise<ApiResponse<GirlStatus>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以更新技师状态）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         // 验证数据
         const validatedData = girlStatusSchema.parse(statusData)
 
         const supabase = getSupabaseAdminClient()
 
-        // 尝试更新，如果不存在则创建
-        const { data, error } = await (supabase as any)
-            .from('girls_status')
-            .upsert({
-                girl_id: girlId,
-                ...validatedData,
-                updated_at: new Date().toISOString()
-            })
-            .select('*')
+        // 先检查技师是否存在
+        const { data: girlExists, error: girlCheckError } = await (supabase as any)
+            .from('girls')
+            .select('id')
+            .eq('id', girlId)
             .single()
+
+        if (girlCheckError || !girlExists) {
+            console.error('技师不存在:', girlCheckError)
+            return { ok: false, error: "技师不存在" }
+        }
+
+        // 检查是否已有状态记录
+        const { data: existingStatus } = await (supabase as any)
+            .from('girls_status')
+            .select('id')
+            .eq('girl_id', girlId)
+            .maybeSingle()
+
+        let result
+        if (existingStatus) {
+            // 更新现有记录
+            result = await (supabase as any)
+                .from('girls_status')
+                .update({
+                    ...validatedData,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('girl_id', girlId)
+                .select('*')
+                .single()
+        } else {
+            // 创建新记录
+            result = await (supabase as any)
+                .from('girls_status')
+                .insert({
+                    girl_id: girlId,
+                    ...validatedData,
+                    updated_at: new Date().toISOString()
+                })
+                .select('*')
+                .single()
+        }
+
+        const { data, error } = result
 
         if (error) {
             console.error('更新技师状态失败:', error)
-            return { ok: false, error: "更新技师状态失败" }
+            console.error('错误详情:', JSON.stringify(error, null, 2))
+            return { ok: false, error: `更新失败: ${error.message || '未知错误'}` }
         }
 
         return { ok: true, data }
-    } catch (error) {
+    } catch (error: any) {
         console.error('更新技师状态异常:', error)
-        return { ok: false, error: "更新技师状态异常" }
+        return { ok: false, error: `操作异常: ${error?.message || '未知错误'}` }
     }
 }
 
 // 获取技师媒体
 export async function getGirlMedia(girlId: string): Promise<ApiResponse<GirlMedia[]>> {
     try {
+        // 验证管理员权限（客服也可以查看）
+        await requireAdmin(['superadmin', 'admin', 'support'])
         const supabase = getSupabaseAdminClient()
         const { data, error } = await (supabase as any)
             .from('girls_media')
@@ -610,11 +643,9 @@ export async function getGirlMedia(girlId: string): Promise<ApiResponse<GirlMedi
 // 添加技师媒体
 export async function addGirlMedia(girlId: string, mediaData: GirlMediaData): Promise<ApiResponse<GirlMedia>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以添加技师媒体）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         // 验证数据
         const validatedData = girlMediaSchema.parse(mediaData)
@@ -646,11 +677,9 @@ export async function addGirlMedia(girlId: string, mediaData: GirlMediaData): Pr
 // 删除技师媒体
 export async function deleteGirlMedia(mediaId: string): Promise<ApiResponse> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以删除技师媒体）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         const supabase = getSupabaseAdminClient()
 

@@ -18,14 +18,16 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { Ban, CheckCircle, Key, Loader2, Settings, AlertTriangle } from 'lucide-react'
-import type { UserProfile, UserListItem } from '@/lib/types/user'
+import type { UserProfile, UserListItem } from '@/lib/features/users'
 import { toggleUserBan, resetUserPassword } from '@/app/dashboard/users/actions'
+import { useCurrentAdmin } from '@/hooks/use-current-admin'
 
 interface UserActionsCardProps {
     profile: UserProfile
 }
 
 export function UserActionsCard({ profile }: UserActionsCardProps) {
+    const { admin } = useCurrentAdmin()
     const router = useRouter()
     const [isBanDialogOpen, setIsBanDialogOpen] = useState(false)
     const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false)
@@ -36,6 +38,11 @@ export function UserActionsCard({ profile }: UserActionsCardProps) {
 
     // 处理封禁/解禁
     const handleToggleBan = async () => {
+        if (!admin?.id) {
+            toast.error('未找到管理员信息')
+            return
+        }
+
         if (!profile.is_banned && !banReason.trim()) {
             toast.error('请输入封禁原因')
             return
@@ -67,6 +74,11 @@ export function UserActionsCard({ profile }: UserActionsCardProps) {
 
     // 处理重置密码
     const handleResetPassword = async () => {
+        if (!admin?.id) {
+            toast.error('未找到管理员信息')
+            return
+        }
+
         if (!newPassword.trim()) {
             toast.error('请输入新密码')
             return

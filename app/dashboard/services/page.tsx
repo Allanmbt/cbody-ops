@@ -20,7 +20,7 @@ import { toast } from "sonner"
 import { ServiceTable } from "@/components/services/ServiceTable"
 import { ServiceFormDialog } from "@/components/services/ServiceFormDialog"
 import { ServiceDurationsDrawer } from "@/components/services/ServiceDurationsDrawer"
-import type { Service, Category, ServiceListParams, PaginatedResponse } from "@/lib/types/service"
+import type { Service, Category, ServiceListParams, PaginatedResponse } from "@/lib/features/services"
 import { getServices, getCategories } from "./actions"
 
 export default function ServicesPage() {

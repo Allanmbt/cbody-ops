@@ -8,9 +8,8 @@ import { ButtonLoading } from "@/components/ui/loading"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { signIn, getAdminProfile } from "@/lib/auth"
-import { debugAuth } from "@/lib/debug"
 import { toast } from "sonner"
+import { loginAction } from "@/app/login/actions"
 
 export function LoginForm() {
   const router = useRouter()
@@ -27,39 +26,17 @@ export function LoginForm() {
     const password = formData.get("password") as string
 
     try {
-      const { data, error: authError } = await signIn(email, password)
+      const result = await loginAction(email, password)
 
-      if (authError) {
-        setError("邮箱或密码错误: " + authError.message)
+      if (!result.ok) {
+        setError(result.error || "登录失败")
         return
       }
 
-      if (!data.user) {
-        setError("登录失败，请重试")
-        return
-      }
-
-      console.log("Login successful, user:", data.user.id)
-
-      // Debug auth state
-      await debugAuth()
-
-      // Check if user is admin
-      const adminProfile = await getAdminProfile(data.user.id)
-      if (!adminProfile) {
-        setError("您没有管理员权限，请联系超级管理员")
-        return
-      }
-
-      if (!adminProfile.is_active) {
-        setError("您的账号已被禁用，请联系超级管理员")
-        return
-      }
-
-      toast.success(`欢迎回来，${adminProfile.display_name}!`)
+      toast.success(`欢迎回来，${result.admin?.display_name}!`)
       router.push("/dashboard")
+      router.refresh()
     } catch (err) {
-      console.error("Login error:", err)
       setError("登录时发生错误，请重试")
     } finally {
       setLoading(false)

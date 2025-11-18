@@ -5,7 +5,7 @@ import { zhCN } from 'date-fns/locale'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Link2, Mail, Star, Clock } from 'lucide-react'
-import type { UserConnectedAccount } from '@/lib/types/user'
+import type { UserConnectedAccount } from '@/lib/features/users'
 
 interface UserConnectedAccountsCardProps {
     connectedAccounts: UserConnectedAccount[]

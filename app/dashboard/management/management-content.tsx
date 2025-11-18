@@ -66,10 +66,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { PageLoading } from "@/components/ui/loading"
 import { cn } from "@/lib/utils"
-import { getCurrentAdminProfile, isSuperAdmin } from "@/lib/auth"
+import { isSuperAdmin } from "@/lib/auth"
 import { getSupabaseAdminClient } from "@/lib/supabase"
 import type { AdminProfile, AdminRole } from "@/lib/types/admin"
 import { toast } from "sonner"
+import { verifySuperAdmin, getAdminsList } from "./actions"
 
 interface AdminWithStatus extends AdminProfile {
   last_login?: string
@@ -118,43 +119,56 @@ export function ManagementContent() {
   })
 
   useEffect(() => {
+    let mounted = true
+
     async function checkAuthAndLoadData() {
       try {
-        const profile = await getCurrentAdminProfile()
-        if (!profile || !isSuperAdmin(profile.role)) {
-          router.push('/dashboard')
+        // 使用 Server Action 验证权限
+        const result = await verifySuperAdmin()
+
+        if (!result.ok) {
+          if (result.error === "未登录") {
+            if (mounted) router.push('/login')
+          } else {
+            if (mounted) router.push('/dashboard')
+          }
           return
         }
-        setCurrentAdmin(profile)
-        await loadAdmins()
+
+        if (mounted) {
+          setCurrentAdmin(result.admin!)
+        }
+
+        // 加载管理员列表
+        const listResult = await getAdminsList()
+        if (listResult.ok && mounted) {
+          setAdmins(listResult.data || [])
+        }
       } catch (error) {
-        console.error('Auth check failed:', error)
-        router.push('/login')
+        console.error('[ManagementContent] 异常:', error)
+        if (mounted) router.push('/login')
       } finally {
-        setLoading(false)
+        if (mounted) setLoading(false)
       }
     }
 
     checkAuthAndLoadData()
+
+    return () => {
+      mounted = false
+    }
   }, [router])
 
   const loadAdmins = async () => {
     try {
-      // 使用admin客户端绕过RLS限制，因为这个页面只有超级管理员能访问
-      const supabase = getSupabaseAdminClient()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
-        .from('admin_profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        throw error
+      const result = await getAdminsList()
+      if (result.ok) {
+        setAdmins(result.data || [])
+      } else {
+        toast.error(result.error || '加载管理员列表失败')
       }
-
-      setAdmins(data || [])
     } catch (error) {
-      console.error('Failed to load admins:', error)
+      console.error('[loadAdmins] 异常:', error)
       toast.error('加载管理员列表失败')
     }
   }

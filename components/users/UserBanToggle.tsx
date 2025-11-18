@@ -16,20 +16,27 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Ban, CheckCircle, Loader2 } from 'lucide-react'
-import type { UserListItem } from '@/lib/types/user'
+import type { UserListItem } from '@/lib/features/users'
 import { toggleUserBan } from '@/app/dashboard/users/actions'
+import { useCurrentAdmin } from '@/hooks/use-current-admin'
 
 interface UserBanToggleProps {
     user: UserListItem
 }
 
 export function UserBanToggle({ user }: UserBanToggleProps) {
+    const { admin } = useCurrentAdmin()
     const router = useRouter()
     const [isOpen, setIsOpen] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [reason, setReason] = useState('')
 
     const handleToggleBan = async () => {
+        if (!admin?.id) {
+            toast.error('未找到管理员信息')
+            return
+        }
+
         if (!reason.trim() && !user.is_banned) {
             toast.error('请输入封禁原因')
             return

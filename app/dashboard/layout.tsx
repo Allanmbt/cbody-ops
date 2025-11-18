@@ -17,6 +17,7 @@ import {
   Shield,
   Briefcase,
   UserCheck,
+  Image,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -66,7 +67,8 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
-import { getCurrentAdminProfile, signOut, isSuperAdmin } from "@/lib/auth"
+import { signOut, isSuperAdmin } from "@/lib/auth"
+import { getSupabaseClient } from "@/lib/supabase"
 import type { AdminProfile, AdminRole } from "@/lib/types/admin"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -125,6 +127,13 @@ const sidebarGroups: {
           requiredRole: ['superadmin', 'admin', 'support'],
         },
         {
+          key: "media-management",
+          title: "媒体管理",
+          icon: Image,
+          href: "/dashboard/media",
+          requiredRole: ['superadmin', 'admin'],
+        },
+        {
           key: "services-management",
           title: "服务管理",
           icon: Briefcase,
@@ -166,6 +175,18 @@ const sidebarGroups: {
         },
       ],
     },
+    {
+      label: "系统设置",
+      items: [
+        {
+          key: "configs",
+          title: "配置管理",
+          icon: Settings,
+          href: "/dashboard/configs",
+          requiredRole: ['superadmin', 'admin'],
+        },
+      ],
+    },
   ]
 
 function getRoleDisplayName(role: AdminRole): string {
@@ -196,6 +217,8 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
     breadcrumbs.push({ label: "管理员管理" })
   } else if (segments[1] === 'girls') {
     breadcrumbs.push({ label: "技师管理" })
+  } else if (segments[1] === 'media') {
+    breadcrumbs.push({ label: "媒体管理" })
   } else if (segments[1] === 'services') {
     breadcrumbs.push({ label: "服务管理" })
   } else if (segments[1] === 'users') {
@@ -206,6 +229,11 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
     breadcrumbs.push({ label: "财务报表" })
   } else if (segments[1] === 'analytics') {
     breadcrumbs.push({ label: "数据洞察" })
+  } else if (segments[1] === 'configs') {
+    breadcrumbs.push({ label: "配置管理" })
+    if (segments[2] === 'fare') {
+      breadcrumbs.push({ label: "车费计价配置", href: "/dashboard/configs/fare" })
+    }
   }
 
   return breadcrumbs
@@ -224,38 +252,41 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   useEffect(() => {
     async function checkAuth() {
       try {
-        // 尝试从 sessionStorage 读取缓存的用户信息
-        const cachedProfile = sessionStorage.getItem('admin_profile')
-        const cacheTime = sessionStorage.getItem('admin_profile_time')
-        
-        // 如果缓存存在且在1小时内
-        if (cachedProfile && cacheTime) {
-          const cacheAge = Date.now() - parseInt(cacheTime)
-          if (cacheAge < 60 * 60 * 1000) { // 1小时 = 60分钟 * 60秒 * 1000毫秒
-            const profile = JSON.parse(cachedProfile) as AdminProfile
-            setAdminProfile(profile)
-            setLoading(false)
-            return
-          }
-        }
+        const supabase = getSupabaseClient()
 
-        // 缓存过期或不存在，重新获取
-        const profile = await getCurrentAdminProfile()
-        if (!profile) {
-          sessionStorage.removeItem('admin_profile')
-          sessionStorage.removeItem('admin_profile_time')
+        // 获取当前 session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+        if (sessionError || !session?.user) {
           router.push('/login')
           return
         }
-        
-        // 缓存用户信息
-        sessionStorage.setItem('admin_profile', JSON.stringify(profile))
-        sessionStorage.setItem('admin_profile_time', Date.now().toString())
+
+        // 查询管理员信息（使用 RLS，自动验证当前用户）
+        const { data: adminData, error: profileError } = await supabase
+          .from('admin_profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single()
+
+        if (profileError || !adminData) {
+          await supabase.auth.signOut()
+          router.push('/login')
+          return
+        }
+
+        const profile = adminData as AdminProfile
+
+        if (!profile.is_active) {
+          await supabase.auth.signOut()
+          toast.error("您的账号已被禁用")
+          router.push('/login')
+          return
+        }
+
         setAdminProfile(profile)
       } catch (error) {
-        console.error('Auth check failed:', error)
-        sessionStorage.removeItem('admin_profile')
-        sessionStorage.removeItem('admin_profile_time')
+        console.error('[Dashboard] 权限验证失败:', error)
         router.push('/login')
       } finally {
         setLoading(false)
@@ -267,16 +298,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const handleSignOut = async () => {
     try {
-      // 清除缓存
-      sessionStorage.removeItem('admin_profile')
-      sessionStorage.removeItem('admin_profile_time')
-      
       await signOut()
       toast.success("已安全退出")
       router.push('/login')
     } catch (error) {
       toast.error("退出登录失败")
-      console.error('Sign out error:', error)
+      console.error('[Dashboard] 退出登录失败:', error)
     }
   }
 

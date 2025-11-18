@@ -32,9 +32,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { MapPin, Clock, Wifi, ExternalLink } from "lucide-react"
-import { girlStatusSchema, type GirlStatusData } from "@/lib/validations/girl"
+import { girlStatusSchema, type GirlStatusData } from "@/lib/features/girls"
 import { getGirlStatus, updateGirlStatus } from "@/app/dashboard/girls/actions"
-import type { GirlWithStatus, GirlStatus, GirlStatusType } from "@/lib/types/girl"
+import type { GirlWithStatus, GirlStatus, GirlStatusType } from "@/lib/features/girls"
 
 interface GirlStatusDrawerProps {
     open: boolean
@@ -54,12 +54,26 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
             status: 'offline',
             current_lat: undefined,
             current_lng: undefined,
-            standby_lat: undefined,
-            standby_lng: undefined,
-            next_available_time: '',
-            auto_status_update: false,
+            next_available_time: null,
         }
     })
+
+    // 将 ISO 时间转换为 datetime-local 格式
+    const formatDateTimeLocal = (isoString: string | null | undefined): string => {
+        if (!isoString) return ''
+        try {
+            const date = new Date(isoString)
+            // 转换为本地时区的 YYYY-MM-DDTHH:mm 格式
+            const year = date.getFullYear()
+            const month = String(date.getMonth() + 1).padStart(2, '0')
+            const day = String(date.getDate()).padStart(2, '0')
+            const hours = String(date.getHours()).padStart(2, '0')
+            const minutes = String(date.getMinutes()).padStart(2, '0')
+            return `${year}-${month}-${day}T${hours}:${minutes}`
+        } catch {
+            return ''
+        }
+    }
 
     // 加载技师状态
     useEffect(() => {
@@ -73,12 +87,9 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
                     setStatusData(result.data)
                     form.reset({
                         status: result.data.status,
-                        current_lat: result.data.current_lat,
-                        current_lng: result.data.current_lng,
-                        standby_lat: result.data.standby_lat,
-                        standby_lng: result.data.standby_lng,
-                        next_available_time: result.data.next_available_time || '',
-                        auto_status_update: result.data.auto_status_update,
+                        current_lat: result.data.current_lat ?? undefined,
+                        current_lng: result.data.current_lng ?? undefined,
+                        next_available_time: formatDateTimeLocal(result.data.next_available_time),
                     })
                 } else {
                     // 如果没有状态数据，使用默认值
@@ -86,10 +97,7 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
                         status: 'offline',
                         current_lat: undefined,
                         current_lng: undefined,
-                        standby_lat: undefined,
-                        standby_lng: undefined,
-                        next_available_time: '',
-                        auto_status_update: false,
+                        next_available_time: null,
                     })
                 }
             } catch (error) {
@@ -106,23 +114,40 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
     }, [open, girl, form])
 
     const onSubmit = async (data: GirlStatusData) => {
-        if (!girl?.id) return
+        if (!girl?.id) {
+            toast.error("技师ID不存在")
+            return
+        }
 
         try {
             setLoading(true)
 
+            console.log('提交状态更新:', { girlId: girl.id, data })
+
             const result = await updateGirlStatus(girl.id, data)
+
+            console.log('更新结果:', result)
 
             if (result.ok) {
                 toast.success("技师状态更新成功")
                 onSuccess()
                 onOpenChange(false)
             } else {
-                toast.error(result.error || "更新失败")
+                // 显示详细的错误信息
+                const errorMsg = result.error || "更新失败"
+                console.error('更新失败:', errorMsg)
+                toast.error(errorMsg, {
+                    description: "请检查权限或稍后重试",
+                    duration: 5000
+                })
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('更新技师状态失败:', error)
-            toast.error("更新失败，请重试")
+            const errorMsg = error?.message || "更新失败，请重试"
+            toast.error(errorMsg, {
+                description: "如果问题持续存在，请联系技术支持",
+                duration: 5000
+            })
         } finally {
             setLoading(false)
         }
@@ -258,11 +283,12 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
                                                         <Input
                                                             type="datetime-local"
                                                             {...field}
+                                                            value={field.value || ''}
                                                             disabled={loading}
                                                         />
                                                     </FormControl>
                                                     <FormDescription>
-                                                        设置技师下次可用的时间（可选）
+                                                        设置技师下次可用的时间
                                                     </FormDescription>
                                                     <FormMessage />
                                                 </FormItem>
@@ -303,6 +329,7 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
                                                                 step="any"
                                                                 placeholder="13.7563"
                                                                 {...field}
+                                                                value={field.value ?? ''}
                                                                 onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                                                                 disabled={loading}
                                                             />
@@ -324,6 +351,7 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
                                                                 step="any"
                                                                 placeholder="100.5018"
                                                                 {...field}
+                                                                value={field.value ?? ''}
                                                                 onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                                                                 disabled={loading}
                                                             />
@@ -333,74 +361,6 @@ export function GirlStatusDrawer({ open, onOpenChange, girl, onSuccess }: GirlSt
                                                 )}
                                             />
                                         </div>
-                                    </div>
-
-                                    {/* 基地位置 */}
-                                    <div className="space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-sm font-medium text-muted-foreground">基地位置</h3>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => handleViewLocation(
-                                                    form.getValues('standby_lat'),
-                                                    form.getValues('standby_lng'),
-                                                    '打卡位置'
-                                                )}
-                                                disabled={loading}
-                                            >
-                                                <ExternalLink className="w-3 h-3 mr-1" />
-                                                查看打卡位置
-                                            </Button>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            <FormField
-                                                control={form.control}
-                                                name="standby_lat"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>基地纬度</FormLabel>
-                                                        <FormControl>
-                                                            <Input
-                                                                type="number"
-                                                                step="any"
-                                                                placeholder="13.7563"
-                                                                {...field}
-                                                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
-                                                                disabled={loading}
-                                                            />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-
-                                            <FormField
-                                                control={form.control}
-                                                name="standby_lng"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>基地经度</FormLabel>
-                                                        <FormControl>
-                                                            <Input
-                                                                type="number"
-                                                                step="any"
-                                                                placeholder="100.5018"
-                                                                {...field}
-                                                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
-                                                                disabled={loading}
-                                                            />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        </div>
-                                        <FormDescription className="text-xs">
-                                            基地位置用于计算服务距离和导航
-                                        </FormDescription>
                                     </div>
 
                                     <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4">

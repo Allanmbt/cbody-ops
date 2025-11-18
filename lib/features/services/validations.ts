@@ -123,7 +123,47 @@ export const serviceListParamsSchema = z.object({
     sort_order: z.enum(['asc', 'desc']).default('asc')
 })
 
+// 服务绑定查询参数验证模式
+export const serviceBindListParamsSchema = z.object({
+    page: z.number().int().min(1).default(1),
+    limit: z.number().int().min(1).max(100).default(20),
+    search: z.string().optional(),
+    city_id: z.number().int().positive().optional(),
+    category_id: z.number().int().positive().optional(),
+    bind_status: z.enum(['all', 'bound-enabled', 'bound-disabled', 'unbound']).default('all'),
+    sort_by: z.enum(['girl_number', 'name', 'created_at']).default('girl_number'),
+    sort_order: z.enum(['asc', 'desc']).default('asc')
+})
+
+// 批量绑定验证模式
+export const batchBindSchema = z.object({
+    girl_ids: z.array(z.string().uuid()).min(1, "请选择至少一个技师"),
+    service_id: z.number().int().positive("服务ID无效"),
+    admin_id: z.string().uuid("管理员ID无效")
+})
+
+// 批量解绑验证模式
+export const batchUnbindSchema = z.object({
+    girl_ids: z.array(z.string().uuid()).min(1, "请选择至少一个技师"),
+    service_id: z.number().int().positive("服务ID无效"),
+    admin_id: z.string().uuid("管理员ID无效"),
+    notes: z.string().min(1, "解绑理由不能为空").max(500, "理由不能超过500字符"),
+    disable_durations: z.boolean().optional().default(false)
+})
+
+// 批量恢复验证模式
+export const batchRestoreSchema = z.object({
+    girl_ids: z.array(z.string().uuid()).min(1, "请选择至少一个技师"),
+    service_id: z.number().int().positive("服务ID无效"),
+    admin_id: z.string().uuid("管理员ID无效"),
+    notes: z.string().max(500, "备注不能超过500字符").optional()
+})
+
 // 类型导出
 export type ServiceFormData = z.infer<typeof serviceFormSchema>
 export type ServiceDurationFormData = z.infer<typeof serviceDurationFormSchema>
 export type ServiceListParams = z.infer<typeof serviceListParamsSchema>
+export type ServiceBindListParams = z.infer<typeof serviceBindListParamsSchema>
+export type BatchBindData = z.infer<typeof batchBindSchema>
+export type BatchUnbindData = z.infer<typeof batchUnbindSchema>
+export type BatchRestoreData = z.infer<typeof batchRestoreSchema>

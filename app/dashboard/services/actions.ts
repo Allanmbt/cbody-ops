@@ -1,7 +1,7 @@
 "use server"
 
 import { getSupabaseAdminClient } from "@/lib/supabase"
-import { getCurrentAdminProfile } from "@/lib/auth"
+import { requireAdmin } from "@/lib/auth"
 import {
     serviceFormSchema,
     serviceDurationFormSchema,
@@ -9,30 +9,22 @@ import {
     type ServiceFormData,
     type ServiceDurationFormData,
     type ServiceListParams
-} from "@/lib/validations/service"
+} from "@/lib/features/services"
 import type {
     ApiResponse,
     PaginatedResponse,
     Service,
     ServiceDuration,
     Category
-} from "@/lib/types/service"
+} from "@/lib/features/services"
 
-// 检查管理员权限 - 简化版本，使用管理员客户端绕过 RLS
-async function checkAdminPermission(): Promise<{ ok: boolean; error?: string; profile?: any }> {
-    try {
-        // 暂时跳过认证检查，直接允许操作（用于调试）
-        console.log('检查管理员权限 - 调试模式：跳过认证检查')
-        return { ok: true, profile: { role: 'superadmin', id: 'debug-admin' } }
-    } catch (error) {
-        console.error('权限检查失败:', error)
-        return { ok: false, error: "权限验证失败，请重新登录" }
-    }
-}
+// 注意：所有函数现在使用 requireAdmin() 进行统一的权限验证
 
 // 获取分类列表
 export async function getCategories(): Promise<ApiResponse<Category[]>> {
     try {
+        // 验证管理员权限
+        await requireAdmin(['superadmin', 'admin'])
         const supabase = getSupabaseAdminClient()
         const { data, error } = await supabase
             .from('categories')
@@ -55,6 +47,9 @@ export async function getCategories(): Promise<ApiResponse<Category[]>> {
 // 获取服务列表
 export async function getServices(params: ServiceListParams): Promise<ApiResponse<PaginatedResponse<Service>>> {
     try {
+        // 验证管理员权限
+        await requireAdmin(['superadmin', 'admin'])
+
         // 验证参数
         const validatedParams = serviceListParamsSchema.parse(params)
         const { page, limit, search, category_id, is_active, sort_by, sort_order } = validatedParams
@@ -118,11 +113,9 @@ export async function getServices(params: ServiceListParams): Promise<ApiRespons
 // 创建服务
 export async function createService(formData: ServiceFormData): Promise<ApiResponse<Service>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以操作服务）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         // 验证表单数据
         const validatedData = serviceFormSchema.parse(formData)
@@ -168,11 +161,9 @@ export async function createService(formData: ServiceFormData): Promise<ApiRespo
 // 更新服务
 export async function updateService(id: number, formData: ServiceFormData): Promise<ApiResponse<Service>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以操作服务）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         // 验证表单数据
         const validatedData = serviceFormSchema.parse(formData)
@@ -220,11 +211,9 @@ export async function updateService(id: number, formData: ServiceFormData): Prom
 // 切换服务状态
 export async function toggleServiceStatus(id: number): Promise<ApiResponse<Service>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以操作服务）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         const supabase = getSupabaseAdminClient()
 
@@ -269,6 +258,8 @@ export async function toggleServiceStatus(id: number): Promise<ApiResponse<Servi
 // 获取服务时长列表
 export async function getServiceDurations(serviceId: number): Promise<ApiResponse<ServiceDuration[]>> {
     try {
+        // 验证管理员权限
+        await requireAdmin(['superadmin', 'admin'])
         const supabase = getSupabaseAdminClient()
         const { data, error } = await supabase
             .from('service_durations')
@@ -291,11 +282,9 @@ export async function getServiceDurations(serviceId: number): Promise<ApiRespons
 // 创建服务时长
 export async function createServiceDuration(serviceId: number, formData: ServiceDurationFormData): Promise<ApiResponse<ServiceDuration>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以操作服务）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         // 验证表单数据
         const validatedData = serviceDurationFormSchema.parse(formData)
@@ -342,11 +331,9 @@ export async function createServiceDuration(serviceId: number, formData: Service
 // 更新服务时长
 export async function updateServiceDuration(id: number, formData: ServiceDurationFormData): Promise<ApiResponse<ServiceDuration>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以操作服务）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         // 验证表单数据
         const validatedData = serviceDurationFormSchema.parse(formData)
@@ -406,11 +393,9 @@ export async function updateServiceDuration(id: number, formData: ServiceDuratio
 // 切换时长状态
 export async function toggleDurationStatus(id: number): Promise<ApiResponse<ServiceDuration>> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以操作服务）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         const supabase = getSupabaseAdminClient()
 
@@ -452,11 +437,9 @@ export async function toggleDurationStatus(id: number): Promise<ApiResponse<Serv
 // 删除服务时长
 export async function deleteServiceDuration(id: number): Promise<ApiResponse> {
     try {
-        // 检查权限
-        const permissionCheck = await checkAdminPermission()
-        if (!permissionCheck.ok) {
-            return { ok: false, error: permissionCheck.error }
-        }
+        // 验证管理员权限（只有管理员和超级管理员可以操作服务）
+        await requireAdmin(['superadmin', 'admin'])
+
 
         const supabase = getSupabaseAdminClient()
 

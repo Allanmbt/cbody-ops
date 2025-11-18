@@ -1,0 +1,3 @@
+// 统一导出 media 功能模块的类型和验证
+export * from './types'
+export * from './validations'

@@ -1,4 +1,4 @@
-import { getSupabaseClient, getSupabaseAdminClient } from "./supabase"
+import { getSupabaseClient, getSupabaseServerClient, getSupabaseAdminClient } from "./supabase"
 import type { AdminProfile, AdminRole } from "./types/admin"
 
 export const AUTH_COOKIE_KEY = "cbody-ops-auth-token" as const
@@ -32,17 +32,14 @@ export async function getCurrentUser() {
 }
 
 export async function getCurrentUserFromServerAction() {
-  // 在 Server Action 中使用，避免 RLS 递归问题
-  const supabase = getSupabaseAdminClient()
+  // 在 Server Action 中使用，通过 cookies 获取用户 session
+  const supabase = await getSupabaseServerClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   return { user, error }
 }
 
 export async function getAdminProfile(userId: string): Promise<AdminProfile | null> {
-  // 使用admin客户端绕过RLS限制
   const supabase = getSupabaseAdminClient()
-
-  console.log('Fetching admin profile for user:', userId)
 
   const { data, error } = await supabase
     .from('admin_profiles')
@@ -51,24 +48,16 @@ export async function getAdminProfile(userId: string): Promise<AdminProfile | nu
     .single()
 
   if (error) {
-    console.error('Error fetching admin profile:', error)
-
-    // If no admin profile found, return null
     if (error.code === 'PGRST116') {
-      console.log('No admin profile found for user:', userId)
       return null
     }
-
+    console.error('[getAdminProfile] 查询失败:', error)
     return null
   }
 
-  console.log('Admin profile found:', data)
-
   const profile = data as AdminProfile
 
-  // Check if admin is active
   if (!profile.is_active) {
-    console.log('Admin profile is inactive:', userId)
     return null
   }
 
@@ -78,35 +67,21 @@ export async function getAdminProfile(userId: string): Promise<AdminProfile | nu
 export async function getCurrentAdminProfile(): Promise<AdminProfile | null> {
   const { user, error } = await getCurrentUser()
 
-  if (error) {
-    console.error('Error getting current user:', error)
-    return null
-  }
-
-  if (!user) {
-    console.log('No authenticated user found')
+  if (error || !user) {
     return null
   }
 
   return getAdminProfile(user.id)
 }
 
-// Alias for getCurrentAdminProfile for consistency with user management
 export async function getCurrentAdmin(): Promise<AdminProfile | null> {
   return getCurrentAdminProfile()
 }
 
-// 专门用于 Server Actions 的版本，避免 RLS 递归
 export async function getCurrentAdminFromServerAction(): Promise<AdminProfile | null> {
   const { user, error } = await getCurrentUserFromServerAction()
 
-  if (error) {
-    console.error('Error getting current user:', error)
-    return null
-  }
-
-  if (!user) {
-    console.log('No authenticated user found')
+  if (error || !user) {
     return null
   }
 
@@ -119,6 +94,79 @@ export function hasRole(userRole: AdminRole, requiredRole: AdminRole[]): boolean
 
 export function isSuperAdmin(role: AdminRole): boolean {
   return role === 'superadmin'
+}
+
+/**
+ * 统一的权限验证函数 - 用于 Server Actions
+ * 验证当前用户是否为活跃的管理员，并可选择性地验证角色
+ * 
+ * @param requiredRoles - 可选，需要的角色列表。如果不提供，则只需要是管理员即可
+ * @returns AdminProfile - 管理员资料
+ * @throws Error - 如果未登录、不是管理员或权限不足
+ * 
+ * @example
+ * // 只需要是管理员
+ * const admin = await requireAdmin()
+ * 
+ * // 需要是超级管理员或管理员
+ * const admin = await requireAdmin(['superadmin', 'admin'])
+ * 
+ * // 只需要是超级管理员
+ * const admin = await requireAdmin(['superadmin'])
+ */
+export async function requireAdmin(
+  requiredRoles?: AdminRole[]
+): Promise<AdminProfile> {
+  const supabase = await getSupabaseServerClient()
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    throw new Error('未登录，请先登录')
+  }
+
+  const { data: adminData, error: adminError } = await supabase
+    .from('admin_profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+
+  if (adminError || !adminData) {
+    throw new Error('无管理员权限，请联系系统管理员')
+  }
+
+  const admin = adminData as AdminProfile
+
+  if (!admin.is_active) {
+    throw new Error('管理员账号已被禁用')
+  }
+
+  if (requiredRoles && requiredRoles.length > 0) {
+    if (!requiredRoles.includes(admin.role)) {
+      throw new Error('权限不足，无法执行此操作')
+    }
+  }
+
+  return admin
+}
+
+/**
+ * 检查管理员权限（不抛出异常，返回结果对象）
+ * 适用于需要返回错误信息而不是抛出异常的场景
+ * 
+ * @param requiredRoles - 可选，需要的角色列表
+ * @returns { ok: boolean, admin?: AdminProfile, error?: string }
+ */
+export async function checkAdmin(
+  requiredRoles?: AdminRole[]
+): Promise<{ ok: boolean; admin?: AdminProfile; error?: string }> {
+  try {
+    const admin = await requireAdmin(requiredRoles)
+    return { ok: true, admin }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '权限验证失败'
+    return { ok: false, error: errorMessage }
+  }
 }
 
 export async function signIn(email: string, password: string) {

@@ -47,8 +47,8 @@ import {
 } from "@/components/ui/table"
 import { ButtonLoading, LoadingSpinner } from "@/components/ui/loading"
 import { toast } from "sonner"
-import { serviceDurationFormSchema, type ServiceDurationFormData } from "@/lib/validations/service"
-import type { Service, ServiceDuration } from "@/lib/types/service"
+import { serviceDurationFormSchema, type ServiceDurationFormData } from "@/lib/features/services"
+import type { Service, ServiceDuration } from "@/lib/features/services"
 import {
     getServiceDurations,
     createServiceDuration,

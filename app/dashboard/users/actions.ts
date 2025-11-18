@@ -1,70 +1,27 @@
 'use server'
 
-import { createServerActionClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { getSupabaseAdminClient } from '@/lib/supabase'
+import { requireAdmin } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import type { AdminProfile } from '@/lib/types/admin'
 import {
     updateUserProfileSchema,
     toggleUserBanSchema,
     resetUserPasswordSchema
-} from '@/lib/validations/user'
+} from '@/lib/features/users'
 import {
     logUserProfileUpdate,
     logUserBanToggle,
     logUserPasswordReset
 } from '@/lib/audit'
-import type { UpdateUserProfileData, UserListParams, UserListItem } from '@/lib/types/user'
+import type { UpdateUserProfileData, UserListParams, UserListItem } from '@/lib/features/users'
 
-// 创建 Supabase 服务端客户端（使用 service role key）
-async function createServiceRoleClient() {
-    const { createClient } = await import('@supabase/supabase-js')
-
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-}
-
-// 创建普通客户端
-function createClient() {
-    return createServerActionClient({ cookies })
-}
-
-// 获取当前管理员（使用 Service Role 避免 RLS 递归）
-async function getCurrentAdmin(): Promise<AdminProfile | null> {
-    try {
-        // 首先获取当前用户
-        const supabase = createClient()
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-        if (userError || !user) {
-            console.error('Error getting current user:', userError)
-            return null
-        }
-
-        // 使用 Service Role 客户端获取管理员资料
-        const adminSupabase = await createServiceRoleClient()
-        const { data: adminProfile, error: adminError } = await adminSupabase
-            .from('admin_profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single()
-
-        if (adminError) {
-            console.error('Error fetching admin profile:', adminError)
-            return null
-        }
-
-        return adminProfile as AdminProfile
-    } catch (error) {
-        console.error('Error in getCurrentAdmin:', error)
-        return null
-    }
-}
+// 注意：现在统一使用 getSupabaseAdminClient() 和 requireAdmin()，不再需要单独创建客户端
 
 // 获取用户列表
-export async function getUserList(params: UserListParams): Promise<{
+export async function getUserList(
+    params: UserListParams
+): Promise<{
     success: boolean
     data?: {
         users: UserListItem[]
@@ -77,7 +34,12 @@ export async function getUserList(params: UserListParams): Promise<{
     error?: string
 }> {
     try {
-        const supabase = createClient()
+        // 验证管理员权限（只有管理员和超级管理员可以查看用户列表）
+        const admin = await requireAdmin(['superadmin', 'admin'])
+        console.log('Admin accessing user list:', admin.id, admin.role)
+
+        // 使用统一的 Admin 客户端
+        const supabase = getSupabaseAdminClient()
 
         // 构建查询
         let query = supabase
@@ -192,26 +154,23 @@ export async function getUserList(params: UserListParams): Promise<{
 
 // 更新用户资料
 export async function updateUserProfile(
-    userId: string,
+    targetUserId: string,
     data: UpdateUserProfileData
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        // 检查管理员权限
-        const admin = await getCurrentAdmin()
-        if (!admin || admin.role !== 'superadmin') {
-            return { success: false, error: '权限不足' }
-        }
+        // 验证管理员权限（只有超级管理员可以更新用户资料）
+        const admin = await requireAdmin(['superadmin'])
 
         // 验证输入数据
         const validatedData = updateUserProfileSchema.parse(data)
 
-        const supabase = createClient()
+        const supabase = getSupabaseAdminClient()
 
         // 获取更新前的数据（用于审计日志）
         const { data: currentProfile } = await supabase
             .from('user_profiles')
             .select('*')
-            .eq('id', userId)
+            .eq('id', targetUserId)
             .single()
 
         if (!currentProfile) {
@@ -219,13 +178,13 @@ export async function updateUserProfile(
         }
 
         // 更新用户资料
-        const { error } = await supabase
+        const { error } = await (supabase as any)
             .from('user_profiles')
             .update({
                 ...validatedData,
                 updated_at: new Date().toISOString()
             })
-            .eq('id', userId)
+            .eq('id', targetUserId)
 
         if (error) {
             console.error('Update user profile error:', error)
@@ -247,7 +206,7 @@ export async function updateUserProfile(
             })
 
             if (Object.keys(changes).length > 0) {
-                await logUserProfileUpdate(admin.id, userId, changes, previousValues)
+                await logUserProfileUpdate(admin.id, targetUserId, changes, previousValues)
             }
         } catch (auditError) {
             console.error('Failed to log user profile update:', auditError)
@@ -255,7 +214,7 @@ export async function updateUserProfile(
         }
 
         revalidatePath('/dashboard/users')
-        revalidatePath(`/dashboard/users/${userId}`)
+        revalidatePath(`/dashboard/users/${targetUserId}`)
 
         return { success: true }
     } catch (error) {
@@ -265,25 +224,24 @@ export async function updateUserProfile(
 }
 
 // 切换用户封禁状态
-export async function toggleUserBan(data: {
-    user_id: string
-    is_banned: boolean
-    reason?: string
-}): Promise<{ success: boolean; error?: string }> {
+export async function toggleUserBan(
+    data: {
+        user_id: string
+        is_banned: boolean
+        reason?: string
+    }
+): Promise<{ success: boolean; error?: string }> {
     try {
-        // 检查管理员权限
-        const admin = await getCurrentAdmin()
-        if (!admin || admin.role !== 'superadmin') {
-            return { success: false, error: '权限不足' }
-        }
+        // 验证管理员权限（只有超级管理员可以封禁/解封用户）
+        const admin = await requireAdmin(['superadmin'])
 
         // 验证输入数据
         const validatedData = toggleUserBanSchema.parse(data)
 
-        const supabase = createClient()
+        const supabase = getSupabaseAdminClient()
 
         // 更新用户封禁状态
-        const { error } = await supabase
+        const { error } = await (supabase as any)
             .from('user_profiles')
             .update({
                 is_banned: validatedData.is_banned,
@@ -320,22 +278,21 @@ export async function toggleUserBan(data: {
 }
 
 // 重置用户密码
-export async function resetUserPassword(data: {
-    user_id: string
-    new_password: string
-}): Promise<{ success: boolean; error?: string }> {
+export async function resetUserPassword(
+    data: {
+        user_id: string
+        new_password: string
+    }
+): Promise<{ success: boolean; error?: string }> {
     try {
-        // 检查管理员权限
-        const admin = await getCurrentAdmin()
-        if (!admin || admin.role !== 'superadmin') {
-            return { success: false, error: '权限不足' }
-        }
+        // 验证管理员权限（只有超级管理员可以重置用户密码）
+        const admin = await requireAdmin(['superadmin'])
 
         // 验证输入数据
         const validatedData = resetUserPasswordSchema.parse(data)
 
         // 使用 Service Role 客户端调用 Admin API
-        const supabase = await createServiceRoleClient()
+        const supabase = getSupabaseAdminClient()
 
         // 重置用户密码
         const { error } = await supabase.auth.admin.updateUserById(

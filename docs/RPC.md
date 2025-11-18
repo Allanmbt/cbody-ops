@@ -1,182 +1,138 @@
-# RPC Supabase Function List
+# RPC 和触发器 列表管理
 
-## 登录更新：只负责更新登录信息，不建档
-```sql
-create or replace function public.handle_login(
-  p_user_id uuid,
-  p_provider text,
-  p_provider_user_id text default null,
-  p_provider_email text default null,
-  p_device_info jsonb default '{}'::jsonb,
-  p_language_tag text default null
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, auth
-as $$
-declare
-  v_login_method text;
-  v_country text;
-  v_timezone text;
-  v_device_id text;
-  v_ip inet;
-  v_current_user_id uuid;
-  v_update_count integer;
-  v_account_id bigint;  -- 假设主键是 bigint，自行按表结构调整
-  v_is_own boolean;
-begin
-  -- 1) 鉴权
-  v_current_user_id := auth.uid();
-  if v_current_user_id is null then raise exception 'Not authenticated'; end if;
-  if v_current_user_id != p_user_id then raise exception 'Access denied'; end if;
+> 本文件仅作为索引导航，不展示代码。  
+> 每个函数 / 触发器的说明详见对应 md 文件。
+> 你可以选择 查看适合本项目的文档。
+---
 
-  -- 2) 规范化 provider
-  v_login_method := lower(coalesce(p_provider,'phone'));
-  if v_login_method not in ('phone','google','apple','facebook') then v_login_method := 'phone'; end if;
+## 🧩 公用 RPC
 
-  -- 3) 确保 profile 已存在（略）
+### 聊天模块
+- [chat_rpcs.md](./rpc/chat_rpcs.md)
 
-  -- 4) 解析设备信息（略）
+### 登录与认证
+<!-- - [auth_rpcs.md](./rpc/auth_rpcs.md) -->
 
-  -- 5) 更新 user_profiles（保持你原逻辑）
-  update public.user_profiles
-  set last_device_id = coalesce(v_device_id, last_device_id),
-      last_ip_address = coalesce(v_ip, last_ip_address),
-      last_login_at = now(),
-      updated_at = now(),
-      country_code = case when country_code is null and v_country is not null then v_country else country_code end,
-      timezone = case when timezone   is null and v_timezone is not null then v_timezone   else timezone   end,
-      preferences = case
-        when preferences is null or preferences = '{}' then
-          coalesce(jsonb_strip_nulls(jsonb_build_object(
-            'deviceModel',  p_device_info->>'deviceModel',
-            'osName',       p_device_info->>'osName',
-            'osVersion',    p_device_info->>'osVersion',
-            'appVersion',   p_device_info->>'appVersion'
-          )), preferences)
-        else preferences
-      end
-  where id = p_user_id;
-  get diagnostics v_update_count = row_count;
+---
 
- -- 6) 账户绑定（稳定幂等版）
-if v_login_method in ('google','apple','facebook')
-   and nullif(p_provider_user_id,'') is not null then
+## 📱 客户端专用 RPC
 
-  -- 若该三方账号已绑定给别人，明确拒绝
-  if exists (
-    select 1 from public.user_connected_accounts
-    where provider = v_login_method
-      and provider_user_id = p_provider_user_id
-      and user_id <> p_user_id
-  ) then
-    raise exception 'This % account is already linked to another user', v_login_method;
-  end if;
+### 首页（发现页）获取技师列表
+- [HOME-RPC-V3.md](./rpc/HOME-RPC-V3.md)
 
-  -- 自己的记录：upsert（不改 is_primary）
-  insert into public.user_connected_accounts (
-    user_id, provider, provider_user_id, provider_email, is_primary, linked_at, last_used_at
-  )
-  values (p_user_id, v_login_method, p_provider_user_id, p_provider_email, false, now(), now())
-  on conflict (provider, provider_user_id) do update
-    set provider_email = excluded.provider_email,
-        last_used_at   = now();
+### 订单与下单流程
+- [order_rpcs.md](./rpc/order_rpcs.md)
 
-  -- 原子地仅将当前这条设为主，其它全关
-  update public.user_connected_accounts u
-  set is_primary = (u.provider = v_login_method and u.provider_user_id = p_provider_user_id)
-  where u.user_id = p_user_id;
-end if;
+### 轻量级技师详情接口（用于详情页头部信息）
+- [RPC-GIRL-DETAIL.md](./rpc/RPC-GIRL-DETAIL.md)
 
-  return jsonb_build_object(
-    'success', true,
-    'provider', v_login_method,
-    'profile_updated', v_update_count > 0,
-    'updated_at', now(),
-    'message', 'Login info & bindings updated'
-  );
+### 获取技师的可售服务列表
+- [RPC-GIRL-SERVICES.md](./rpc/RPC-GIRL-SERVICES.md)
 
-exception when others then
-  return jsonb_build_object(
-    'success', false,
-    'error', sqlerrm,
-    'error_code', sqlstate,
-    'user_id', p_user_id,
-    'provider', p_provider
-  );
-end;
-$$;
+### 获取技师的实时状态
+- [RPC-GIRL-STATUS.md](./rpc/RPC-GIRL-STATUS.md)
 
-grant execute on function public.handle_login(uuid,text,text,text,jsonb,text) to authenticated;
+### 下单时 根据距离（米）和自由流时长（秒）计算旅行费和 ETA
+- [calc_travel_fee_eta.md](./rpc/calc_travel_fee_eta.md)
+
+### 下单时 使用 PostGIS ST_DWithin 查询 travel_od_dual 缓存
+- [query_travel_od_cache.md](./rpc/query_travel_od_cache.md)
+
+### 下单确认提交
+- [place_order.md](./rpc/place_order.md)
 
 
-```
+---
+
+## 👩 技师端 RPC
+
+### 订单状态更新
+- [update_order_status.md](./rpc/update_order_status.md)
+
+### 价格变更系统 (延迟生效 + 冷却时间反作弊)
+- [request_price_change.md](./rpc/request_price_change.md)
+
+### 技师状态管理（自动上下班 + 定位）
+- [girl_status_rpcs.md](./rpc/girl_status_rpcs.md)
+
+### 技师个人中心仪表盘
+- [me_rpcs.sql](./sql/me_rpcs.sql) - `get_me_dashboard()` 获取技师统计数据
+
+### 服务设置
+- [service_settings_rpc.sql](./sql/service_settings_rpc.sql) - `update_max_travel_distance()` 更新最大服务距离
+
+### 聊天用户管理
+- **`toggle_block_user(p_customer_id UUID)`** - 技师屏蔽/解除屏蔽客户
+  - **参数**：
+    - `p_customer_id` - 要屏蔽/解除屏蔽的客户ID
+  - **返回**：JSONB
+    ```json
+    {
+      "success": true,
+      "is_blocked": true,
+      "message": "User has been blocked"
+    }
+    ```
+  - **权限**：仅技师端可调用（通过 `girls` 表关联验证）
+  - **功能**：
+    - 首次调用：创建屏蔽记录（`is_active = true`）
+    - 再次调用：切换屏蔽状态（`is_active = NOT is_active`）
+    - 自动更新 `blocked_at`、`unblocked_at`、`last_action_at` 时间戳
+
+- **`is_user_blocked(p_girl_id UUID, p_customer_id UUID)`** - 检查用户是否被屏蔽
+  - **参数**：
+    - `p_girl_id` - 技师ID
+    - `p_customer_id` - 客户ID
+  - **返回**：BOOLEAN
+  - **权限**：已认证用户
+  - **功能**：快速检查指定客户是否被技师屏蔽（`is_active = true`）
+
+### 结算系统
+- [settlement_girl_rpcs.md](./rpc/settlement_girl_rpcs.md) - 技师端结算功能
+  - `check_girl_can_go_online()` - 检查是否可以上线
+  - `record_girl_payment()` - 记录技师支付
+  - `request_withdrawal()` - 申请提现
+  - `get_girl_settlement_dashboard()` - 获取结算仪表盘
+
+---
+
+## 💼 后台管理端 RPC
+
+### 服务管理
+<!-- - [ops_rpcs.md](./rpc/ops_rpcs.md) -->
+
+### 结算系统
+- [settlement_admin_rpcs.md](./rpc/settlement_admin_rpcs.md) - 管理端结算功能
+  - `record_customer_payment()` - 记录顾客支付给平台
+  - `approve_withdrawal()` - 审核提现申请
+  - `adjust_girl_balance()` - 人工调整余额
+  - `get_settlement_report()` - 获取结算报表
+
+---
 
 
-## 设置某条地址为默认地址，同时清除同用户的其他默认
-```sql
-create or replace function set_default_address(address_id uuid)
-returns void
-language plpgsql
-security definer
-as $$
-declare
-  uid uuid;
-begin
-  -- 找到该地址所属用户
-  select user_id into uid
-  from user_addresses
-  where id = address_id;
 
-  if uid is null then
-    raise exception 'Address not found';
-  end if;
+## ⚙️ 触发器列表
 
-  -- 只允许本人操作
-  if auth.uid() <> uid then
-    raise exception 'Permission denied';
-  end if;
+### 当订单创建时，自动在 c2g 会话中插入"订单已创建"系统消息
+- [notify_order_created.md](./trig/notify_order_created.md)
 
-  -- 开启事务：先清空同用户的默认地址
-  update user_addresses
-  set is_default = false
-  where user_id = uid;
+---
 
-  -- 再把当前地址设为默认
-  update user_addresses
-  set is_default = true
-  where id = address_id;
-end;
-$$;
 
-```
 
-## 查询和更新绑定女孩分类
-```sql
--- 视图：每位技师聚合出一个分类ID数组
-CREATE OR REPLACE VIEW public.girls_with_category_ids AS
-SELECT
-  g.id AS girl_id,
-  COALESCE(ARRAY_AGG(gc.category_id ORDER BY gc.category_id)
-           FILTER (WHERE gc.category_id IS NOT NULL), '{}')::INTEGER[] AS category_ids
-FROM public.girls g
-LEFT JOIN public.girls_categories gc ON gc.girl_id = g.id
-GROUP BY g.id;
 
--- 帮助函数：用一个数组“覆盖设置”某位技师的分类集合
-CREATE OR REPLACE FUNCTION public.set_girl_categories(p_girl_id UUID, p_category_ids INTEGER[])
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  DELETE FROM public.girls_categories WHERE girl_id = p_girl_id;
+## 🌐 Edge Functions
 
-  IF p_category_ids IS NOT NULL THEN
-    INSERT INTO public.girls_categories (girl_id, category_id)
-    SELECT p_girl_id, unnest(p_category_ids);
-  END IF;
-END;
-$$;
+> 位于 `supabase/functions/` 目录，用于服务端逻辑（HTTP 可调用）。  
+> 每个函数独立部署，对应文件夹名即函数名。
 
-```
+### 技师端 Edge目录
+- [edge/get-upload-url](../supabase/functions/get-upload-url/)
+- [edge/remove-tmp](../supabase/functions/remove-tmp/)
+- [edge/reorder](../supabase/functions/reorder/)
+
+> Edge 逻辑通常涉及：外部 API 调用、异步队列、Webhook、缓存与安全操作。
+
+
+---

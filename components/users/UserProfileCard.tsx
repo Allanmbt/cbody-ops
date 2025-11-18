@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Edit, X } from 'lucide-react'
-import type { UserProfile } from '@/lib/types/user'
+import type { UserProfile } from '@/lib/features/users'
 import { UserProfileEditForm } from './UserProfileEditForm'
 
 interface UserProfileCardProps {

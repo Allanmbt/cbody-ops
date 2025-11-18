@@ -42,16 +42,16 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { X, Upload, Search, Loader2, XCircle } from "lucide-react"
-import { girlFormSchema, type GirlFormData } from "@/lib/validations/girl"
-import { 
-    createGirl, 
-    updateGirl, 
-    getCities, 
+import { girlFormSchema, type GirlFormData } from "@/lib/features/girls"
+import {
+    createGirl,
+    updateGirl,
+    getCities,
     getCategories,
     searchUsers,
-    checkUsernameExists 
+    checkUsernameExists
 } from "@/app/dashboard/girls/actions"
-import type { GirlWithStatus, UserSearchResult } from "@/lib/types/girl"
+import type { GirlWithStatus, UserSearchResult } from "@/lib/features/girls"
 import { GirlImageCropper } from "@/components/girls/GirlImageCropper"
 import { getSupabaseClient } from "@/lib/supabase"
 
@@ -78,31 +78,21 @@ const LANGUAGE_OPTIONS = [
     { value: 'JA' as const, label: '日语(流利)' },
 ] as const
 
-// 生成时间选项（30分钟步进）
-const generateTimeOptions = () => {
-    const options: string[] = []
-    for (let h = 0; h < 24; h++) {
-        options.push(`${String(h).padStart(2, '0')}:00`)
-        options.push(`${String(h).padStart(2, '0')}:30`)
-    }
-    return options
-}
-
 export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlFormDialogProps) {
     const [loading, setLoading] = useState(false)
     const [cities, setCities] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
-    
+
     // User ID绑定相关
     const [userQuery, setUserQuery] = useState('')
     const [userSearchResults, setUserSearchResults] = useState<UserSearchResult[]>([])
     const [searchingUsers, setSearchingUsers] = useState(false)
     const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
-    
+
     // Username唯一性检查
     const [checkingUsername, setCheckingUsername] = useState(false)
     const [usernameError, setUsernameError] = useState('')
-    
+
     // 头像上传和裁剪
     const [avatarFile, setAvatarFile] = useState<File | null>(null)
     const [avatarPreview, setAvatarPreview] = useState<string>("")
@@ -129,13 +119,13 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
             rating: 0,
             total_sales: 0,
             total_reviews: 0,
-            max_travel_distance: 10,
-            work_hours: { start: '19:00', end: '10:00' },
+            max_travel_distance: 15,
+            trust_score: 80,
             is_verified: false,
             is_blocked: false,
             is_visible_to_thai: true,
             sort_order: 999,
-            city_id: null,
+            city_id: undefined as any,
             category_ids: [],
         }
     })
@@ -184,16 +174,16 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 total_sales: girl.total_sales || 0,
                 total_reviews: girl.total_reviews || 0,
                 max_travel_distance: girl.max_travel_distance,
-                work_hours: girl.work_hours || { start: '19:00', end: '10:00' },
+                trust_score: girl.trust_score || 80,
                 is_verified: girl.is_verified,
                 is_blocked: girl.is_blocked,
                 is_visible_to_thai: girl.is_visible_to_thai,
                 sort_order: girl.sort_order,
-                city_id: girl.city_id || null,
+                city_id: girl.city_id ?? undefined,
                 category_ids: girl.category_ids || [],
             })
             setAvatarPreview(girl.avatar_url || '')
-            
+
             // 如果有user_id，加载用户信息用于显示
             if (girl.user_id) {
                 loadUserInfo(girl.user_id)
@@ -219,13 +209,13 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 rating: 0,
                 total_sales: 0,
                 total_reviews: 0,
-                max_travel_distance: 10,
-                work_hours: { start: '19:00', end: '10:00' },
+                max_travel_distance: 15,
+                trust_score: 80,
                 is_verified: false,
                 is_blocked: false,
                 is_visible_to_thai: true,
                 sort_order: 999,
-                city_id: null,
+                city_id: undefined as any,
                 category_ids: [],
             })
             setAvatarPreview('')
@@ -328,10 +318,10 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
         try {
             const supabase = getSupabaseClient()
             const fileName = `${Date.now()}_${file.name}`
-            
+
             // 使用技师ID作为文件夹名
             const folderPath = `avatars/${girlId}/${fileName}`
-            
+
             const { data, error } = await supabase.storage
                 .from('upload')
                 .upload(folderPath, file, {
@@ -359,56 +349,80 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
 
     // 表单提交
     const onSubmit = async (data: GirlFormData) => {
+        console.log('=== 开始提交表单 ===')
+        console.log('表单数据:', data)
+
         if (usernameError) {
+            console.error('用户名重复错误:', usernameError)
             toast.error("请先解决用户名重复问题")
             return
         }
 
         try {
             setLoading(true)
+            console.log('Loading 状态已设置为 true')
 
             // 编辑模式：先上传头像再更新
             if (girl) {
+                console.log('编辑模式 - 技师ID:', girl.id)
                 if (avatarFile) {
+                    console.log('开始上传头像...')
                     const avatarUrl = await uploadAvatar(avatarFile, girl.id)
                     if (avatarUrl) {
                         data.avatar_url = avatarUrl
+                        console.log('头像上传成功:', avatarUrl)
                     } else {
+                        console.error('头像上传失败')
                         toast.error("头像上传失败，请重试")
                         setLoading(false)
                         return
                     }
                 }
 
+                console.log('调用 updateGirl API...')
                 const result = await updateGirl(girl.id, data)
+                console.log('updateGirl 结果:', result)
+
                 if (result.ok) {
                     toast.success("技师更新成功")
                     onSuccess()
                     onOpenChange(false)
                 } else {
+                    console.error('更新失败:', result.error)
                     toast.error(result.error || "更新失败")
                 }
-            } 
+            }
             // 新建模式：先创建技师，再上传头像并更新
             else {
+                console.log('创建模式 - 准备创建新技师')
+                console.log('提交的数据:', JSON.stringify(data, null, 2))
+
                 // 1. 先创建技师（不带头像）
+                console.log('调用 createGirl API...')
                 const createResult = await createGirl(data)
-                
+                console.log('createGirl 结果:', createResult)
+
                 if (!createResult.ok) {
+                    console.error('创建失败:', createResult.error)
                     toast.error(createResult.error || "创建失败")
                     setLoading(false)
                     return
                 }
 
                 const newGirlId = createResult.data?.id
+                console.log('技师创建成功，ID:', newGirlId)
 
                 // 2. 如果有头像，上传到技师ID文件夹并更新
                 if (avatarFile && newGirlId) {
+                    console.log('开始上传头像...')
                     const avatarUrl = await uploadAvatar(avatarFile, newGirlId)
                     if (avatarUrl) {
+                        console.log('头像上传成功，更新技师信息...')
                         // 3. 更新技师的头像URL
                         const updateData = { ...data, avatar_url: avatarUrl }
                         await updateGirl(newGirlId, updateData)
+                    } else {
+                        console.warn('头像上传失败，但技师已创建')
                     }
                 }
 
@@ -417,9 +431,15 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 onOpenChange(false)
             }
         } catch (error) {
-            console.error('提交表单失败:', error)
-            toast.error("操作失败，请重试")
+            console.error('提交表单异常:', error)
+            if (error instanceof Error) {
+                console.error('错误详情:', error.message, error.stack)
+                toast.error(`操作失败: ${error.message}`)
+            } else {
+                toast.error("操作失败，请重试")
+            }
         } finally {
+            console.log('=== 表单提交结束，重置 loading 状态 ===')
             setLoading(false)
         }
     }
@@ -428,10 +448,10 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
     const toggleLanguage = (langCode: string) => {
         const currentValue = form.getValues('languages')
         // 安全转换为字符串数组
-        const currentLangs: string[] = Array.isArray(currentValue) 
-            ? currentValue.filter((l: any): l is string => typeof l === 'string') 
+        const currentLangs: string[] = Array.isArray(currentValue)
+            ? currentValue.filter((l: any): l is string => typeof l === 'string')
             : []
-        
+
         if (currentLangs.includes(langCode)) {
             form.setValue('languages', currentLangs.filter((l: string) => l !== langCode) as any)
         } else {
@@ -449,561 +469,231 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
         }
     }
 
-    const timeOptions = generateTimeOptions()
-
     return (
         <>
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-4xl mx-4 sm:mx-auto max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="text-lg sm:text-xl">
-                        {girl ? '编辑技师' : '新建技师'}
-                    </DialogTitle>
-                    <DialogDescription className="text-sm">
-                        {girl ? '修改技师的基本信息和设置' : '添加新的技师到系统'}
-                    </DialogDescription>
-                </DialogHeader>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent className="sm:max-w-4xl mx-4 sm:mx-auto max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg sm:text-xl">
+                            {girl ? '编辑技师' : '新建技师'}
+                        </DialogTitle>
+                        <DialogDescription className="text-sm">
+                            {girl ? '修改技师的基本信息和设置' : '添加新的技师到系统'}
+                        </DialogDescription>
+                    </DialogHeader>
 
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 sm:space-y-6">
-                        {/* 两个Section Tab */}
-                        <Tabs defaultValue="basic" className="w-full">
-                            <TabsList className="grid w-full grid-cols-2">
-                                <TabsTrigger value="basic">基础信息</TabsTrigger>
-                                <TabsTrigger value="business">业务维度</TabsTrigger>
-                            </TabsList>
+                    <Form {...form}>
+                        <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
+                            console.error('=== 表单验证失败 ===')
+                            console.error('验证错误:', errors)
 
-                            {/* 基础信息标签页 */}
-                            <TabsContent value="basic" className="space-y-4 pt-4">
-                                {/* 头像 */}
-                                <div className="flex flex-col items-center space-y-2">
-                                    <FormLabel>头像</FormLabel>
-                                    <Avatar 
-                                        className="w-24 h-24 cursor-pointer relative group" 
-                                        onClick={() => document.getElementById('avatar-upload')?.click()}
-                                    >
-                                        <AvatarImage src={avatarPreview || undefined} />
-                                        <AvatarFallback className="bg-muted">
-                                            <Upload className="h-8 w-8 text-muted-foreground" />
-                                        </AvatarFallback>
-                                        <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                            <span className="text-white text-xs">上传头像</span>
-                                        </div>
-                                    </Avatar>
-                                    <input
-                                        id="avatar-upload"
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={handleAvatarChange}
-                                    />
-                                </div>
+                            // 收集所有错误字段
+                            const errorFields = Object.keys(errors)
+                            const errorMessages = errorFields.map(field => {
+                                const error = errors[field as keyof typeof errors]
+                                return `${field}: ${error?.message || '验证失败'}`
+                            })
 
-                                {/* User ID绑定 */}
-                                <div className="space-y-2">
-                                    <FormLabel>用户绑定 (可选)</FormLabel>
-                                    {selectedUser ? (
-                                        <div className="flex items-center gap-2 p-3 border-2 border-primary rounded-md bg-primary/5">
-                                            <div className="flex-1 space-y-1">
-                                                <div className="flex items-center gap-2">
-                                                    <Badge variant="default" className="font-normal">
-                                                        {selectedUser.phone || selectedUser.email || selectedUser.display_name}
-                                                    </Badge>
-                                                </div>
-                                                <div className="text-xs text-muted-foreground">
-                                                    {selectedUser.display_name && (selectedUser.phone || selectedUser.email) && (
-                                                        <span className="font-medium">{selectedUser.display_name} • </span>
-                                                    )}
-                                                    <span className="font-mono">{selectedUser.id}</span>
-                                                </div>
+                            console.error('错误字段列表:', errorMessages)
+                            toast.error(`表单验证失败，请检查以下字段：${errorFields.join(', ')}`, {
+                                description: errorMessages[0],
+                                duration: 5000
+                            })
+                        })} className="space-y-4 sm:space-y-6">
+                            {/* 两个Section Tab */}
+                            <Tabs defaultValue="basic" className="w-full">
+                                <TabsList className="grid w-full grid-cols-2">
+                                    <TabsTrigger value="basic">基础信息</TabsTrigger>
+                                    <TabsTrigger value="business">业务维度</TabsTrigger>
+                                </TabsList>
+
+                                {/* 基础信息标签页 */}
+                                <TabsContent value="basic" className="space-y-4 pt-4">
+                                    {/* 头像 */}
+                                    <div className="flex flex-col items-center space-y-2">
+                                        <FormLabel>头像</FormLabel>
+                                        <Avatar
+                                            className="w-24 h-24 cursor-pointer relative group"
+                                            onClick={() => document.getElementById('avatar-upload')?.click()}
+                                        >
+                                            <AvatarImage src={avatarPreview || undefined} />
+                                            <AvatarFallback className="bg-muted">
+                                                <Upload className="h-8 w-8 text-muted-foreground" />
+                                            </AvatarFallback>
+                                            <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                <span className="text-white text-xs">上传头像</span>
                                             </div>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={handleUserUnbind}
-                                                className="hover:bg-destructive/10 hover:text-destructive"
-                                            >
-                                                <XCircle className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <div className="flex gap-2">
-                                                <Input
-                                                    placeholder="输入邮箱或手机号..."
-                                                    value={userQuery}
-                                                    onChange={(e) => setUserQuery(e.target.value)}
-                                                    onKeyPress={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            e.preventDefault()
-                                                            handleUserSearch()
-                                                        }
-                                                    }}
-                                                    disabled={loading}
-                                                />
+                                        </Avatar>
+                                        <input
+                                            id="avatar-upload"
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={handleAvatarChange}
+                                        />
+                                    </div>
+
+                                    {/* User ID绑定 */}
+                                    <div className="space-y-2">
+                                        <FormLabel>用户绑定 (可选)</FormLabel>
+                                        {selectedUser ? (
+                                            <div className="flex items-center gap-2 p-3 border-2 border-primary rounded-md bg-primary/5">
+                                                <div className="flex-1 space-y-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge variant="default" className="font-normal">
+                                                            {selectedUser.phone || selectedUser.email || selectedUser.display_name}
+                                                        </Badge>
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {selectedUser.display_name && (selectedUser.phone || selectedUser.email) && (
+                                                            <span className="font-medium">{selectedUser.display_name} • </span>
+                                                        )}
+                                                        <span className="font-mono">{selectedUser.id}</span>
+                                                    </div>
+                                                </div>
                                                 <Button
                                                     type="button"
-                                                    variant="outline"
-                                                    onClick={handleUserSearch}
-                                                    disabled={searchingUsers || loading}
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={handleUserUnbind}
+                                                    className="hover:bg-destructive/10 hover:text-destructive"
                                                 >
-                                                    {searchingUsers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                                                    <XCircle className="h-4 w-4" />
                                                 </Button>
                                             </div>
-                                            {userSearchResults.length > 0 && (
-                                                <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
-                                                    {userSearchResults.map((user) => (
-                                                        <div
-                                                            key={user.id}
-                                                            className="p-2 hover:bg-muted cursor-pointer"
-                                                            onClick={() => handleUserSelect(user)}
-                                                        >
-                                                            <div className="text-sm font-medium">{user.display_name || user.email}</div>
-                                                            <div className="text-xs text-muted-foreground">{user.id}</div>
-                                                        </div>
-                                                    ))}
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <div className="flex gap-2">
+                                                    <Input
+                                                        placeholder="输入邮箱或手机号..."
+                                                        value={userQuery}
+                                                        onChange={(e) => setUserQuery(e.target.value)}
+                                                        onKeyPress={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault()
+                                                                handleUserSearch()
+                                                            }
+                                                        }}
+                                                        disabled={loading}
+                                                    />
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        onClick={handleUserSearch}
+                                                        disabled={searchingUsers || loading}
+                                                    >
+                                                        {searchingUsers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                                                    </Button>
                                                 </div>
-                                            )}
-                                            <FormDescription>按回车搜索用户，点击选择绑定</FormDescription>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Telegram ID 和 Username 同一行 */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {/* Telegram ID */}
-                                    <FormField
-                                        control={form.control}
-                                        name="telegram_id"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>Telegram ID</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="number"
-                                                        placeholder="Telegram用户或群组ID"
-                                                        {...field}
-                                                        value={field.value === null ? '' : field.value}
-                                                        onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    {/* Username */}
-                                    <FormField
-                                        control={form.control}
-                                        name="username"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>用户名 * (唯一)</FormLabel>
-                                                <FormControl>
-                                                    <div className="relative">
-                                                        <Input 
-                                                            placeholder="lisa123" 
-                                                            {...field} 
-                                                            disabled={loading}
-                                                            onBlur={(e) => handleUsernameCheck(e.target.value)}
-                                                        />
-                                                        {checkingUsername && (
-                                                            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                {userSearchResults.length > 0 && (
+                                                    <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
+                                                        {userSearchResults.map((user) => (
+                                                            <div
+                                                                key={user.id}
+                                                                className="p-2 hover:bg-muted cursor-pointer"
+                                                                onClick={() => handleUserSelect(user)}
+                                                            >
+                                                                <div className="text-sm font-medium">{user.display_name || user.email}</div>
+                                                                <div className="text-xs text-muted-foreground">{user.id}</div>
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                </FormControl>
-                                                {usernameError && <p className="text-sm text-destructive">{usernameError}</p>}
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-
-                                {/* 昵称、性别、城市 同一行 */}
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                    {/* 显示昵称 */}
-                                    <FormField
-                                        control={form.control}
-                                        name="name"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>显示昵称 *</FormLabel>
-                                                <FormControl>
-                                                    <Input placeholder="Lisa" {...field} disabled={loading} />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    {/* 性别 */}
-                                    <FormField
-                                        control={form.control}
-                                        name="gender"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>性别 *</FormLabel>
-                                                <Select
-                                                    value={field.value?.toString() || '0'}
-                                                    onValueChange={(value) => field.onChange(parseInt(value) as 0 | 1)}
-                                                    disabled={loading}
-                                                >
-                                                    <FormControl>
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="选择性别" />
-                                                        </SelectTrigger>
-                                                    </FormControl>
-                                                    <SelectContent>
-                                                        <SelectItem value="0">女</SelectItem>
-                                                        <SelectItem value="1">男</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    {/* 城市 */}
-                                    <FormField
-                                        control={form.control}
-                                        name="city_id"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>城市</FormLabel>
-                                                <Select
-                                                    value={field.value?.toString() || 'none'}
-                                                    onValueChange={(value) => field.onChange(value === 'none' ? null : parseInt(value))}
-                                                    disabled={loading}
-                                                >
-                                                    <FormControl>
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="选择城市" />
-                                                        </SelectTrigger>
-                                                    </FormControl>
-                                                    <SelectContent>
-                                                        <SelectItem value="none">不选择</SelectItem>
-                                                        {cities.map((city) => (
-                                                            <SelectItem key={city.id} value={city.id.toString()}>
-                                                                {city.name.zh || city.name.en || city.name.th}
-                                                            </SelectItem>
                                                         ))}
-                                                    </SelectContent>
-                                                </Select>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-
-                                {/* 分类多选 - 单独一行 */}
-                                <FormField
-                                    control={form.control}
-                                    name="category_ids"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>分类（多选）</FormLabel>
-                                            <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[40px]">
-                                                {categories.map((category) => {
-                                                    const isSelected = (field.value || []).includes(category.id)
-                                                    return (
-                                                        <Badge
-                                                            key={category.id}
-                                                            variant={isSelected ? "default" : "outline"}
-                                                            className="cursor-pointer"
-                                                            onClick={() => toggleCategory(category.id)}
-                                                        >
-                                                            {category.name.zh || category.name.en || category.name.th}
-                                                            {isSelected && <X className="ml-1 h-3 w-3" />}
-                                                        </Badge>
-                                                    )
-                                                })}
+                                                    </div>
+                                                )}
+                                                <FormDescription>按回车搜索用户，点击选择绑定</FormDescription>
                                             </div>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                {/* 语言能力 */}
-                                <FormField
-                                    control={form.control}
-                                    name="languages"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>语言能力（多选）</FormLabel>
-                                            <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[40px]">
-                                                {LANGUAGE_OPTIONS.map((option) => {
-                                                    const langArray = Array.isArray(field.value) ? field.value : []
-                                                    const isSelected = langArray.includes(option.value)
-                                                    return (
-                                                        <Badge
-                                                            key={option.value}
-                                                            variant={isSelected ? "default" : "outline"}
-                                                            className="cursor-pointer"
-                                                            onClick={() => toggleLanguage(option.value)}
-                                                        >
-                                                            {option.label}
-                                                            {isSelected && <X className="ml-1 h-3 w-3" />}
-                                                        </Badge>
-                                                    )
-                                                })}
-                                            </div>
-                                            <FormDescription>点击选择语言，再次点击取消</FormDescription>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                {/* 多语言简介 */}
-                                <div className="space-y-2">
-                                    <FormLabel>个人简介</FormLabel>
-                                    <Tabs defaultValue="zh" className="w-full">
-                                        <TabsList className="grid w-full grid-cols-3">
-                                            <TabsTrigger value="zh">中文</TabsTrigger>
-                                            <TabsTrigger value="en">English</TabsTrigger>
-                                            <TabsTrigger value="th">ไทย</TabsTrigger>
-                                        </TabsList>
-
-                                        <TabsContent value="zh">
-                                            <FormField
-                                                control={form.control}
-                                                name="profile.zh"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormControl>
-                                                            <Textarea
-                                                                placeholder="中文简介..."
-                                                                className="min-h-[80px]"
-                                                                {...field}
-                                                                disabled={loading}
-                                                            />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        </TabsContent>
-
-                                        <TabsContent value="en">
-                                            <FormField
-                                                control={form.control}
-                                                name="profile.en"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormControl>
-                                                            <Textarea
-                                                                placeholder="English profile..."
-                                                                className="min-h-[80px]"
-                                                                {...field}
-                                                                disabled={loading}
-                                                            />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        </TabsContent>
-
-                                        <TabsContent value="th">
-                                            <FormField
-                                                control={form.control}
-                                                name="profile.th"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormControl>
-                                                            <Textarea
-                                                                placeholder="ใส่โปรไฟล์..."
-                                                                className="min-h-[80px]"
-                                                                {...field}
-                                                                disabled={loading}
-                                                            />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        </TabsContent>
-                                    </Tabs>
-                                </div>
-
-                                {/* 物理信息 */}
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                    <FormField
-                                        control={form.control}
-                                        name="birth_date"
-                                        render={({ field }) => (
-                                            <FormItem className="col-span-2">
-                                                <FormLabel>出生日期</FormLabel>
-                                                <FormControl>
-                                                    <Input 
-                                                        type="date" 
-                                                        {...field} 
-                                                        value={field.value || ''}
-                                                        disabled={loading} 
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
                                         )}
-                                    />
+                                    </div>
 
-                                    <FormField
-                                        control={form.control}
-                                        name="height"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>身高(cm)</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="number"
-                                                        placeholder="165"
-                                                        {...field}
-                                                        value={field.value === null ? '' : field.value}
-                                                        onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    <FormField
-                                        control={form.control}
-                                        name="weight"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>体重(kg)</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="number"
-                                                        placeholder="50"
-                                                        {...field}
-                                                        value={field.value === null ? '' : field.value}
-                                                        onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-
-                                <FormField
-                                    control={form.control}
-                                    name="measurements"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>三围</FormLabel>
-                                            <FormControl>
-                                                <Input 
-                                                    placeholder="90-60-90" 
-                                                    {...field} 
-                                                    value={field.value || ''}
-                                                    disabled={loading} 
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </TabsContent>
-
-                            {/* 业务维度标签页 */}
-                            <TabsContent value="business" className="space-y-4 pt-4">
-                                {/* 业务数据 */}
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                    <FormField
-                                        control={form.control}
-                                        name="rating"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>评分(0-5)</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="number"
-                                                        step="0.1"
-                                                        min="0"
-                                                        max="5"
-                                                        {...field}
-                                                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    <FormField
-                                        control={form.control}
-                                        name="total_sales"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>销量</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="number"
-                                                        {...field}
-                                                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    <FormField
-                                        control={form.control}
-                                        name="total_reviews"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>评论数</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="number"
-                                                        {...field}
-                                                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-
-                                {/* 工作时间 */}
-                                <div className="space-y-2">
-                                    <FormLabel>当前在线时段</FormLabel>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    {/* Telegram ID 和 Username 同一行 */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {/* Telegram ID */}
                                         <FormField
                                             control={form.control}
-                                            name="work_hours.start"
+                                            name="telegram_id"
                                             render={({ field }) => (
                                                 <FormItem>
-                                                    <FormLabel>开始时间</FormLabel>
+                                                    <FormLabel>Telegram ID</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            placeholder="Telegram用户或群组ID"
+                                                            {...field}
+                                                            value={field.value === null ? '' : field.value}
+                                                            onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        {/* Username */}
+                                        <FormField
+                                            control={form.control}
+                                            name="username"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>用户名 * (唯一)</FormLabel>
+                                                    <FormControl>
+                                                        <div className="relative">
+                                                            <Input
+                                                                placeholder="lisa123"
+                                                                {...field}
+                                                                disabled={loading}
+                                                                onBlur={(e) => handleUsernameCheck(e.target.value)}
+                                                            />
+                                                            {checkingUsername && (
+                                                                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </FormControl>
+                                                    {usernameError && <p className="text-sm text-destructive">{usernameError}</p>}
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+
+                                    {/* 昵称、性别、城市 同一行 */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        {/* 显示昵称 */}
+                                        <FormField
+                                            control={form.control}
+                                            name="name"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>显示昵称 *</FormLabel>
+                                                    <FormControl>
+                                                        <Input placeholder="Lisa" {...field} disabled={loading} />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        {/* 性别 */}
+                                        <FormField
+                                            control={form.control}
+                                            name="gender"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>性别 *</FormLabel>
                                                     <Select
-                                                        value={field.value}
-                                                        onValueChange={field.onChange}
+                                                        value={field.value?.toString() || '0'}
+                                                        onValueChange={(value) => field.onChange(parseInt(value) as 0 | 1)}
                                                         disabled={loading}
                                                     >
                                                         <FormControl>
                                                             <SelectTrigger>
-                                                                <SelectValue placeholder="选择时间" />
+                                                                <SelectValue placeholder="选择性别" />
                                                             </SelectTrigger>
                                                         </FormControl>
-                                                        <SelectContent className="max-h-[200px]">
-                                                            {timeOptions.map((time) => (
-                                                                <SelectItem key={time} value={time}>
-                                                                    {time}
-                                                                </SelectItem>
-                                                            ))}
+                                                        <SelectContent>
+                                                            <SelectItem value="0">女</SelectItem>
+                                                            <SelectItem value="1">男</SelectItem>
                                                         </SelectContent>
                                                     </Select>
                                                     <FormMessage />
@@ -1011,26 +701,27 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                             )}
                                         />
 
+                                        {/* 城市 */}
                                         <FormField
                                             control={form.control}
-                                            name="work_hours.end"
+                                            name="city_id"
                                             render={({ field }) => (
                                                 <FormItem>
-                                                    <FormLabel>结束时间</FormLabel>
+                                                    <FormLabel>城市 <span className="text-white">*</span></FormLabel>
                                                     <Select
-                                                        value={field.value}
-                                                        onValueChange={field.onChange}
+                                                        value={field.value?.toString() || ''}
+                                                        onValueChange={(value) => field.onChange(parseInt(value))}
                                                         disabled={loading}
                                                     >
                                                         <FormControl>
-                                                            <SelectTrigger>
-                                                                <SelectValue placeholder="选择时间" />
+                                                            <SelectTrigger className={!field.value ? "border-red-200" : ""}>
+                                                                <SelectValue placeholder="请选择城市" />
                                                             </SelectTrigger>
                                                         </FormControl>
-                                                        <SelectContent className="max-h-[200px]">
-                                                            {timeOptions.map((time) => (
-                                                                <SelectItem key={time} value={time}>
-                                                                    {time}
+                                                        <SelectContent>
+                                                            {cities.map((city) => (
+                                                                <SelectItem key={city.id} value={city.id.toString()}>
+                                                                    {city.name.zh || city.name.en || city.name.th}
                                                                 </SelectItem>
                                                             ))}
                                                         </SelectContent>
@@ -1040,20 +731,315 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                             )}
                                         />
                                     </div>
-                                </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {/* 分类多选 - 单独一行 */}
                                     <FormField
                                         control={form.control}
-                                        name="max_travel_distance"
+                                        name="category_ids"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>服务距离(km)</FormLabel>
+                                                <FormLabel className="text-base">
+                                                    分类（多选）<span className="text-white ml-1">*</span>
+                                                </FormLabel>
+                                                <div className="flex flex-wrap gap-2 p-3 border-2 rounded-md min-h-[60px] bg-muted/30">
+                                                    {categories.length === 0 ? (
+                                                        <p className="text-sm text-muted-foreground">加载分类中...</p>
+                                                    ) : (
+                                                        categories.map((category) => {
+                                                            const isSelected = (field.value || []).includes(category.id)
+                                                            return (
+                                                                <Badge
+                                                                    key={category.id}
+                                                                    variant={isSelected ? "default" : "outline"}
+                                                                    className="cursor-pointer hover:scale-105 transition-transform text-sm py-1.5 px-3"
+                                                                    onClick={() => toggleCategory(category.id)}
+                                                                >
+                                                                    {category.name.zh || category.name.en || category.name.th}
+                                                                    {isSelected && <X className="ml-1 h-3 w-3" />}
+                                                                </Badge>
+                                                            )
+                                                        })
+                                                    )}
+                                                </div>
+                                                <FormDescription className="text-xs">
+                                                    {(field.value || []).length > 0
+                                                        ? `已选择 ${(field.value || []).length} 个分类`
+                                                        : '请至少选择一个服务分类'
+                                                    }
+                                                </FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+
+                                    {/* 语言能力 */}
+                                    <FormField
+                                        control={form.control}
+                                        name="languages"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>语言能力（多选）</FormLabel>
+                                                <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[40px]">
+                                                    {LANGUAGE_OPTIONS.map((option) => {
+                                                        const langArray = Array.isArray(field.value) ? field.value : []
+                                                        const isSelected = langArray.includes(option.value)
+                                                        return (
+                                                            <Badge
+                                                                key={option.value}
+                                                                variant={isSelected ? "default" : "outline"}
+                                                                className="cursor-pointer"
+                                                                onClick={() => toggleLanguage(option.value)}
+                                                            >
+                                                                {option.label}
+                                                                {isSelected && <X className="ml-1 h-3 w-3" />}
+                                                            </Badge>
+                                                        )
+                                                    })}
+                                                </div>
+                                                <FormDescription>点击选择语言，再次点击取消</FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+
+                                    {/* 多语言简介 */}
+                                    <div className="space-y-2">
+                                        <FormLabel className="text-base">
+                                            个人简介 <span className="text-white">*</span>
+                                        </FormLabel>
+                                        <p className="text-xs text-muted-foreground mb-2">
+                                            至少填写一种语言的简介
+                                        </p>
+                                        <Tabs defaultValue="zh" className="w-full">
+                                            <TabsList className="grid w-full grid-cols-3">
+                                                <TabsTrigger value="zh">中文</TabsTrigger>
+                                                <TabsTrigger value="en">English</TabsTrigger>
+                                                <TabsTrigger value="th">ไทย</TabsTrigger>
+                                            </TabsList>
+
+                                            <TabsContent value="zh">
+                                                <FormField
+                                                    control={form.control}
+                                                    name="profile.zh"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormControl>
+                                                                <Textarea
+                                                                    placeholder="例如：专业按摩技师，5年从业经验，擅长泰式按摩和精油SPA..."
+                                                                    className="min-h-[100px]"
+                                                                    {...field}
+                                                                    disabled={loading}
+                                                                />
+                                                            </FormControl>
+                                                            <FormDescription className="text-xs">
+                                                                {field.value ? `已输入 ${field.value.length} 字` : '请填写中文简介'}
+                                                            </FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </TabsContent>
+
+                                            <TabsContent value="en">
+                                                <FormField
+                                                    control={form.control}
+                                                    name="profile.en"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormControl>
+                                                                <Textarea
+                                                                    placeholder="English profile..."
+                                                                    className="min-h-[80px]"
+                                                                    {...field}
+                                                                    disabled={loading}
+                                                                />
+                                                            </FormControl>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </TabsContent>
+
+                                            <TabsContent value="th">
+                                                <FormField
+                                                    control={form.control}
+                                                    name="profile.th"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormControl>
+                                                                <Textarea
+                                                                    placeholder="ใส่โปรไฟล์..."
+                                                                    className="min-h-[80px]"
+                                                                    {...field}
+                                                                    disabled={loading}
+                                                                />
+                                                            </FormControl>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </TabsContent>
+                                        </Tabs>
+                                    </div>
+
+                                    {/* 多语言标签 */}
+                                    <div className="space-y-2">
+                                        <FormLabel className="text-base">
+                                            个人标签 <span className="text-white">*</span>
+                                        </FormLabel>
+                                        <p className="text-xs text-muted-foreground mb-2">
+                                            填写技师的特点标签，用逗号分隔（例如：友好,专业,经验丰富）
+                                        </p>
+                                        <Tabs defaultValue="zh" className="w-full">
+                                            <TabsList className="grid w-full grid-cols-3">
+                                                <TabsTrigger value="zh">中文</TabsTrigger>
+                                                <TabsTrigger value="en">English</TabsTrigger>
+                                                <TabsTrigger value="th">ไทย</TabsTrigger>
+                                            </TabsList>
+
+                                            <TabsContent value="zh">
+                                                <FormField
+                                                    control={form.control}
+                                                    name="tags.zh"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormControl>
+                                                                <Input
+                                                                    placeholder="例如：友好,专业,经验丰富,热情"
+                                                                    {...field}
+                                                                    disabled={loading}
+                                                                />
+                                                            </FormControl>
+                                                            <FormDescription className="text-xs">
+                                                                {field.value ? `已输入标签: ${field.value}` : '请填写中文标签'}
+                                                            </FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </TabsContent>
+
+                                            <TabsContent value="en">
+                                                <FormField
+                                                    control={form.control}
+                                                    name="tags.en"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormControl>
+                                                                <Input
+                                                                    placeholder="e.g.: Friendly, Professional, Experienced"
+                                                                    {...field}
+                                                                    disabled={loading}
+                                                                />
+                                                            </FormControl>
+                                                            <FormDescription className="text-xs">
+                                                                {field.value ? `Tags: ${field.value}` : 'Please enter English tags'}
+                                                            </FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </TabsContent>
+
+                                            <TabsContent value="th">
+                                                <FormField
+                                                    control={form.control}
+                                                    name="tags.th"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormControl>
+                                                                <Input
+                                                                    placeholder="เช่น: เป็นกันเอง, มืออาชีพ, มีประสบการณ์"
+                                                                    {...field}
+                                                                    disabled={loading}
+                                                                />
+                                                            </FormControl>
+                                                            <FormDescription className="text-xs">
+                                                                {field.value ? `แท็ก: ${field.value}` : 'กรุณากรอกแท็ก'}
+                                                            </FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </TabsContent>
+                                        </Tabs>
+                                    </div>
+
+                                    {/* 物理信息 */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                        <FormField
+                                            control={form.control}
+                                            name="birth_date"
+                                            render={({ field }) => (
+                                                <FormItem className="col-span-2">
+                                                    <FormLabel>出生日期</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="date"
+                                                            {...field}
+                                                            value={field.value || ''}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="height"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>身高(cm)</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            placeholder="165"
+                                                            {...field}
+                                                            value={field.value === null ? '' : field.value}
+                                                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="weight"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>体重(kg)</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            placeholder="50"
+                                                            {...field}
+                                                            value={field.value === null ? '' : field.value}
+                                                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+
+                                    <FormField
+                                        control={form.control}
+                                        name="measurements"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>三围</FormLabel>
                                                 <FormControl>
                                                     <Input
-                                                        type="number"
+                                                        placeholder="90-60-90"
                                                         {...field}
-                                                        onChange={(e) => field.onChange(parseInt(e.target.value) || 10)}
+                                                        value={field.value || ''}
                                                         disabled={loading}
                                                     />
                                                 </FormControl>
@@ -1061,113 +1047,220 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                             </FormItem>
                                         )}
                                     />
+                                </TabsContent>
 
-                                    <FormField
-                                        control={form.control}
-                                        name="sort_order"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>排序权重</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="number"
-                                                        {...field}
-                                                        onChange={(e) => field.onChange(parseInt(e.target.value) || 999)}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                                <FormDescription>数值越小排序越靠前</FormDescription>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
+                                {/* 业务维度标签页 */}
+                                <TabsContent value="business" className="space-y-4 pt-4">
+                                    {/* 业务数据 */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                        <FormField
+                                            control={form.control}
+                                            name="rating"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>评分(0-5)</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            step="0.1"
+                                                            min="0"
+                                                            max="5"
+                                                            {...field}
+                                                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
 
-                                {/* 开关选项 */}
-                                <div className="space-y-3">
-                                    <FormField
-                                        control={form.control}
-                                        name="is_visible_to_thai"
-                                        render={({ field }) => (
-                                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                                                <div className="space-y-0.5">
-                                                    <FormLabel>泰国用户可见</FormLabel>
-                                                </div>
-                                                <FormControl>
-                                                    <Switch
-                                                        checked={field.value}
-                                                        onCheckedChange={field.onChange}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                            </FormItem>
-                                        )}
-                                    />
+                                        <FormField
+                                            control={form.control}
+                                            name="total_sales"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>销量</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            {...field}
+                                                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
 
-                                    <FormField
-                                        control={form.control}
-                                        name="is_verified"
-                                        render={({ field }) => (
-                                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                                                <div className="space-y-0.5">
-                                                    <FormLabel>已认证</FormLabel>
-                                                </div>
-                                                <FormControl>
-                                                    <Switch
-                                                        checked={field.value}
-                                                        onCheckedChange={field.onChange}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                            </FormItem>
-                                        )}
-                                    />
+                                        <FormField
+                                            control={form.control}
+                                            name="total_reviews"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>评论数</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            {...field}
+                                                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
 
-                                    <FormField
-                                        control={form.control}
-                                        name="is_blocked"
-                                        render={({ field }) => (
-                                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 bg-red-50 dark:bg-red-950">
-                                                <div className="space-y-0.5">
-                                                    <FormLabel>屏蔽账号</FormLabel>
-                                                </div>
-                                                <FormControl>
-                                                    <Switch
-                                                        checked={field.value}
-                                                        onCheckedChange={field.onChange}
-                                                        disabled={loading}
-                                                    />
-                                                </FormControl>
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-                            </TabsContent>
-                        </Tabs>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <FormField
+                                            control={form.control}
+                                            name="max_travel_distance"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>服务距离(km)</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            {...field}
+                                                            onChange={(e) => field.onChange(parseInt(e.target.value) || 10)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
 
-                        {/* 按钮 */}
-                        <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4">
-                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto" disabled={loading}>
-                                取消
-                            </Button>
-                            <Button type="submit" disabled={loading || !!usernameError} className="w-full sm:w-auto">
-                                {loading && <LoadingSpinner size="sm" className="mr-2" />}
-                                {girl ? '更新技师' : '创建技师'}
-                            </Button>
-                        </div>
-                    </form>
-                </Form>
-            </DialogContent>
-        </Dialog>
+                                        <FormField
+                                            control={form.control}
+                                            name="sort_order"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>排序权重</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            {...field}
+                                                            onChange={(e) => field.onChange(parseInt(e.target.value) || 999)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormDescription>数值越小排序越靠前</FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
 
-        {/* 头像裁剪器 */}
-        <GirlImageCropper
-            open={showAvatarCropper}
-            onOpenChange={setShowAvatarCropper}
-            imageFile={avatarToProcess}
-            onCropComplete={handleAvatarCropComplete}
-            title="裁剪头像"
-        />
-    </>
+                                        <FormField
+                                            control={form.control}
+                                            name="trust_score"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>诚信分(0-100)</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            min="0"
+                                                            max="100"
+                                                            {...field}
+                                                            onChange={(e) => field.onChange(parseInt(e.target.value) || 80)}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+
+                                    {/* 开关选项 */}
+                                    <div className="space-y-3">
+                                        <FormField
+                                            control={form.control}
+                                            name="is_visible_to_thai"
+                                            render={({ field }) => (
+                                                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                                                    <div className="space-y-0.5">
+                                                        <FormLabel>泰国用户可见</FormLabel>
+                                                    </div>
+                                                    <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="is_verified"
+                                            render={({ field }) => (
+                                                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                                                    <div className="space-y-0.5">
+                                                        <FormLabel>已认证</FormLabel>
+                                                    </div>
+                                                    <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="is_blocked"
+                                            render={({ field }) => (
+                                                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 bg-red-50 dark:bg-red-950">
+                                                    <div className="space-y-0.5">
+                                                        <FormLabel>屏蔽账号</FormLabel>
+                                                    </div>
+                                                    <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+                                </TabsContent>
+                            </Tabs>
+
+                            {/* 按钮 */}
+                            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4">
+                                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto" disabled={loading}>
+                                    取消
+                                </Button>
+                                <Button type="submit" disabled={loading || !!usernameError} className="w-full sm:w-auto">
+                                    {loading && <LoadingSpinner size="sm" className="mr-2" />}
+                                    {girl ? '更新技师' : '创建技师'}
+                                </Button>
+                            </div>
+                        </form>
+                    </Form>
+                </DialogContent>
+            </Dialog>
+
+            {/* 头像裁剪器 */}
+            <GirlImageCropper
+                open={showAvatarCropper}
+                onOpenChange={setShowAvatarCropper}
+                imageFile={avatarToProcess}
+                onCropComplete={handleAvatarCropComplete}
+                title="裁剪头像"
+            />
+        </>
     )
 }

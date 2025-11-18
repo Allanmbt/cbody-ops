@@ -35,8 +35,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ButtonLoading } from "@/components/ui/loading"
 import { toast } from "sonner"
-import { serviceFormSchema, type ServiceFormData } from "@/lib/validations/service"
-import type { Service, Category, ServiceBadge } from "@/lib/types/service"
+import { serviceFormSchema, type ServiceFormData } from "@/lib/features/services"
+import type { Service, Category, ServiceBadge } from "@/lib/features/services"
 import { createService, updateService, getCategories } from "@/app/dashboard/services/actions"
 
 interface ServiceFormDialogProps {

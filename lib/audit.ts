@@ -1,5 +1,6 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import { getSupabaseAdminClient } from './supabase'
 
 // 审计日志操作类型
 export type AdminOperationType =
@@ -9,6 +10,17 @@ export type AdminOperationType =
     | 'update_admin_profile'
     | 'reset_admin_password'
     | 'toggle_admin_status'
+    | 'approve_media'
+    | 'reject_media'
+    | 'delete_media'
+    | 'batch_approve_media'
+    | 'batch_reject_media'
+    | 'reorder_media'
+    | 'batch_bind_service'
+    | 'batch_unbind_service'
+    | 'batch_restore_service'
+    | 'update_fare_config'
+    | 'update_app_config'
 
 // 审计日志记录函数
 export async function logAdminOperation(
@@ -159,4 +171,144 @@ export async function logAdminStatusToggle(
         },
         targetAdminId
     )
+}
+
+// 记录媒体审核通过操作
+export async function logMediaApprove(
+    actorId: string,
+    mediaId: string,
+    girlId: string,
+    minUserLevel: number
+): Promise<void> {
+    await logAdminOperation(
+        actorId,
+        'approve_media',
+        {
+            media_id: mediaId,
+            girl_id: girlId,
+            min_user_level: minUserLevel,
+            action: 'approve_media'
+        }
+    )
+}
+
+// 记录媒体审核驳回操作
+export async function logMediaReject(
+    actorId: string,
+    mediaId: string,
+    girlId: string,
+    reason: string
+): Promise<void> {
+    await logAdminOperation(
+        actorId,
+        'reject_media',
+        {
+            media_id: mediaId,
+            girl_id: girlId,
+            reason,
+            action: 'reject_media'
+        }
+    )
+}
+
+// 记录媒体删除操作
+export async function logMediaDelete(
+    actorId: string,
+    mediaId: string,
+    girlId: string
+): Promise<void> {
+    await logAdminOperation(
+        actorId,
+        'delete_media',
+        {
+            media_id: mediaId,
+            girl_id: girlId,
+            action: 'delete_media'
+        }
+    )
+}
+
+// 记录批量媒体审核通过操作
+export async function logBatchMediaApprove(
+    actorId: string,
+    mediaIds: string[],
+    minUserLevel: number
+): Promise<void> {
+    await logAdminOperation(
+        actorId,
+        'batch_approve_media',
+        {
+            media_ids: mediaIds,
+            count: mediaIds.length,
+            min_user_level: minUserLevel,
+            action: 'batch_approve_media'
+        }
+    )
+}
+
+// 记录批量媒体审核驳回操作
+export async function logBatchMediaReject(
+    actorId: string,
+    mediaIds: string[],
+    reason: string
+): Promise<void> {
+    await logAdminOperation(
+        actorId,
+        'batch_reject_media',
+        {
+            media_ids: mediaIds,
+            count: mediaIds.length,
+            reason,
+            action: 'batch_reject_media'
+        }
+    )
+}
+
+// 记录媒体重排序操作
+export async function logMediaReorder(
+    actorId: string,
+    girlId: string,
+    itemCount: number
+): Promise<void> {
+    await logAdminOperation(
+        actorId,
+        'reorder_media',
+        {
+            girl_id: girlId,
+            item_count: itemCount,
+            action: 'reorder_media'
+        }
+    )
+}
+
+/**
+ * 记录审计日志（通用审计表）
+ * 用于记录所有管理操作到audit_logs表
+ */
+export async function logAuditAction(params: {
+    actor_id: string
+    action: string
+    target: string
+    payload?: any
+}): Promise<void> {
+    try {
+        const supabase = getSupabaseAdminClient()
+        const { error } = await (supabase as any)
+            .from('audit_logs')
+            .insert({
+                actor_id: params.actor_id,
+                action: params.action,
+                target: params.target,
+                payload: params.payload || null,
+                created_at: new Date().toISOString()
+            })
+
+        if (error) {
+            console.error('记录审计日志失败:', error)
+            // 不抛出错误，避免影响主流程
+        }
+    } catch (error) {
+        console.error('记录审计日志异常:', error)
+        // 不抛出错误，避免影响主流程
+    }
 }

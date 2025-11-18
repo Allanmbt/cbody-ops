@@ -22,9 +22,10 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Save, Loader2 } from 'lucide-react'
-import type { UserProfile, UpdateUserProfileData } from '@/lib/types/user'
-import { updateUserProfileSchema } from '@/lib/validations/user'
+import type { UserProfile, UpdateUserProfileData } from '@/lib/features/users'
+import { updateUserProfileSchema } from '@/lib/features/users'
 import { updateUserProfile } from '@/app/dashboard/users/actions'
+import { useCurrentAdmin } from '@/hooks/use-current-admin'
 
 interface UserProfileEditFormProps {
     profile: UserProfile
@@ -50,6 +51,7 @@ export function UserProfileEditForm({
     onSuccess,
     onCancel,
 }: UserProfileEditFormProps) {
+    const { admin } = useCurrentAdmin()
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     const form = useForm<UpdateUserProfileData>({
@@ -66,6 +68,11 @@ export function UserProfileEditForm({
     })
 
     const onSubmit = async (data: UpdateUserProfileData) => {
+        if (!admin?.id) {
+            toast.error('未找到管理员信息')
+            return
+        }
+
         setIsSubmitting(true)
         try {
             const result = await updateUserProfile(profile.id, data)

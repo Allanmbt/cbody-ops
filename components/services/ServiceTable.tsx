@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { MoreHorizontal, Edit, Settings, Eye, EyeOff } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { MoreHorizontal, Edit, Settings, Eye, EyeOff, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/table"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { toast } from "sonner"
-import type { Service } from "@/lib/types/service"
+import type { Service } from "@/lib/features/services"
 import { toggleServiceStatus } from "@/app/dashboard/services/actions"
 
 interface ServiceTableProps {
@@ -40,6 +41,7 @@ export function ServiceTable({
     onManageDurations,
     onRefresh
 }: ServiceTableProps) {
+    const router = useRouter()
     const [toggleLoading, setToggleLoading] = useState<number | null>(null)
 
     const handleToggleStatus = async (service: Service) => {
@@ -183,6 +185,10 @@ export function ServiceTable({
                                         <DropdownMenuItem onClick={() => onManageDurations(service)}>
                                             <Settings className="mr-2 h-4 w-4" />
                                             时长定价
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => router.push(`/dashboard/services/${service.id}/bind`)}>
+                                            <Users className="mr-2 h-4 w-4" />
+                                            绑定技师
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem

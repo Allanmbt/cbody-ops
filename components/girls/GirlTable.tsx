@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, MapPin, Image as ImageIcon } from "lucide-react"
-import type { GirlWithStatus } from "@/lib/types/girl"
+import type { GirlWithStatus } from "@/lib/features/girls"
 
 interface GirlTableProps {
     girls: GirlWithStatus[]

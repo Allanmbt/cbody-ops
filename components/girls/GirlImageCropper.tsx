@@ -90,61 +90,89 @@ export function GirlImageCropper({
     }
   }, [aspectRatio]);
 
-  // 保存裁剪后的图像（不压缩质量）
+  // 保存裁剪后的图像（智能尺寸控制 + 质量压缩）
   const handleSave = () => {
     if (completedCrop?.width && completedCrop?.height && imgRef.current) {
       try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        
+
         if (!ctx) {
           console.error("Failed to get canvas context");
           return;
         }
-        
+
         const image = imgRef.current;
-        
-        // 设置Canvas尺寸
+
+        // 计算原图裁剪区域的实际像素尺寸
         const scaleX = image.naturalWidth / image.width;
         const scaleY = image.naturalHeight / image.height;
-        
-        const pixelRatio = window.devicePixelRatio || 1;
-        const canvasWidth = completedCrop.width;
-        const canvasHeight = completedCrop.height;
-        
-        canvas.width = canvasWidth * pixelRatio;
-        canvas.height = canvasHeight * pixelRatio;
-        
-        ctx.scale(pixelRatio, pixelRatio);
+
+        // 裁剪区域在原图上的实际像素尺寸
+        const sourceWidth = completedCrop.width * scaleX;
+        const sourceHeight = completedCrop.height * scaleY;
+
+        // 智能尺寸计算：确保单边至少 1200px（如果原图够大）
+        const MIN_SIZE = 1200;
+        let targetWidth = sourceWidth;
+        let targetHeight = sourceHeight;
+
+        // 找出较短的边
+        const minSide = Math.min(sourceWidth, sourceHeight);
+
+        if (minSide < MIN_SIZE) {
+          // 原图本身就小于 1200px，保持原尺寸（不放大）
+          targetWidth = sourceWidth;
+          targetHeight = sourceHeight;
+          console.log(`原图较小 (${Math.round(sourceWidth)}×${Math.round(sourceHeight)})，保持原尺寸`);
+        } else {
+          // 原图足够大，确保最短边至少 1200px
+          if (sourceWidth < sourceHeight) {
+            // 宽度是短边
+            targetWidth = MIN_SIZE;
+            targetHeight = (sourceHeight / sourceWidth) * MIN_SIZE;
+          } else {
+            // 高度是短边
+            targetHeight = MIN_SIZE;
+            targetWidth = (sourceWidth / sourceHeight) * MIN_SIZE;
+          }
+          console.log(`缩放至目标尺寸: ${Math.round(targetWidth)}×${Math.round(targetHeight)}`);
+        }
+
+        // 设置Canvas尺寸为目标尺寸
+        canvas.width = Math.round(targetWidth);
+        canvas.height = Math.round(targetHeight);
+
+        ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        
+
         // 应用旋转和缩放
         ctx.save();
-        ctx.translate(canvasWidth / 2, canvasHeight / 2);
+        ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate((rotation * Math.PI) / 180);
         ctx.scale(scale, scale);
-        ctx.translate(-canvasWidth / 2, -canvasHeight / 2);
-        
-        // 绘制裁剪区域
+        ctx.translate(-canvas.width / 2, -canvas.height / 2);
+
+        // 绘制裁剪区域到Canvas
         ctx.drawImage(
           image,
           completedCrop.x * scaleX,
           completedCrop.y * scaleY,
-          completedCrop.width * scaleX,
-          completedCrop.height * scaleY,
+          sourceWidth,
+          sourceHeight,
           0,
           0,
-          canvasWidth,
-          canvasHeight
+          canvas.width,
+          canvas.height
         );
-        
+
         ctx.restore();
-        
-        // 将Canvas转换为Blob（质量设置为1.0，不压缩）
+
+        // 将Canvas转换为Blob（质量0.8，平衡质量和文件大小）
         canvas.toBlob(
           (blob) => {
             if (blob) {
-              console.log("裁剪成功: 生成图像大小", blob.size, "bytes");
+              console.log(`裁剪成功: ${Math.round(canvas.width)}×${Math.round(canvas.height)}px, 文件大小: ${(blob.size / 1024).toFixed(1)} KB`);
               onCropComplete(blob);
               onOpenChange(false);
             } else {
@@ -152,7 +180,7 @@ export function GirlImageCropper({
             }
           },
           'image/jpeg',
-          1.0 // 质量参数设置为1.0，保持原图质量
+          0.8 // 质量参数0.8，平衡质量和文件大小
         );
       } catch (error) {
         console.error("裁剪过程中出错:", error);

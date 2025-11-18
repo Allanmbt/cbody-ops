@@ -8,7 +8,7 @@ import { UserProfileCard } from '@/components/users/UserProfileCard'
 import { UserLoginHistoryCard } from '@/components/users/UserLoginHistoryCard'
 import { UserConnectedAccountsCard } from '@/components/users/UserConnectedAccountsCard'
 import { UserActionsCard } from '@/components/users/UserActionsCard'
-import type { UserDetails, UserProfile, UserLoginEvent, UserConnectedAccount } from '@/lib/types/user'
+import type { UserDetails, UserProfile, UserLoginEvent, UserConnectedAccount } from '@/lib/features/users'
 import { getCurrentAdmin } from '@/lib/auth'
 
 // 获取用户详情数据

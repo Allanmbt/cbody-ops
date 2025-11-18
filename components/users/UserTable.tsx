@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { Search, ChevronLeft, ChevronRight, Eye, Ban, CheckCircle } from 'lucide-react'
-import type { UserListItem, UserListParams } from '@/lib/types/user'
+import type { UserListItem, UserListParams } from '@/lib/features/users'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { UserBanToggle } from './UserBanToggle'
 

@@ -5,10 +5,12 @@ import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserTable } from '@/components/users/UserTable'
 import { LoadingSpinner } from '@/components/ui/loading'
-import type { UserListItem, UserListParams } from '@/lib/types/user'
+import type { UserListItem, UserListParams } from '@/lib/features/users'
 import { getUserList } from './actions'
+import { useCurrentAdmin } from '@/hooks/use-current-admin'
 
 export default function UsersPage() {
+    const { admin, loading: adminLoading } = useCurrentAdmin()
     const [users, setUsers] = useState<UserListItem[]>([])
     const [loading, setLoading] = useState(false)
     const [pagination, setPagination] = useState({
@@ -33,6 +35,11 @@ export default function UsersPage() {
 
     // 加载用户列表
     const loadUsers = async (params?: Partial<UserListParams>) => {
+        if (!admin?.id) {
+            console.log('Admin not available yet')
+            return
+        }
+
         try {
             setLoading(true)
             const queryParams: UserListParams = {
@@ -66,10 +73,12 @@ export default function UsersPage() {
 
     // 初始加载
     useEffect(() => {
-        // 首次加载时显示加载状态
-        setLoading(true)
-        loadUsers()
-    }, [])
+        if (admin?.id && !adminLoading) {
+            // 首次加载时显示加载状态
+            setLoading(true)
+            loadUsers()
+        }
+    }, [admin?.id, adminLoading])
 
     // 处理搜索
     const handleSearch = (search: string) => {
@@ -89,6 +98,22 @@ export default function UsersPage() {
     const handlePageChange = (page: number) => {
         setPagination(prev => ({ ...prev, page }))
         loadUsers({ page })
+    }
+
+    if (adminLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <LoadingSpinner />
+            </div>
+        )
+    }
+
+    if (!admin) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <p className="text-muted-foreground">未找到管理员信息</p>
+            </div>
+        )
     }
 
     return (

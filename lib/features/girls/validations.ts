@@ -1,19 +1,32 @@
 import { z } from "zod"
 
+// 必填的多语言内容验证（例如：profile）
 const languageContentSchema = z.object({
     en: z.string().optional(),
     zh: z.string().optional(),
     th: z.string().optional(),
-}).refine(data => data.en || data.zh || data.th, {
-    message: "至少需要填写一种语言的内容",
-    path: ["en"],
-})
+}).refine(
+    data => {
+        // 至少有一个语言字段有非空内容
+        const hasContent = Boolean(
+            (data.en && data.en.trim()) ||
+            (data.zh && data.zh.trim()) ||
+            (data.th && data.th.trim())
+        )
+        return hasContent
+    },
+    {
+        message: "请至少填写一种语言的内容（中文、英文或泰文）",
+        path: ["zh"], // 指向中文字段
+    }
+)
 
-// work_hours 只允许 HH:00 或 HH:30 格式（30分钟步进）
-const workHoursSchema = z.object({
-    start: z.string().regex(/^([01]?[0-9]|2[0-3]):(00|30)$/, "时间格式必须为 HH:00 或 HH:30"),
-    end: z.string().regex(/^([01]?[0-9]|2[0-3]):(00|30)$/, "时间格式必须为 HH:00 或 HH:30"),
-})
+// 可选的多语言内容验证（例如：tags），允许空字符串
+const optionalLanguageContentSchema = z.object({
+    en: z.string().optional(),
+    zh: z.string().optional(),
+    th: z.string().optional(),
+}).default({ en: '', zh: '', th: '' })
 
 // 语言代码数组: 仅允许预置选项
 const validLanguageCodes = ['EN_Base', 'EN', 'ZH_Base', 'ZH', 'TH_Base', 'TH', 'KO_Base', 'KO', 'YUE_Base', 'YUE', 'JA_Base', 'JA'] as const
@@ -46,23 +59,20 @@ export const girlFormSchema = z.object({
         .int("服务距离必须是整数")
         .min(1, "服务距离至少1km")
         .max(100, "服务距离不能超过100km"),
-    work_hours: workHoursSchema.optional(),
+    trust_score: z.number().int().min(0).max(100).default(80),
     is_verified: z.boolean().default(false),
     is_blocked: z.boolean().default(false),
     is_visible_to_thai: z.boolean().default(true),
     sort_order: z.number().int("排序权重必须是整数").min(0).max(9999).default(999),
-    city_id: z.number().int("请选择有效的城市").nullable().optional(),
-    category_ids: z.array(z.number().int()).optional(), // 多对多分类
+    city_id: z.number({ message: "请选择城市" }).int("请选择有效的城市"),
+    category_ids: z.array(z.number().int()).min(1, "请至少选择一个分类"), // 多对多分类，至少选一个
 })
 
 export const girlStatusSchema = z.object({
     status: z.enum(['available', 'busy', 'offline'], { message: "请选择状态" }),
-    current_lat: z.number().min(-90).max(90).optional(),
-    current_lng: z.number().min(-180).max(180).optional(),
-    standby_lat: z.number().min(-90).max(90).optional(),
-    standby_lng: z.number().min(-180).max(180).optional(),
-    next_available_time: z.string().optional().or(z.literal("")),
-    auto_status_update: z.boolean().default(false),
+    current_lat: z.number().min(-90).max(90).nullable().optional(),
+    current_lng: z.number().min(-180).max(180).nullable().optional(),
+    next_available_time: z.string().nullable().optional(),
 })
 
 export const girlMediaSchema = z.object({
@@ -81,7 +91,7 @@ export const girlListParamsSchema = z.object({
     status: z.enum(['available', 'busy', 'offline']).optional(),
     is_verified: z.boolean().optional(),
     is_blocked: z.boolean().optional(), // 屏蔽状态筛选
-    sort_by: z.enum(['created_at', 'updated_at', 'rating', 'total_sales', 'booking_count', 'sort_order']).default('sort_order'),
+    sort_by: z.enum(['created_at', 'updated_at', 'rating', 'total_sales', 'trust_score', 'sort_order']).default('sort_order'),
     sort_order: z.enum(['asc', 'desc']).default('asc'),
 })
 

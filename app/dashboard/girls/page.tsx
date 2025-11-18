@@ -24,7 +24,7 @@ import type {
     GirlListParams,
     PaginatedResponse,
     GirlStatusType
-} from "@/lib/types/girl"
+} from "@/lib/features/girls"
 
 export default function GirlsPage() {
     const [girls, setGirls] = useState<GirlWithStatus[]>([])
@@ -358,7 +358,7 @@ export default function GirlsPage() {
                                         <SelectItem value="created_at_desc">创建时间</SelectItem>
                                         <SelectItem value="rating_desc">评分高低</SelectItem>
                                         <SelectItem value="total_sales_desc">销量高低</SelectItem>
-                                        <SelectItem value="booking_count_desc">预订次数</SelectItem>
+                                        <SelectItem value="trust_score_desc">诚信分</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -377,39 +377,39 @@ export default function GirlsPage() {
                                     />
                                 </div>
                             </div>
-                               {/* 分页 */}
-            {pagination.totalPages > 1 && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="text-sm text-muted-foreground">
-                        第 {pagination.page} 页，共 {pagination.totalPages} 页
-                    </div>
-                    <div className="flex gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePageChange(pagination.page - 1)}
-                            disabled={pagination.page <= 1 || loading}
-                        >
-                            上一页
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePageChange(pagination.page + 1)}
-                            disabled={pagination.page >= pagination.totalPages || loading}
-                        >
-                            下一页
-                        </Button>
-                    </div>
-                </div>
-            )}
+                            {/* 分页 */}
+                            {pagination.totalPages > 1 && (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                    <div className="text-sm text-muted-foreground">
+                                        第 {pagination.page} 页，共 {pagination.totalPages} 页
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handlePageChange(pagination.page - 1)}
+                                            disabled={pagination.page <= 1 || loading}
+                                        >
+                                            上一页
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handlePageChange(pagination.page + 1)}
+                                            disabled={pagination.page >= pagination.totalPages || loading}
+                                        >
+                                            下一页
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
 
                         </CardContent>
                     </Card>
                 </div>
             </div>
 
-         
+
             {/* 表单对话框 */}
             <GirlFormDialog
                 open={showFormDialog}
