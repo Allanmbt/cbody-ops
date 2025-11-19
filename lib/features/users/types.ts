@@ -72,7 +72,7 @@ export interface UserDetails {
 export interface UpdateUserProfileData {
     display_name?: string
     username?: string
-    language_code?: string
+    language_code?: 'en' | 'zh' | 'th'
     timezone?: string
     level?: number
     credit_score?: number
