@@ -24,6 +24,7 @@ import {
 import { LoadingSpinner } from "@/components/ui/loading"
 import { toast } from "sonner"
 import type { Service } from "@/lib/features/services"
+import { getServiceTitle, getCategoryName, getBadgeVariant, getBadgeText } from "@/lib/features/services"
 import { toggleServiceStatus } from "@/app/dashboard/services/actions"
 
 interface ServiceTableProps {
@@ -62,58 +63,6 @@ export function ServiceTable({
         }
     }
 
-    const getServiceTitle = (service: Service): string => {
-        return service.title.zh || service.title.en || service.title.th || service.code
-    }
-
-    const getCategoryName = (service: Service): string => {
-        if (!service.category) return '未分类'
-        return service.category.name.zh || service.category.name.en || service.category.name.th || service.category.code
-    }
-
-    const getBadgeVariant = (badge: string | null) => {
-        switch (badge) {
-            case 'HOT':
-                return 'destructive'
-            case 'NEW':
-                return 'default'
-            case 'TOP_PICK':
-                return 'secondary'
-            default:
-                return 'outline'
-        }
-    }
-
-    const getBadgeText = (badge: string | null) => {
-        switch (badge) {
-            case 'HOT':
-                return '热门'
-            case 'NEW':
-                return '新品'
-            case 'TOP_PICK':
-                return '精选'
-            default:
-                return badge
-        }
-    }
-
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center py-12">
-                <LoadingSpinner size="lg" />
-            </div>
-        )
-    }
-
-    if (services.length === 0) {
-        return (
-            <div className="text-center py-12">
-                <div className="text-muted-foreground text-sm">暂无服务项目</div>
-                <div className="text-xs text-muted-foreground mt-1">点击上方"新建服务"按钮添加第一个服务</div>
-            </div>
-        )
-    }
-
     return (
         <div className="rounded-md border">
             <Table>
@@ -125,22 +74,44 @@ export function ServiceTable({
                         <TableHead>状态</TableHead>
                         <TableHead>徽章</TableHead>
                         <TableHead className="text-right">销量</TableHead>
+                        <TableHead className="text-center">最低等级</TableHead>
                         <TableHead>更新时间</TableHead>
                         <TableHead className="w-[100px]">操作</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {services.map((service) => (
+                    {loading ? (
+                        <TableRow>
+                            <TableCell colSpan={9} className="h-32 text-center">
+                                <LoadingSpinner size="lg" />
+                            </TableCell>
+                        </TableRow>
+                    ) : services.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={9} className="h-32 text-center">
+                                <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                                    <div className="text-sm">暂无服务项目</div>
+                                    <div className="text-xs">点击右上角"新建服务"按钮添加</div>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    ) : (
+                        services.map((service) => (
                         <TableRow key={service.id}>
                             <TableCell className="font-medium">
-                                {getServiceTitle(service)}
+                                <div className="flex flex-col gap-0.5">
+                                    <div>{service.title.zh || getServiceTitle(service)}</div>
+                                    {service.title.en && (
+                                        <div className="text-xs text-muted-foreground">{service.title.en}</div>
+                                    )}
+                                </div>
                             </TableCell>
                             <TableCell>
                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
                                     {service.code}
                                 </code>
                             </TableCell>
-                            <TableCell>{getCategoryName(service)}</TableCell>
+                            <TableCell>{service.category ? getCategoryName(service.category) : '未分类'}</TableCell>
                             <TableCell>
                                 <Badge
                                     variant={service.is_active ? "default" : "secondary"}
@@ -158,6 +129,11 @@ export function ServiceTable({
                             </TableCell>
                             <TableCell className="text-right">
                                 {service.total_sales.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-center">
+                                <Badge variant="outline" className="font-mono">
+                                    Lv.{service.min_user_level}
+                                </Badge>
                             </TableCell>
                             <TableCell>
                                 {new Date(service.updated_at).toLocaleDateString('zh-CN', {
@@ -208,7 +184,8 @@ export function ServiceTable({
                                 </DropdownMenu>
                             </TableCell>
                         </TableRow>
-                    ))}
+                        ))
+                    )}
                 </TableBody>
             </Table>
         </div>

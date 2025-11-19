@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { Search, Plus, Filter, RotateCcw } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { useState, useEffect } from "react"
+import { Search, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -14,13 +13,13 @@ import {
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { LoadingSpinner } from "@/components/ui/loading"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
 import { ServiceTable } from "@/components/services/ServiceTable"
 import { ServiceFormDialog } from "@/components/services/ServiceFormDialog"
 import { ServiceDurationsDrawer } from "@/components/services/ServiceDurationsDrawer"
 import type { Service, Category, ServiceListParams, PaginatedResponse } from "@/lib/features/services"
+import { getCategoryName } from "@/lib/features/services"
 import { getServices, getCategories } from "./actions"
 
 export default function ServicesPage() {
@@ -39,7 +38,7 @@ export default function ServicesPage() {
         page: 1,
         limit: 20,
         search: '',
-        category_id: 1, // 默认选择第一个分类
+        category_id: undefined,
         is_active: undefined,
         sort_by: 'sort_order',
         sort_order: 'asc'
@@ -51,28 +50,32 @@ export default function ServicesPage() {
     const [showDurationsDrawer, setShowDurationsDrawer] = useState(false)
     const [selectedService, setSelectedService] = useState<Service | null>(null)
 
-    // 加载分类列表
-    const loadCategories = useCallback(async () => {
-        try {
-            const result = await getCategories()
-            if (result.ok && result.data) {
-                setCategories(result.data)
-                // 默认选择 wellness 分类
-                const wellnessCategory = result.data.find(cat => cat.code === 'wellness')
-                if (wellnessCategory && !filters.category_id) {
-                    setFilters(prev => ({ ...prev, category_id: wellnessCategory.id }))
+    // 加载分类列表(只加载一次)
+    useEffect(() => {
+        async function loadCategories() {
+            try {
+                const result = await getCategories()
+                if (result.ok && result.data) {
+                    setCategories(result.data)
+                    // 默认选择 wellness 分类
+                    const wellnessCategory = result.data.find(cat => cat.code === 'wellness')
+                    if (wellnessCategory) {
+                        setFilters(prev => ({ ...prev, category_id: wellnessCategory.id }))
+                    }
                 }
+            } catch (error) {
+                console.error('加载分类失败:', error)
             }
-        } catch (error) {
-            console.error('加载分类失败:', error)
         }
-    }, [filters.category_id])
+        loadCategories()
+    }, [])
 
     // 加载服务列表
-    const loadServices = useCallback(async (params: ServiceListParams = filters) => {
+    const loadServices = async (params?: ServiceListParams) => {
         setLoading(true)
         try {
-            const result = await getServices(params as any)
+            const queryParams = params || filters
+            const result = await getServices(queryParams as any)
             if (result.ok && result.data) {
                 const data = result.data as PaginatedResponse<Service>
                 setServices(data.data)
@@ -91,13 +94,15 @@ export default function ServicesPage() {
         } finally {
             setLoading(false)
         }
-    }, [filters])
+    }
 
-    // 初始化数据
+    // 初始化数据(仅在分类加载后)
     useEffect(() => {
-        loadCategories()
-        loadServices()
-    }, [loadCategories, loadServices])
+        if (filters.category_id) {
+            loadServices()
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters.category_id])
 
     // 搜索处理
     const handleSearch = (value: string) => {
@@ -177,35 +182,26 @@ export default function ServicesPage() {
         loadServices()
     }
 
-    const getCategoryName = (category: Category): string => {
-        return category.name.zh || category.name.en || category.name.th || category.code
-    }
-
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6 p-4 md:px-8 md:py-6">
             {/* 页面标题 */}
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight">服务管理</h1>
-                {/* <p className="text-muted-foreground">
-                    管理平台服务项目和定价策略
-                </p> */}
+            <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-bold">服务管理</h1>
+                <Button onClick={handleCreateService}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    新建服务
+                </Button>
             </div>
 
-
-            {/* 工具栏 */}
+            {/* 筛选区域 */}
             <Card>
-                <CardHeader>
-                    <CardTitle className="text-lg">筛选和搜索</CardTitle>
-                    {/* <CardDescription>使用下方工具筛选和搜索服务</CardDescription> */}
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-col gap-4 md:flex-row md:items-end">
+                <CardContent className="p-4">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center">
                         {/* 搜索 */}
                         <div className="flex-1">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                                 <Input
-                                    id="search"
                                     placeholder="搜索服务代码或名称..."
                                     value={filters.search || ''}
                                     onChange={(e) => handleSearch(e.target.value)}
@@ -234,27 +230,21 @@ export default function ServicesPage() {
                         </div>
 
                         {/* 状态筛选 */}
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center gap-2">
                             <Checkbox
                                 id="active-only"
                                 checked={filters.is_active === true}
                                 onCheckedChange={handleActiveFilter}
                             />
-                            <Label htmlFor="active-only" className="text-sm">
+                            <Label htmlFor="active-only" className="text-sm cursor-pointer">
                                 仅显示上架
                             </Label>
                         </div>
 
-                        {/* 操作按钮 */}
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={handleResetFilters}>
-                                重置
-                            </Button>
-                            <Button onClick={handleCreateService}>
-                                <Plus className="mr-2 h-4 w-4" />
-                                新建服务
-                            </Button>
-                        </div>
+                        {/* 重置按钮 */}
+                        <Button variant="outline" onClick={handleResetFilters}>
+                            重置
+                        </Button>
                     </div>
                 </CardContent>
             </Card>
@@ -262,17 +252,7 @@ export default function ServicesPage() {
             {/* 服务列表 */}
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle>服务列表</CardTitle>
-                            <CardDescription>
-                                共 {pagination.total} 个服务，当前第 {pagination.page} 页
-                            </CardDescription>
-                        </div>
-                        <Button variant="outline" size="sm" onClick={handleRefresh}>
-                            刷新
-                        </Button>
-                    </div>
+                    <CardTitle>服务列表</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <ServiceTable
@@ -283,9 +263,9 @@ export default function ServicesPage() {
                         onRefresh={handleRefresh}
                     />
 
-                    {/* 分页 */}
-                    {pagination.totalPages > 1 && (
-                        <div className="flex items-center justify-between mt-6">
+                    {/* 分页 - 统一规范 */}
+                    {!loading && pagination.total > 0 && (
+                        <div className="flex items-center justify-between mt-4">
                             <div className="text-sm text-muted-foreground">
                                 显示 {(pagination.page - 1) * pagination.limit + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} 条，共 {pagination.total} 条
                             </div>
@@ -298,21 +278,13 @@ export default function ServicesPage() {
                                 >
                                     上一页
                                 </Button>
-                                <div className="flex items-center gap-1">
-                                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                                        const page = i + 1
-                                        return (
-                                            <Button
-                                                key={page}
-                                                variant={page === pagination.page ? "default" : "outline"}
-                                                size="sm"
-                                                onClick={() => handlePageChange(page)}
-                                            >
-                                                {page}
-                                            </Button>
-                                        )
-                                    })}
-                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled
+                                >
+                                    第 {pagination.page} 页
+                                </Button>
                                 <Button
                                     variant="outline"
                                     size="sm"
