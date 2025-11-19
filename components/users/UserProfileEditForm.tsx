@@ -59,7 +59,7 @@ export function UserProfileEditForm({
         defaultValues: {
             display_name: profile.display_name || '',
             username: profile.username || '',
-            language_code: profile.language_code,
+            language_code: profile.language_code as 'en' | 'zh' | 'th' | undefined,
             timezone: profile.timezone || '',
             level: profile.level,
             credit_score: profile.credit_score,
