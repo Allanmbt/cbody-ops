@@ -90,7 +90,8 @@ export const girlListParamsSchema = z.object({
     category_id: z.number().int().optional(),
     status: z.enum(['available', 'busy', 'offline']).optional(),
     is_verified: z.boolean().optional(),
-    is_blocked: z.boolean().optional(), // 屏蔽状态筛选
+    is_blocked: z.boolean().optional(), // 屏蔽状态筛选（资料管理中主要由 review_status 导航控制）
+    review_status: z.enum(['pending', 'approved', 'deleted']).optional(), // 审核状态：未审核/已通过/已注销
     sort_by: z.enum(['created_at', 'updated_at', 'rating', 'total_sales', 'trust_score', 'sort_order']).default('sort_order'),
     sort_order: z.enum(['asc', 'desc']).default('asc'),
 })

@@ -41,6 +41,9 @@ export interface Girl {
     sort_order: number
     created_at: string
     updated_at: string
+    previous_user_id?: string | null
+    deleted_at?: string | null
+    deleted_reason?: string | null
 }
 
 export interface GirlStatus {

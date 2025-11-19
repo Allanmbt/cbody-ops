@@ -8,6 +8,13 @@ import { generateSignedUrl } from '@/app/dashboard/media/actions'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { Loader2 } from 'lucide-react'
 
+// Cloudflare Stream 基础域名（与数据库存储的缩略图模板保持一致）
+const CLOUDFLARE_BASE = process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_BASE_URL || 'https://videodelivery.net'
+
+function getCloudflareVideoUrl(uid: string) {
+    return `${CLOUDFLARE_BASE.replace(/\/$/, '')}/${uid}/manifest/video.m3u8`
+}
+
 interface MediaPreviewProps {
     media: MediaListItem | null
     open: boolean
@@ -31,7 +38,18 @@ export function MediaPreview({ media, open, onOpenChange }: MediaPreviewProps) {
             setLoading(true)
 
             try {
-                // 根据状态确定存储桶
+                // Cloudflare 视频：直接根据 UID 生成播放 URL（预览窗口不再显示缩略图）
+                if (media.provider === 'cloudflare' && media.kind === 'video') {
+                    const cfUid = (media.meta as any)?.cloudflare?.uid || media.storage_key
+                    if (cfUid) {
+                        setVideoUrl(getCloudflareVideoUrl(cfUid))
+                        setImageUrl(null)
+                    }
+                    setLoading(false)
+                    return
+                }
+
+                // Supabase 媒体：根据状态确定存储桶
                 const bucket = media.status === 'approved' ? 'girls-media' : 'tmp-uploads'
 
                 if (media.kind === 'live_photo') {
@@ -49,7 +67,7 @@ export function MediaPreview({ media, open, onOpenChange }: MediaPreviewProps) {
                         }
                     }
                     if (live?.video_key) {
-                        const videoResult = await generateSignedUrl(admin.id, {
+                        const videoResult = await generateSignedUrl({
                             key: live.video_key,
                             type: 'main',
                             bucket,
@@ -62,7 +80,7 @@ export function MediaPreview({ media, open, onOpenChange }: MediaPreviewProps) {
                 } else if (media.kind === 'video') {
                     // 视频：只显示视频播放器，不显示封面图
                     if (media.storage_key) {
-                        const videoResult = await generateSignedUrl(admin.id, {
+                        const videoResult = await generateSignedUrl({
                             key: media.storage_key,
                             type: 'main',
                             bucket,

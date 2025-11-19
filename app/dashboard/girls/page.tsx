@@ -8,12 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { Plus, Search } from "lucide-react"
+import { Plus, Search, ChevronLeft, ChevronRight } from "lucide-react"
 import { GirlTable } from "@/components/girls/GirlTable"
 import { GirlFormDialog } from "@/components/girls/GirlFormDialog"
 import { GirlStatusDrawer } from "@/components/girls/GirlStatusDrawer"
 import {
-    getGirls,
+    getGirlsProfileList,
     getCities,
     getCategories,
     toggleGirlBlockedStatus,
@@ -32,22 +32,23 @@ export default function GirlsPage() {
     const [cities, setCities] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
 
-    // 分页状态
+    // 分页状态（默认每页10条，提升响应速度）
     const [pagination, setPagination] = useState({
         page: 1,
-        limit: 20,
+        limit: 10,
         total: 0,
         totalPages: 0
     })
 
-    // 筛选状态
+    // 筛选状态：默认只展示“已通过”的技师
     const [filters, setFilters] = useState<Omit<GirlListParams, 'page' | 'limit'>>({
         search: '',
         city_id: undefined,
         category_id: undefined,
         status: undefined as GirlStatusType | undefined,
         is_verified: undefined,
-        is_blocked: undefined, // 改为is_blocked筛选: all/true/false
+        is_blocked: undefined,
+        review_status: 'approved',
         sort_by: 'sort_order',
         sort_order: 'asc'
     })
@@ -91,7 +92,7 @@ export default function GirlsPage() {
                 ...params
             }
 
-            const result = await getGirls(queryParams as any)
+            const result = await getGirlsProfileList(queryParams as any)
 
             if (result.ok && result.data) {
                 setGirls(result.data.data)
@@ -146,6 +147,7 @@ export default function GirlsPage() {
             status: undefined as GirlStatusType | undefined,
             is_verified: undefined,
             is_blocked: undefined,
+            review_status: 'approved' as const,
             sort_by: 'sort_order' as const,
             sort_order: 'asc' as const
         }
@@ -238,14 +240,12 @@ export default function GirlsPage() {
                     <Card>
                         <CardHeader>
                             <h2 className="text-lg font-semibold">技师列表</h2>
-                            <p className="text-sm text-muted-foreground">
-                                当前共有 {pagination.total} 个技师
-                            </p>
                         </CardHeader>
                         <CardContent>
-                            {/* 搜索和筛选 */}
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className="relative flex-1 max-w-sm">
+                            {/* 搜索 + 审核状态导航 + 基础筛选（自适应换行，移动端友好） */}
+                            <div className="flex flex-wrap items-center gap-3 mb-4">
+                                {/* 搜索框 */}
+                                <div className="relative flex-1 min-w-[220px] max-w-md">
                                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
                                     <Input
                                         placeholder="搜索工号、用户名..."
@@ -254,15 +254,39 @@ export default function GirlsPage() {
                                         className="pl-10"
                                     />
                                 </div>
+
+                                {/* 刷新按钮 */}
                                 <Button
                                     variant="outline"
                                     onClick={handleResetFilters}
                                 >
-                                    刷新
+                                    重置筛选
                                 </Button>
+
+                                {/* 审核状态导航：已通过 / 未审核 / 已注销 */}
+                                <div className="flex flex-wrap gap-2 ml-auto">
+                                    {([
+                                        { key: 'approved', label: '已通过' },
+                                        { key: 'pending', label: '未审核' },
+                                        { key: 'deleted', label: '已注销' },
+                                    ] as const).map((tab) => {
+                                        const isActive = (filters.review_status || 'approved') === tab.key
+                                        return (
+                                            <Button
+                                                key={tab.key}
+                                                size="sm"
+                                                variant={isActive ? "default" : "outline"}
+                                                className="px-3"
+                                                onClick={() => handleFilter('review_status', tab.key)}
+                                            >
+                                                {tab.label}
+                                            </Button>
+                                        )
+                                    })}
+                                </div>
                             </div>
 
-                            {/* 筛选器 */}
+                            {/* 城市 / 分类筛选：保持轻量，仅做资料检索 */}
                             <div className="flex flex-wrap gap-2 mb-6">
                                 <Select
                                     value={filters.city_id?.toString() || 'all'}
@@ -297,70 +321,6 @@ export default function GirlsPage() {
                                         ))}
                                     </SelectContent>
                                 </Select>
-
-                                <Select
-                                    value={filters.status || 'all'}
-                                    onValueChange={(value) => handleFilter('status', value === 'all' ? undefined : value)}
-                                >
-                                    <SelectTrigger className="w-[140px]">
-                                        <SelectValue placeholder="在线状态" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">全部状态</SelectItem>
-                                        <SelectItem value="available">在线</SelectItem>
-                                        <SelectItem value="busy">忙碌</SelectItem>
-                                        <SelectItem value="offline">离线</SelectItem>
-                                    </SelectContent>
-                                </Select>
-
-                                <Select
-                                    value={filters.is_verified?.toString() || 'all'}
-                                    onValueChange={(value) => handleFilter('is_verified', value === 'all' ? undefined : value === 'true')}
-                                >
-                                    <SelectTrigger className="w-[140px]">
-                                        <SelectValue placeholder="认证状态" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">全部</SelectItem>
-                                        <SelectItem value="true">已认证</SelectItem>
-                                        <SelectItem value="false">未认证</SelectItem>
-                                    </SelectContent>
-                                </Select>
-
-                                <Select
-                                    value={filters.is_blocked === undefined ? 'all' : filters.is_blocked ? 'blocked' : 'active'}
-                                    onValueChange={(value) => handleFilter('is_blocked', value === 'all' ? undefined : value === 'blocked')}
-                                >
-                                    <SelectTrigger className="w-[140px]">
-                                        <SelectValue placeholder="是否屏蔽" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">全部</SelectItem>
-                                        <SelectItem value="blocked">仅屏蔽</SelectItem>
-                                        <SelectItem value="active">仅活跃</SelectItem>
-                                    </SelectContent>
-                                </Select>
-
-                                <Select
-                                    value={`${filters.sort_by}_${filters.sort_order}`}
-                                    onValueChange={(value) => {
-                                        const [sort_by, sort_order] = value.split('_')
-                                        handleFilter('sort_by', sort_by)
-                                        handleFilter('sort_order', sort_order)
-                                    }}
-                                >
-                                    <SelectTrigger className="w-[140px]">
-                                        <SelectValue placeholder="排序" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="sort_order_asc">权重升序</SelectItem>
-                                        <SelectItem value="sort_order_desc">权重降序</SelectItem>
-                                        <SelectItem value="created_at_desc">创建时间</SelectItem>
-                                        <SelectItem value="rating_desc">评分高低</SelectItem>
-                                        <SelectItem value="total_sales_desc">销量高低</SelectItem>
-                                        <SelectItem value="trust_score_desc">诚信分</SelectItem>
-                                    </SelectContent>
-                                </Select>
                             </div>
 
                             {/* 技师表格 */}
@@ -377,28 +337,33 @@ export default function GirlsPage() {
                                     />
                                 </div>
                             </div>
-                            {/* 分页 */}
-                            {pagination.totalPages > 1 && (
-                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            {/* 分页：与用户管理保持一致的布局 */}
+                            {pagination.total > 0 && (
+                                <div className="flex items-center justify-between mt-4">
                                     <div className="text-sm text-muted-foreground">
-                                        第 {pagination.page} 页，共 {pagination.totalPages} 页
+                                        显示 {(pagination.page - 1) * pagination.limit + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} 条，共 {pagination.total} 条
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex items-center gap-2">
                                         <Button
                                             variant="outline"
                                             size="sm"
                                             onClick={() => handlePageChange(pagination.page - 1)}
                                             disabled={pagination.page <= 1 || loading}
                                         >
+                                            <ChevronLeft className="h-4 w-4" />
                                             上一页
                                         </Button>
+                                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                            第 {pagination.page} 页
+                                        </div>
                                         <Button
                                             variant="outline"
                                             size="sm"
                                             onClick={() => handlePageChange(pagination.page + 1)}
-                                            disabled={pagination.page >= pagination.totalPages || loading}
+                                            disabled={pagination.page * pagination.limit >= pagination.total || loading}
                                         >
                                             下一页
+                                            <ChevronRight className="h-4 w-4" />
                                         </Button>
                                     </div>
                                 </div>

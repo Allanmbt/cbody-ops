@@ -14,6 +14,10 @@ export interface MediaMeta {
         image_key: string
         video_key: string
     }
+    cloudflare?: {
+        uid: string
+        ready?: boolean
+    }
 }
 
 // 媒体记录
@@ -21,6 +25,7 @@ export interface GirlMedia {
     id: string
     girl_id: string
     kind: MediaKind
+    provider: 'supabase' | 'cloudflare'
     storage_key: string
     thumb_key: string | null
     meta: MediaMeta
@@ -39,6 +44,7 @@ export interface GirlMedia {
 export interface MediaListItem extends GirlMedia {
     girl_name?: string
     girl_username?: string
+    girl_number?: number | null
     reviewer_name?: string
 }
 

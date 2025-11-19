@@ -14,6 +14,7 @@ import { MediaPreview } from '@/components/media/MediaPreview'
 import { MediaThumbnail } from '@/components/media/MediaThumbnail'
 import type { MediaListItem } from '@/lib/features/media'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
+import { LoadingSpinner } from '@/components/ui/loading'
 
 export function RejectedMediaList() {
     const { admin, loading: adminLoading } = useCurrentAdmin()
@@ -126,7 +127,7 @@ export function RejectedMediaList() {
                     <div className="relative flex-1">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
-                            placeholder="搜索技师名称..."
+                            placeholder="搜索技师名称 / 工号 / 用户名..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             className="pl-8"
@@ -161,8 +162,10 @@ export function RejectedMediaList() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8">
-                                        加载中...
+                                    <TableCell colSpan={7} className="py-8">
+                                        <div className="flex items-center justify-center">
+                                            <LoadingSpinner />
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ) : mediaList.length === 0 ? (
@@ -183,7 +186,11 @@ export function RejectedMediaList() {
                                         <TableCell>
                                             <div>
                                                 <div className="font-medium">{media.girl_name}</div>
-                                                <div className="text-sm text-muted-foreground">@{media.girl_username}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    {media.girl_number ? `#${media.girl_number}` : ''}
+                                                    {media.girl_number && media.girl_username ? ' • ' : ''}
+                                                    {media.girl_username ?? ''}
+                                                </div>
                                             </div>
                                         </TableCell>
                                         <TableCell>{getKindBadge(media.kind)}</TableCell>
@@ -226,12 +233,12 @@ export function RejectedMediaList() {
                     </Table>
                 </div>
 
-                {total > limit && (
+                {total > 0 && (
                     <div className="flex items-center justify-between mt-4">
                         <div className="text-sm text-muted-foreground">
-                            共 {total} 条记录
+                            显示 {(page - 1) * limit + 1} - {Math.min(page * limit, total)} 条，共 {total} 条
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -240,6 +247,9 @@ export function RejectedMediaList() {
                             >
                                 上一页
                             </Button>
+                            <div className="text-sm text-muted-foreground">
+                                第 {page} 页
+                            </div>
                             <Button
                                 size="sm"
                                 variant="outline"

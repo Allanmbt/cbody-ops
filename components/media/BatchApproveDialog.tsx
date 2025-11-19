@@ -55,11 +55,15 @@ export function BatchApproveDialog({ open, onClose, onConfirm, count }: BatchApp
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="0">0 - 公开</SelectItem>
-                                <SelectItem value="1">1 - 普通会员</SelectItem>
-                                <SelectItem value="2">2 - 银卡会员</SelectItem>
-                                <SelectItem value="3">3 - 金卡会员</SelectItem>
-                                <SelectItem value="4">4 - 白金会员</SelectItem>
-                                <SelectItem value="5">5 - 钻石会员</SelectItem>
+                                <SelectItem value="1">1 - 注册会员</SelectItem>
+                                <SelectItem value="2">2 - 已消费会员</SelectItem>
+                                <SelectItem value="3">3 - VIP3</SelectItem>
+                                <SelectItem value="4">4 - VIP4</SelectItem>
+                                <SelectItem value="5">5 - VIP5</SelectItem>
+                                <SelectItem value="6">6 - VIP6</SelectItem>
+                                <SelectItem value="7">7 - VIP7</SelectItem>
+                                <SelectItem value="8">8 - VIP8</SelectItem>
+                                <SelectItem value="9">9 - VIP9</SelectItem>
                             </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">

@@ -18,6 +18,7 @@ import { BatchApproveDialog } from '@/components/media/BatchApproveDialog'
 import { BatchRejectDialog } from '@/components/media/BatchRejectDialog'
 import type { MediaListItem } from '@/lib/features/media'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
+import { LoadingSpinner } from '@/components/ui/loading'
 
 export function PendingMediaList() {
     const { admin, loading: adminLoading } = useCurrentAdmin()
@@ -173,10 +174,20 @@ export function PendingMediaList() {
         }
     }
 
-    const formatFileSize = (bytes: number) => {
-        if (bytes < 1024) return bytes + ' B'
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
-        return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+    const formatDuration = (seconds?: number) => {
+        if (!seconds || seconds <= 0) return '--'
+
+        // Cloudflare Stream duration 为秒数（可能是小数），这里取整更适合展示
+        const totalSeconds = Math.round(seconds)
+        const minutes = Math.floor(totalSeconds / 60)
+        const remainSeconds = totalSeconds % 60
+
+        if (minutes === 0) {
+            return `${totalSeconds}秒`
+        }
+
+        const mmss = `${minutes}:${remainSeconds.toString().padStart(2, '0')}`
+        return `${minutes}分${remainSeconds}秒 (${mmss})`
     }
 
     return (
@@ -204,7 +215,7 @@ export function PendingMediaList() {
                     <div className="relative flex-1">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
-                            placeholder="搜索技师名称..."
+                            placeholder="搜索技师名称 / 工号 / 用户名..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             className="pl-8"
@@ -237,7 +248,7 @@ export function PendingMediaList() {
                                 <TableHead>缩略图</TableHead>
                                 <TableHead>技师</TableHead>
                                 <TableHead>类型</TableHead>
-                                <TableHead>大小</TableHead>
+                                <TableHead>时长</TableHead>
                                 <TableHead>上传时间</TableHead>
                                 <TableHead className="text-right">操作</TableHead>
                             </TableRow>
@@ -245,8 +256,10 @@ export function PendingMediaList() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8">
-                                        加载中...
+                                    <TableCell colSpan={7} className="py-8">
+                                        <div className="flex items-center justify-center">
+                                            <LoadingSpinner />
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ) : mediaList.length === 0 ? (
@@ -273,11 +286,15 @@ export function PendingMediaList() {
                                         <TableCell>
                                             <div>
                                                 <div className="font-medium">{media.girl_name}</div>
-                                                <div className="text-sm text-muted-foreground">@{media.girl_username}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    {media.girl_number ? `#${media.girl_number}` : ''}
+                                                    {media.girl_number && media.girl_username ? ' • ' : ''}
+                                                    {media.girl_username ?? ''}
+                                                </div>
                                             </div>
                                         </TableCell>
                                         <TableCell>{getKindBadge(media.kind)}</TableCell>
-                                        <TableCell>{media.meta?.size ? formatFileSize(media.meta.size) : '--'}</TableCell>
+                                        <TableCell>{formatDuration(media.meta?.duration)}</TableCell>
                                         <TableCell>{new Date(media.created_at).toLocaleString()}</TableCell>
                                         <TableCell className="text-right">
                                             <Button
@@ -297,13 +314,13 @@ export function PendingMediaList() {
                     </Table>
                 </div>
 
-                {/* 分页 */}
-                {total > limit && (
+                {/* 分页：遵循 UI-GUIDE 管理列表规范 */}
+                {total > 0 && (
                     <div className="flex items-center justify-between mt-4">
                         <div className="text-sm text-muted-foreground">
-                            共 {total} 条记录
+                            显示 {(page - 1) * limit + 1} - {Math.min(page * limit, total)} 条，共 {total} 条
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -312,6 +329,9 @@ export function PendingMediaList() {
                             >
                                 上一页
                             </Button>
+                            <div className="text-sm text-muted-foreground">
+                                第 {page} 页
+                            </div>
                             <Button
                                 size="sm"
                                 variant="outline"

@@ -6,6 +6,13 @@ import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { Loader2 } from 'lucide-react'
 import type { MediaListItem } from '@/lib/features/media'
 
+// Cloudflare Stream 缩略图基础域名（数据库中 thumb_key 使用 videodelivery.net 模板）
+const CLOUDFLARE_BASE = process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_BASE_URL || 'https://videodelivery.net'
+
+function getCloudflareThumbnailFromUid(uid: string) {
+    return `${CLOUDFLARE_BASE.replace(/\/$/, '')}/${uid}/thumbnails/thumbnail.jpg`
+}
+
 interface MediaThumbnailProps {
     media: MediaListItem
     onClick?: () => void
@@ -25,6 +32,26 @@ function MediaThumbnailComponent({ media, onClick, className = '' }: MediaThumbn
             try {
                 setLoading(true)
                 setError(false)
+
+                // Cloudflare 视频：优先使用数据库中的 thumb_key（videodelivery.net 模板）
+                if (media.provider === 'cloudflare' && media.kind === 'video') {
+                    if (media.thumb_key) {
+                        const raw = media.thumb_key
+                        const url = raw.startsWith('http')
+                            ? raw
+                            : `${CLOUDFLARE_BASE.replace(/\/$/, '')}/${raw.replace(/^\//, '')}`
+                        setThumbUrl(url)
+                        setLoading(false)
+                        return
+                    }
+
+                    const cfUid = (media.meta as any)?.cloudflare?.uid || media.storage_key
+                    if (cfUid) {
+                        setThumbUrl(getCloudflareThumbnailFromUid(cfUid))
+                        setLoading(false)
+                        return
+                    }
+                }
 
                 // 根据状态确定存储桶
                 const bucket = media.status === 'approved' ? 'girls-media' : 'tmp-uploads'

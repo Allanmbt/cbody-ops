@@ -583,6 +583,25 @@ import { Skeleton } from "@/components/ui/skeleton"
    - 底部分页器
    - 显示总数和当前页信息
 
+### 管理列表统一规范（Admin Lists）
+
+- **表格加载方式**
+  - 优先在表格内部显示 loading 状态，不遮挡整页
+  - 简单场景：中间放置 `LoadingSpinner`
+  - 复杂场景：使用 `Skeleton` 作为多行占位
+
+- **分页布局（放在表格下方）**
+  - 左侧：`显示 A - B 条，共 N 条`
+    - A = `(page - 1) * limit + 1`
+    - B = `min(page * limit, total)`
+  - 右侧：`上一页` / `第 X 页` / `下一页`
+    - 使用 outline 按钮，按钮组右对齐：`flex items-center justify-between`
+
+- **适用范围**
+  - 用户管理列表（UserTable）
+  - 技师管理列表（/dashboard/girls）
+  - 其他后台列表建议复用同一布局，保持管理端体验统一
+
 ### 详情页面模式
 
 1. **面包屑导航：**

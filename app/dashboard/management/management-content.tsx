@@ -64,13 +64,12 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { PageLoading } from "@/components/ui/loading"
+import { ContentLoading } from "@/components/ui/loading"
 import { cn } from "@/lib/utils"
 import { isSuperAdmin } from "@/lib/auth"
-import { getSupabaseAdminClient } from "@/lib/supabase"
 import type { AdminProfile, AdminRole } from "@/lib/types/admin"
 import { toast } from "sonner"
-import { verifySuperAdmin, getAdminsList } from "./actions"
+import { getAdminManagementInit, getAdminsList, updateAdminDisplayName, resetAdminPassword, toggleAdminStatus, createAdminAccount } from "./actions"
 
 interface AdminWithStatus extends AdminProfile {
   last_login?: string
@@ -97,6 +96,8 @@ export function ManagementContent() {
   const [currentAdmin, setCurrentAdmin] = useState<AdminProfile | null>(null)
   const [admins, setAdmins] = useState<AdminWithStatus[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const pageSize = 10
   const [searchQuery, setSearchQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState<AdminRole | "all">("all")
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -123,8 +124,7 @@ export function ManagementContent() {
 
     async function checkAuthAndLoadData() {
       try {
-        // 使用 Server Action 验证权限
-        const result = await verifySuperAdmin()
+        const result = await getAdminManagementInit()
 
         if (!result.ok) {
           if (result.error === "未登录") {
@@ -136,13 +136,10 @@ export function ManagementContent() {
         }
 
         if (mounted) {
-          setCurrentAdmin(result.admin!)
-        }
-
-        // 加载管理员列表
-        const listResult = await getAdminsList()
-        if (listResult.ok && mounted) {
-          setAdmins(listResult.data || [])
+          if (result.currentAdmin) {
+            setCurrentAdmin(result.currentAdmin)
+          }
+          setAdmins(result.admins || [])
         }
       } catch (error) {
         console.error('[ManagementContent] 异常:', error)
@@ -164,6 +161,7 @@ export function ManagementContent() {
       const result = await getAdminsList()
       if (result.ok) {
         setAdmins(result.data || [])
+        setPage(1)
       } else {
         toast.error(result.error || '加载管理员列表失败')
       }
@@ -181,22 +179,15 @@ export function ManagementContent() {
     }
 
     try {
-      // 继续使用admin客户端进行更新操作
-      const supabase = getSupabaseAdminClient()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        .from('admin_profiles')
-        .update({
-          display_name: displayName.trim(),
-          updated_by: currentAdmin?.id || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedAdmin.id)
+      const result = await updateAdminDisplayName({
+        adminId: selectedAdmin.id,
+        displayName: displayName.trim(),
+      })
 
-      if (error) {
-        throw error
+      if (!result.ok) {
+        toast.error(result.error || '更新显示名称失败')
+        return
       }
-
 
       toast.success('显示名称更新成功')
       setIsEditDialogOpen(false)
@@ -216,16 +207,15 @@ export function ManagementContent() {
     }
 
     try {
-      const supabaseAdmin = getSupabaseAdminClient()
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(
-        selectedAdmin.id,
-        { password: newPassword }
-      )
+      const result = await resetAdminPassword({
+        adminId: selectedAdmin.id,
+        newPassword,
+      })
 
-      if (error) {
-        throw error
+      if (!result.ok) {
+        toast.error(result.error || '重置密码失败')
+        return
       }
-
 
       toast.success('密码重置成功')
       setIsResetPasswordDialogOpen(false)
@@ -239,35 +229,16 @@ export function ManagementContent() {
 
   const handleCreateAdmin = async (data: CreateAdminForm) => {
     try {
-      const supabaseAdmin = getSupabaseAdminClient()
-
-      // 创建用户账号
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      const result = await createAdminAccount({
         email: data.email,
         password: data.password,
-        email_confirm: true
+        display_name: data.display_name,
+        role: data.role,
       })
 
-      if (authError || !authData.user) {
-        throw authError || new Error('创建用户失败')
-      }
-
-      // 创建管理员配置
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: profileError } = await (supabaseAdmin as any)
-        .from('admin_profiles')
-        .insert({
-          id: authData.user.id,
-          display_name: data.display_name,
-          role: data.role,
-          is_active: true,
-          created_by: currentAdmin?.id || null
-        })
-
-      if (profileError) {
-        // 如果配置创建失败，删除已创建的用户
-        await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-        throw profileError
+      if (!result.ok) {
+        toast.error(result.error || '添加管理员失败')
+        return
       }
 
       toast.success('管理员添加成功')
@@ -299,23 +270,17 @@ export function ManagementContent() {
     }
 
     try {
-      const supabase = getSupabaseAdminClient()
-      const newStatus = !admin.is_active
+      const result = await toggleAdminStatus({
+        adminId: admin.id,
+        currentStatus: admin.is_active,
+      })
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        .from('admin_profiles')
-        .update({
-          is_active: newStatus,
-          updated_by: currentAdmin?.id || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', admin.id)
-
-      if (error) {
-        throw error
+      if (!result.ok) {
+        toast.error(result.error || '更改状态失败')
+        return
       }
 
+      const newStatus = result.newStatus ?? !admin.is_active
 
       toast.success(`已${newStatus ? '启用' : '禁用'}账号`)
       await loadAdmins()
@@ -331,6 +296,9 @@ export function ManagementContent() {
     const matchesRole = roleFilter === "all" || admin.role === roleFilter
     return matchesSearch && matchesRole
   })
+
+  const totalPages = Math.max(1, Math.ceil(filteredAdmins.length / pageSize))
+  const pagedAdmins = filteredAdmins.slice((page - 1) * pageSize, page * pageSize)
 
   const getRoleDisplayName = (role: AdminRole): string => {
     switch (role) {
@@ -362,11 +330,7 @@ export function ManagementContent() {
     }
   }
 
-  if (loading) {
-    return <PageLoading text="正在加载管理员信息..." />
-  }
-
-  if (!currentAdmin || !isSuperAdmin(currentAdmin.role)) {
+  if (!loading && (!currentAdmin || !isSuperAdmin(currentAdmin.role))) {
     return <div className="text-center p-8">权限不足</div>
   }
 
@@ -406,9 +370,37 @@ export function ManagementContent() {
                     className="pl-10"
                   />
                 </div>
+                {totalPages > 1 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+                    <div className="text-sm text-muted-foreground">
+                      第 {page} 页，共 {totalPages} 页（共 {filteredAdmins.length} 个管理员）
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page <= 1 || loading}
+                      >
+                        上一页
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={page >= totalPages || loading}
+                      >
+                        下一页
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <Select
                   value={roleFilter}
-                  onValueChange={(value) => setRoleFilter(value as AdminRole | "all")}
+                  onValueChange={(value) => {
+                    setRoleFilter(value as AdminRole | "all")
+                    setPage(1)
+                  }}
                 >
                   <SelectTrigger className="w-40">
                     <Filter className="size-4 mr-2" />
@@ -425,126 +417,130 @@ export function ManagementContent() {
               </div>
 
               <div className="rounded-md border overflow-hidden">
-                <div className="overflow-x-auto">
-                  <TooltipProvider>
-                    <Table className="min-w-[800px] w-full">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>管理员</TableHead>
-                          <TableHead>角色</TableHead>
-                          <TableHead>状态</TableHead>
-                          <TableHead>创建时间</TableHead>
-                          <TableHead className="text-right">操作</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredAdmins.map((admin) => (
-                          <TableRow key={admin.id}>
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <Avatar className="size-8">
-                                  <AvatarFallback>
-                                    {admin.display_name.charAt(0)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <div className="font-medium">{admin.display_name}</div>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div
-                                        className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
-                                        onClick={() => copyToClipboard(admin.id)}
-                                      >
-                                        <span>{admin.id.slice(0, 8)}...</span>
-                                        {copiedId === admin.id ? (
-                                          <Check className="size-3 text-green-500" />
-                                        ) : (
-                                          <Copy className="size-3" />
-                                        )}
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <div className="flex flex-col items-center gap-1">
-                                        <code className="text-xs bg-white px-2 py-1 rounded">
-                                          {admin.id}
-                                        </code>
-                                      </div>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={getRoleBadgeVariant(admin.role)}>
-                                {getRoleDisplayName(admin.role)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                {admin.is_active ? (
-                                  <CheckCircle className="size-4 text-green-500" />
-                                ) : (
-                                  <AlertTriangle className="size-4 text-red-500" />
-                                )}
-                                <span className={cn(
-                                  "text-sm",
-                                  admin.is_active ? "text-green-600" : "text-red-600"
-                                )}>
-                                  {admin.is_active ? "正常" : "禁用"}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {new Date(admin.created_at).toLocaleDateString('zh-CN')}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
-                                    <MoreVertical className="size-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      setSelectedAdmin(admin)
-                                      setDisplayName(admin.display_name)
-                                      setIsEditDialogOpen(true)
-                                    }}
-                                  >
-                                    <Edit className="size-4 mr-2" />
-                                    编辑显示名
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      setSelectedAdmin(admin)
-                                      setIsResetPasswordDialogOpen(true)
-                                    }}
-                                  >
-                                    <RotateCcw className="size-4 mr-2" />
-                                    重置密码
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() => handleToggleStatus(admin)}
-                                    disabled={admin.id === currentAdmin?.id}
-                                  >
-                                    {admin.is_active ? (
-                                      <EyeOff className="size-4 mr-2" />
-                                    ) : (
-                                      <Eye className="size-4 mr-2" />
-                                    )}
-                                    {admin.is_active ? "禁用账号" : "启用账号"}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
+                {loading ? (
+                  <ContentLoading />
+                ) : (
+                  <div className="overflow-x-auto">
+                    <TooltipProvider>
+                      <Table className="min-w-[800px] w-full">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>管理员</TableHead>
+                            <TableHead>角色</TableHead>
+                            <TableHead>状态</TableHead>
+                            <TableHead>创建时间</TableHead>
+                            <TableHead className="text-right">操作</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TooltipProvider>
-                </div>
+                        </TableHeader>
+                        <TableBody>
+                          {pagedAdmins.map((admin) => (
+                            <TableRow key={admin.id}>
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="size-8">
+                                    <AvatarFallback>
+                                      {admin.display_name.charAt(0)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <div className="font-medium">{admin.display_name}</div>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div
+                                          className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
+                                          onClick={() => copyToClipboard(admin.id)}
+                                        >
+                                          <span>{admin.id.slice(0, 8)}...</span>
+                                          {copiedId === admin.id ? (
+                                            <Check className="size-3 text-green-500" />
+                                          ) : (
+                                            <Copy className="size-3" />
+                                          )}
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <div className="flex flex-col items-center gap-1">
+                                          <code className="text-xs bg-white px-2 py-1 rounded">
+                                            {admin.id}
+                                          </code>
+                                        </div>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={getRoleBadgeVariant(admin.role)}>
+                                  {getRoleDisplayName(admin.role)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  {admin.is_active ? (
+                                    <CheckCircle className="size-4 text-green-500" />
+                                  ) : (
+                                    <AlertTriangle className="size-4 text-red-500" />
+                                  )}
+                                  <span className={cn(
+                                    "text-sm",
+                                    admin.is_active ? "text-green-600" : "text-red-600"
+                                  )}>
+                                    {admin.is_active ? "正常" : "禁用"}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {new Date(admin.created_at).toLocaleDateString('zh-CN')}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon">
+                                      <MoreVertical className="size-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setSelectedAdmin(admin)
+                                        setDisplayName(admin.display_name)
+                                        setIsEditDialogOpen(true)
+                                      }}
+                                    >
+                                      <Edit className="size-4 mr-2" />
+                                      编辑显示名
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setSelectedAdmin(admin)
+                                        setIsResetPasswordDialogOpen(true)
+                                      }}
+                                    >
+                                      <RotateCcw className="size-4 mr-2" />
+                                      重置密码
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() => handleToggleStatus(admin)}
+                                      disabled={admin.id === currentAdmin?.id}
+                                    >
+                                      {admin.is_active ? (
+                                        <EyeOff className="size-4 mr-2" />
+                                      ) : (
+                                        <Eye className="size-4 mr-2" />
+                                      )}
+                                      {admin.is_active ? "禁用账号" : "启用账号"}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TooltipProvider>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

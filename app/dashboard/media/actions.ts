@@ -163,11 +163,30 @@ export async function getMediaList(params: unknown): Promise<PaginatedMediaRespo
             query = query.lte('created_at', date_to)
         }
         if (search) {
-            // 搜索技师名称
-            const { data: girls } = await supabase
+            // 支持按技师名称 / 用户名 / 工号搜索（工号格式示例："1001" 或 "#1001"）
+            let normalized = search.trim()
+            if (normalized.startsWith('#')) {
+                normalized = normalized.slice(1)
+            }
+
+            const isNumeric = /^\d+$/.test(normalized)
+
+            let girlsQuery = supabase
                 .from('girls')
                 .select('id')
-                .or(`name.ilike.%${search}%,username.ilike.%${search}%`)
+
+            if (isNumeric) {
+                const girlNumber = parseInt(normalized, 10)
+                girlsQuery = girlsQuery.or(
+                    `name.ilike.%${search}%,username.ilike.%${search}%,girl_number.eq.${girlNumber}`
+                )
+            } else {
+                girlsQuery = girlsQuery.or(
+                    `name.ilike.%${search}%,username.ilike.%${search}%`
+                )
+            }
+
+            const { data: girls } = await girlsQuery
 
             if (girls && girls.length > 0) {
                 query = query.in('girl_id', (girls as any[]).map((g: any) => g.id))
@@ -210,16 +229,20 @@ export async function getMediaList(params: unknown): Promise<PaginatedMediaRespo
             const reviewerIds = [...new Set(data.map((item: any) => item.reviewed_by).filter(Boolean))]
 
             // 获取技师信息
-            const girlsMap: Record<string, { name: string; username: string }> = {}
+            const girlsMap: Record<string, { name: string; username: string; girl_number: number | null }> = {}
             if (girlIds.length > 0) {
                 const { data: girls } = await supabase
                     .from('girls')
-                    .select('id, name, username')
+                    .select('id, name, username, girl_number')
                     .in('id', girlIds)
 
                 if (girls) {
                     girls.forEach((girl: any) => {
-                        girlsMap[girl.id] = { name: girl.name, username: girl.username }
+                        girlsMap[girl.id] = {
+                            name: girl.name,
+                            username: girl.username,
+                            girl_number: girl.girl_number ?? null,
+                        }
                     })
                 }
             }
@@ -244,7 +267,8 @@ export async function getMediaList(params: unknown): Promise<PaginatedMediaRespo
                 ...item,
                 girl_name: item.girl_id ? girlsMap[item.girl_id]?.name : undefined,
                 girl_username: item.girl_id ? girlsMap[item.girl_id]?.username : undefined,
-                reviewer_name: item.reviewed_by ? reviewersMap[item.reviewed_by] : undefined
+                girl_number: item.girl_id ? girlsMap[item.girl_id]?.girl_number ?? null : null,
+                reviewer_name: item.reviewed_by ? reviewersMap[item.reviewed_by] : undefined,
             }))
         }
 
@@ -273,24 +297,31 @@ export async function getMediaStats(): Promise<MediaStats> {
         // 使用统一的 Admin 客户端
         const supabase = getSupabaseAdminClient()
 
-        const { data, error } = await (supabase as any)
-            .from('girls_media')
-            .select('status')
+        // 分别统计三种状态的数量，避免全表扫描加载数据
+        const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+            (supabase as any)
+                .from('girls_media')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'pending'),
+            (supabase as any)
+                .from('girls_media')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'approved'),
+            (supabase as any)
+                .from('girls_media')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'rejected'),
+        ])
 
-        if (error) {
-            console.error('Error fetching media stats:', error)
-            throw new Error(`获取媒体统计失败: ${error.message}`)
-        }
-
-        const pending_count = (data as any[])?.filter((m: any) => m.status === 'pending').length || 0
-        const approved_count = (data as any[])?.filter((m: any) => m.status === 'approved').length || 0
-        const rejected_count = (data as any[])?.filter((m: any) => m.status === 'rejected').length || 0
+        const pending_count = pendingRes.count || 0
+        const approved_count = approvedRes.count || 0
+        const rejected_count = rejectedRes.count || 0
 
         return {
             pending_count,
             approved_count,
             rejected_count,
-            total_count: data?.length || 0
+            total_count: pending_count + approved_count + rejected_count,
         }
     } catch (error) {
         console.error('Error in getMediaStats:', error)
@@ -337,7 +368,43 @@ export async function approveMedia(data: unknown): Promise<{ success: boolean; e
             return { success: false, error: '该技师媒体数量已达上限（30个）' }
         }
 
-        // 处理文件拷贝：从 tmp-uploads 到 girls-media
+        const isCloudflareVideo = media.provider === 'cloudflare' && media.kind === 'video'
+
+        // Cloudflare 视频：无需文件拷贝，只更新状态和 cloudflare 元数据
+        if (isCloudflareVideo) {
+            const existingMeta = media.meta || {}
+            const cfMeta = (existingMeta as any).cloudflare || {}
+            const newMeta = {
+                ...existingMeta,
+                cloudflare: {
+                    ...cfMeta,
+                    uid: cfMeta.uid || media.storage_key,
+                    ready: true,
+                },
+            }
+
+            const { error: updateError } = await (supabase as any)
+                .from('girls_media')
+                .update({
+                    status: 'approved',
+                    min_user_level,
+                    reviewed_by: admin.id,
+                    reviewed_at: new Date().toISOString(),
+                    meta: newMeta,
+                })
+                .eq('id', id)
+
+            if (updateError) {
+                console.error('[Media Actions] Error updating cloudflare media:', updateError)
+                return { success: false, error: `更新失败: ${updateError.message}` }
+            }
+
+            console.log('[Media Actions] Cloudflare media approved successfully')
+            revalidatePath('/dashboard/media')
+            return { success: true }
+        }
+
+        // Supabase 媒体：处理文件拷贝，从 tmp-uploads 到 girls-media
         let newStorageKey = media.storage_key
         let newThumbKey = media.thumb_key
         let newMeta = { ...media.meta }
@@ -503,6 +570,42 @@ export async function batchApproveMedia(data: unknown): Promise<{ success: boole
 
         for (const media of mediaList) {
             try {
+                const isCloudflareVideo = media.provider === 'cloudflare' && media.kind === 'video'
+
+                // Cloudflare 视频：只更新状态与 cloudflare 元数据
+                if (isCloudflareVideo) {
+                    const existingMeta = media.meta || {}
+                    const cfMeta = (existingMeta as any).cloudflare || {}
+                    const newMeta = {
+                        ...existingMeta,
+                        cloudflare: {
+                            ...cfMeta,
+                            uid: cfMeta.uid || media.storage_key,
+                            ready: true,
+                        },
+                    }
+
+                    const { error: updateError } = await (supabase as any)
+                        .from('girls_media')
+                        .update({
+                            status: 'approved',
+                            min_user_level,
+                            reviewed_by: admin.id,
+                            reviewed_at: new Date().toISOString(),
+                            meta: newMeta,
+                        })
+                        .eq('id', (media as any).id)
+
+                    if (updateError) {
+                        console.error(`[Batch Approve] Failed to update cloudflare media: ${media.id}`, updateError)
+                        failedIds.push(media.id)
+                    } else {
+                        successIds.push(media.id)
+                    }
+                    continue
+                }
+
+                // Supabase 媒体：仍然走文件拷贝逻辑
                 let newStorageKey = media.storage_key
                 let newThumbKey = media.thumb_key
                 let newMeta = { ...media.meta }
@@ -643,10 +746,10 @@ export async function deleteMedia(data: unknown): Promise<{ success: boolean; er
         const validated = deleteMediaSchema.parse(data)
         const { id } = validated
 
-        // 获取媒体信息
+        // 获取媒体信息（包含 kind 和 meta，方便处理 Cloudflare 视频）
         const { data: media, error: fetchError } = await (supabase as any)
             .from('girls_media')
-            .select('girl_id, storage_key, thumb_key, status')
+            .select('girl_id, storage_key, thumb_key, status, provider, kind, meta')
             .eq('id', id)
             .single()
 
@@ -665,14 +768,47 @@ export async function deleteMedia(data: unknown): Promise<{ success: boolean; er
             return { success: false, error: `删除失败: ${deleteError.message}` }
         }
 
-        // 删除存储中的文件
-        if (media.storage_key) {
-            const bucket = media.status === 'approved' ? 'girls-media' : 'tmp-uploads'
-            await supabase.storage.from(bucket).remove([media.storage_key])
+        // 删除 Supabase 存储中的文件（Cloudflare 媒体不走 Supabase Storage）
+        if (media.provider === 'supabase') {
+            if (media.storage_key) {
+                const bucket = media.status === 'approved' ? 'girls-media' : 'tmp-uploads'
+                await supabase.storage.from(bucket).remove([media.storage_key])
+            }
+            if (media.thumb_key) {
+                const bucket = media.status === 'approved' ? 'girls-media' : 'tmp-uploads'
+                await supabase.storage.from(bucket).remove([media.thumb_key])
+            }
         }
-        if (media.thumb_key) {
-            const bucket = media.status === 'approved' ? 'girls-media' : 'tmp-uploads'
-            await supabase.storage.from(bucket).remove([media.thumb_key])
+
+        // 删除 Cloudflare Stream 源视频（仅针对 Cloudflare 提供商的视频）
+        if (media.provider === 'cloudflare' && media.kind === 'video') {
+            const meta = (media as any).meta || {}
+            const cfUid = meta.cloudflare?.uid || media.storage_key
+
+            const accountId = process.env.CF_ACCOUNT_ID
+            const apiToken = process.env.CF_STREAM_TOKEN
+
+            if (!accountId || !apiToken) {
+                console.error('[Media Actions] Cloudflare 删除配置缺失，无法删除源视频')
+            } else if (cfUid) {
+                try {
+                    const resp = await fetch(
+                        `https://api.cloudflare.com/client/v4/accounts/${accountId}/stream/${cfUid}`,
+                        {
+                            method: 'DELETE',
+                            headers: {
+                                Authorization: `Bearer ${apiToken}`,
+                            },
+                        },
+                    )
+
+                    if (!resp.ok && resp.status !== 404) {
+                        console.error('[Media Actions] 删除 Cloudflare 视频失败:', resp.status, await resp.text())
+                    }
+                } catch (err) {
+                    console.error('[Media Actions] 调用 Cloudflare Stream 删除接口异常:', err)
+                }
+            }
         }
 
         revalidatePath('/dashboard/media')

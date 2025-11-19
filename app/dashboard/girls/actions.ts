@@ -202,7 +202,153 @@ export async function checkUsernameExists(username: string, excludeGirlId?: stri
     }
 }
 
-// 获取技师列表
+// 获取技师资料列表（轻量版，仅 girls + city + 分类）
+// 用于后台资料管理，不关联实时 girls_status
+export async function getGirlsProfileList(params: GirlListParams): Promise<ApiResponse<PaginatedResponse<GirlWithStatus>>> {
+    try {
+        await requireAdmin(['superadmin', 'admin', 'support'])
+
+        const validatedParams = girlListParamsSchema.parse(params)
+        const { page, limit, search, city_id, category_id, is_blocked, review_status, sort_by, sort_order } = validatedParams
+
+        const supabase = getSupabaseAdminClient()
+
+        let baseQuery = (supabase as any)
+            .from('girls')
+            .select(`
+	                *,
+	                city:cities(id, name)
+	            `, { count: 'exact' })
+
+        // 搜索: username / girl_number / telegram_id / name
+        if (search) {
+            const searchNum = parseInt(search)
+            if (!isNaN(searchNum)) {
+                baseQuery = baseQuery.or(`username.ilike.%${search}%,girl_number.eq.${searchNum},telegram_id.eq.${searchNum}`)
+            } else {
+                baseQuery = baseQuery.or(`username.ilike.%${search}%,name.ilike.%${search}%`)
+            }
+        }
+
+        // 城市筛选
+        if (city_id) {
+            baseQuery = baseQuery.eq('city_id', city_id)
+        }
+
+        // 审核状态筛选（优先级高于单纯的 is_blocked 筛选）
+        if (review_status === 'pending') {
+            // 未审核：通常为被屏蔽且未删除
+            baseQuery = baseQuery.eq('is_blocked', true).is('deleted_at', null)
+        } else if (review_status === 'approved') {
+            // 已通过：未屏蔽且未删除
+            baseQuery = baseQuery.eq('is_blocked', false).is('deleted_at', null)
+        } else if (review_status === 'deleted') {
+            // 已注销：有 deleted_at 记录
+            baseQuery = baseQuery.not('deleted_at', 'is', null)
+        } else if (typeof is_blocked === 'boolean') {
+            // 只有在未指定 review_status 时才按 is_blocked 筛选
+            baseQuery = baseQuery.eq('is_blocked', is_blocked)
+        }
+
+        // 如果按分类筛选，先查出符合分类的 girl_id 列表，再用 IN 过滤
+        if (category_id) {
+            const { data: categoryRows, error: catError } = await (supabase as any)
+                .from('girls_categories')
+                .select('girl_id')
+                .eq('category_id', category_id)
+
+            if (catError) {
+                console.error('按分类筛选技师失败:', catError)
+                return { ok: false, error: '按分类筛选技师失败' }
+            }
+
+            const girlIds = (categoryRows || []).map((row: any) => row.girl_id)
+            if (girlIds.length === 0) {
+                return {
+                    ok: true,
+                    data: { data: [], total: 0, page, limit, totalPages: 0 }
+                }
+            }
+
+            baseQuery = baseQuery.in('id', girlIds)
+        }
+
+        // 排序（默认使用 sort_order，其它字段按 schema 控制）
+        const orderField = sort_by || 'sort_order'
+        const from = (page - 1) * limit
+        const to = from + limit - 1
+
+        const { data, error, count } = await baseQuery
+            .order(orderField, { ascending: sort_order === 'asc' })
+            .range(from, to)
+
+        if (error) {
+            console.error('获取技师资料列表失败:', error)
+            return { ok: false, error: '获取技师资料列表失败' }
+        }
+
+        const girlsData = (data || []) as GirlWithStatus[]
+        const girlIds = girlsData.map(g => g.id)
+
+        // 批量查询分类信息（最多一条额外查询，避免 N+1）
+        let girlsWithCategories: GirlWithStatus[] = girlsData
+        if (girlIds.length > 0) {
+            const { data: catRows, error: catError } = await (supabase as any)
+                .from('girls_categories')
+                .select(`
+	                    girl_id,
+	                    category_id,
+	                    categories:category_id(id, name)
+	                `)
+                .in('girl_id', girlIds)
+
+            if (catError) {
+                console.error('获取技师分类失败:', catError)
+                // 不中断主流程，只返回无分类信息的数据
+            } else {
+                const map = new Map<string, { category_ids: number[]; categories: any[] }>()
+                for (const row of catRows || []) {
+                    const girlId = (row as any).girl_id as string
+                    const entry = map.get(girlId) || { category_ids: [], categories: [] }
+                    entry.category_ids.push((row as any).category_id)
+                    if ((row as any).categories) {
+                        entry.categories.push((row as any).categories)
+                    }
+                    map.set(girlId, entry)
+                }
+
+                girlsWithCategories = girlsData.map(girl => {
+                    const extra = map.get(girl.id)
+                    if (!extra) return girl
+                    return {
+                        ...girl,
+                        category_ids: extra.category_ids,
+                        categories: extra.categories,
+                    }
+                })
+            }
+        }
+
+        const total = count || 0
+        const totalPages = Math.ceil(total / limit)
+
+        return {
+            ok: true,
+            data: {
+                data: girlsWithCategories,
+                total,
+                page,
+                limit,
+                totalPages,
+            },
+        }
+    } catch (error) {
+        console.error('获取技师资料列表异常:', error)
+        return { ok: false, error: '获取技师资料列表异常' }
+    }
+}
+
+// 获取技师列表（完整业务版，包含 girls_status 等信息）
 export async function getGirls(params: GirlListParams): Promise<ApiResponse<PaginatedResponse<GirlWithStatus>>> {
     try {
         // 验证管理员权限（客服也可以查看）

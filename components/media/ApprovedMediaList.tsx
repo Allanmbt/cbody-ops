@@ -15,6 +15,7 @@ import { MediaThumbnail } from '@/components/media/MediaThumbnail'
 import { UpdateLevelDialog } from '@/components/media/UpdateLevelDialog'
 import type { MediaListItem } from '@/lib/features/media'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
+import { LoadingSpinner } from '@/components/ui/loading'
 
 export function ApprovedMediaList() {
     const { admin, loading: adminLoading } = useCurrentAdmin()
@@ -122,12 +123,16 @@ export function ApprovedMediaList() {
 
     const getLevelBadge = (level: number) => {
         const levelNames: Record<number, string> = {
-            0: '公开',
-            1: '普通',
-            2: '银卡',
-            3: '金卡',
-            4: '白金',
-            5: '钻石'
+            0: '0 - 公开',
+            1: '1 - 注册会员',
+            2: '2 - 已消费会员',
+            3: '3 - VIP3',
+            4: '4 - VIP4',
+            5: '5 - VIP5',
+            6: '6 - VIP6',
+            7: '7 - VIP7',
+            8: '8 - VIP8',
+            9: '9 - VIP9',
         }
         return <Badge variant="secondary">{levelNames[level] || `L${level}`}</Badge>
     }
@@ -142,7 +147,7 @@ export function ApprovedMediaList() {
                     <div className="relative flex-1">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
-                            placeholder="搜索技师名称..."
+                            placeholder="搜索技师名称 / 工号 / 用户名..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             className="pl-8"
@@ -165,12 +170,16 @@ export function ApprovedMediaList() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">全部</SelectItem>
-                            <SelectItem value="0">公开</SelectItem>
-                            <SelectItem value="1">普通</SelectItem>
-                            <SelectItem value="2">银卡</SelectItem>
-                            <SelectItem value="3">金卡</SelectItem>
-                            <SelectItem value="4">白金</SelectItem>
-                            <SelectItem value="5">钻石</SelectItem>
+                            <SelectItem value="0">0 - 公开</SelectItem>
+                            <SelectItem value="1">1 - 注册会员</SelectItem>
+                            <SelectItem value="2">2 - 已消费会员</SelectItem>
+                            <SelectItem value="3">3 - VIP3</SelectItem>
+                            <SelectItem value="4">4 - VIP4</SelectItem>
+                            <SelectItem value="5">5 - VIP5</SelectItem>
+                            <SelectItem value="6">6 - VIP6</SelectItem>
+                            <SelectItem value="7">7 - VIP7</SelectItem>
+                            <SelectItem value="8">8 - VIP8</SelectItem>
+                            <SelectItem value="9">9 - VIP9</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -191,8 +200,10 @@ export function ApprovedMediaList() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8">
-                                        加载中...
+                                    <TableCell colSpan={7} className="py-8">
+                                        <div className="flex items-center justify-center">
+                                            <LoadingSpinner />
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ) : mediaList.length === 0 ? (
@@ -213,7 +224,11 @@ export function ApprovedMediaList() {
                                         <TableCell>
                                             <div>
                                                 <div className="font-medium">{media.girl_name}</div>
-                                                <div className="text-sm text-muted-foreground">@{media.girl_username}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    {media.girl_number ? `#${media.girl_number}` : ''}
+                                                    {media.girl_number && media.girl_username ? ' • ' : ''}
+                                                    {media.girl_username ?? ''}
+                                                </div>
                                             </div>
                                         </TableCell>
                                         <TableCell>{getKindBadge(media.kind)}</TableCell>
@@ -258,12 +273,12 @@ export function ApprovedMediaList() {
                     </Table>
                 </div>
 
-                {total > limit && (
+                {total > 0 && (
                     <div className="flex items-center justify-between mt-4">
                         <div className="text-sm text-muted-foreground">
-                            共 {total} 条记录
+                            显示 {(page - 1) * limit + 1} - {Math.min(page * limit, total)} 条，共 {total} 条
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -272,6 +287,9 @@ export function ApprovedMediaList() {
                             >
                                 上一页
                             </Button>
+                            <div className="text-sm text-muted-foreground">
+                                第 {page} 页
+                            </div>
                             <Button
                                 size="sm"
                                 variant="outline"
