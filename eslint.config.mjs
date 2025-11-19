@@ -27,6 +27,8 @@ const eslintConfig = [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // 允许文案中直接使用引号，不强制 &quot; 转义
+      "react/no-unescaped-entities": "off",
     },
   },
 ];
