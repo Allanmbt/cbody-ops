@@ -18,6 +18,12 @@ import {
   Briefcase,
   UserCheck,
   Image,
+  Activity,
+  ClipboardList,
+  UserCog,
+  MessageSquare,
+  AlertTriangle,
+  Star,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -113,6 +119,46 @@ const sidebarGroups: {
           icon: Shield,
           href: "/dashboard/management",
           requiredRole: ['superadmin'],
+        },
+      ],
+    },
+    {
+      label: "运营管理",
+      items: [
+        {
+          key: "operations-orders",
+          title: "订单监控",
+          icon: Activity,
+          href: "/dashboard/operations/orders",
+          requiredRole: ['superadmin', 'admin', 'support'],
+        },
+        {
+          key: "operations-therapists",
+          title: "技师状态",
+          icon: UserCog,
+          href: "/dashboard/operations/therapists",
+          requiredRole: ['superadmin', 'admin', 'support'],
+        },
+        {
+          key: "operations-chats",
+          title: "会话监管",
+          icon: MessageSquare,
+          href: "/dashboard/operations/chats",
+          requiredRole: ['superadmin', 'admin', 'support'],
+        },
+        {
+          key: "operations-reports",
+          title: "举报处理",
+          icon: AlertTriangle,
+          href: "/dashboard/operations/reports",
+          requiredRole: ['superadmin', 'admin', 'support'],
+        },
+        {
+          key: "operations-reviews",
+          title: "评论审核",
+          icon: Star,
+          href: "/dashboard/operations/reviews",
+          requiredRole: ['superadmin', 'admin', 'support'],
         },
       ],
     },
@@ -215,6 +261,19 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
 
   if (segments[1] === 'management') {
     breadcrumbs.push({ label: "管理员管理" })
+  } else if (segments[1] === 'operations') {
+    breadcrumbs.push({ label: "运营管理" })
+    if (segments[2] === 'orders') {
+      breadcrumbs.push({ label: "订单监控", href: "/dashboard/operations/orders" })
+    } else if (segments[2] === 'therapists') {
+      breadcrumbs.push({ label: "技师状态", href: "/dashboard/operations/therapists" })
+    } else if (segments[2] === 'chats') {
+      breadcrumbs.push({ label: "会话监管", href: "/dashboard/operations/chats" })
+    } else if (segments[2] === 'reports') {
+      breadcrumbs.push({ label: "举报处理", href: "/dashboard/operations/reports" })
+    } else if (segments[2] === 'reviews') {
+      breadcrumbs.push({ label: "评论审核", href: "/dashboard/operations/reviews" })
+    }
   } else if (segments[1] === 'girls') {
     breadcrumbs.push({ label: "技师管理" })
   } else if (segments[1] === 'media') {

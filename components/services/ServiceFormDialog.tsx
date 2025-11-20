@@ -77,6 +77,7 @@ export function ServiceFormDialog({
             is_visible_to_english: true,
             min_user_level: 0,
             sort_order: 999,
+            commission_rate: null,
         }
     })
 
@@ -112,6 +113,7 @@ export function ServiceFormDialog({
                 is_visible_to_english: service.is_visible_to_english,
                 min_user_level: service.min_user_level,
                 sort_order: service.sort_order,
+                commission_rate: service.commission_rate ?? null,
             })
             setSelectedBadges(service.badge ? [service.badge] : [])
         } else if (!service && open && categories.length > 0) {
@@ -130,6 +132,7 @@ export function ServiceFormDialog({
                 is_visible_to_english: true,
                 min_user_level: 0,
                 sort_order: 999,
+                commission_rate: null,
             })
             setSelectedBadges([])
         }
@@ -401,6 +404,35 @@ export function ServiceFormDialog({
                                             />
                                         </FormControl>
                                         <FormDescription>数值越小越靠前</FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <FormField
+                                control={form.control}
+                                name="commission_rate"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>平台提成比例</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                type="number"
+                                                step="0.01"
+                                                min={0}
+                                                max={1}
+                                                placeholder="留空使用全局配置"
+                                                value={field.value ?? ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value
+                                                    field.onChange(val === '' ? null : parseFloat(val))
+                                                }}
+                                                disabled={loading}
+                                            />
+                                        </FormControl>
+                                        <FormDescription>
+                                            0-1之间的小数（如0.4表示40%），留空则使用全局配置
+                                        </FormDescription>
                                         <FormMessage />
                                     </FormItem>
                                 )}

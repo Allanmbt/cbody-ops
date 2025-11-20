@@ -22,6 +22,7 @@ export interface Service {
     min_user_level: number
     total_sales: number
     sort_order: number
+    commission_rate?: number | null
     created_at: string
     updated_at: string
     // 关联数据

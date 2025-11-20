@@ -196,3 +196,102 @@ export async function getOrderById(id: string): Promise<ApiResponse<Order>> {
     return { ok: false, error: "获取订单详情异常" }
   }
 }
+
+/**
+ * 订单取消记录类型定义
+ */
+export interface OrderCancellation {
+  id: string
+  order_id: string
+  cancelled_at: string
+  cancelled_by_role: 'user' | 'therapist' | 'admin' | 'system'
+  cancelled_by_user_id: string | null
+  reason_code: string | null
+  reason_note: string | null
+  previous_status: string | null
+  created_at: string
+  cancelled_by_profile?: {
+    user_id: string
+    display_name: string | null
+    avatar_url: string | null
+    girl_number?: number | null
+    girl_name?: string | null
+  } | null
+}
+
+/**
+ * 获取订单取消记录
+ */
+export async function getOrderCancellation(orderId: string): Promise<ApiResponse<OrderCancellation>> {
+  try {
+    await requireAdmin(['superadmin', 'admin', 'support'])
+    const supabase = getSupabaseAdminClient()
+
+    const { data, error } = await supabase
+      .from('order_cancellations')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle()
+
+    if (error) {
+      console.error('[取消记录] 查询失败:', error)
+      return { ok: false, error: `查询取消记录失败: ${error.message}` }
+    }
+
+    if (!data) {
+      return { ok: false, error: "未找到取消记录" }
+    }
+
+    const cancellation = data as any
+
+    // 如果有取消人ID，查询取消人信息
+    let cancelledByProfile = null
+    if (cancellation.cancelled_by_user_id) {
+      // 先查询 user_profiles
+      const { data: profileData } = await supabase
+        .from('user_profiles')
+        .select('id, display_name, avatar_url')
+        .eq('id', cancellation.cancelled_by_user_id)
+        .maybeSingle()
+
+      if (profileData) {
+        cancelledByProfile = {
+          user_id: (profileData as any).id,
+          display_name: (profileData as any).display_name ?? null,
+          avatar_url: (profileData as any).avatar_url ?? null,
+        }
+
+        // 如果是技师取消，查询技师信息
+        if (cancellation.cancelled_by_role === 'therapist') {
+          const { data: girlData } = await supabase
+            .from('girls')
+            .select('user_id, girl_number, name, avatar_url')
+            .eq('user_id', cancellation.cancelled_by_user_id)
+            .maybeSingle()
+
+          if (girlData) {
+            cancelledByProfile = {
+              ...cancelledByProfile,
+              girl_number: (girlData as any).girl_number,
+              girl_name: (girlData as any).name,
+              avatar_url: (girlData as any).avatar_url || cancelledByProfile.avatar_url,
+            }
+          }
+        }
+      }
+    }
+
+    const result: OrderCancellation = {
+      ...cancellation,
+      cancelled_by_profile: cancelledByProfile,
+    }
+
+    return { ok: true, data: result }
+  } catch (error) {
+    console.error('[取消记录] 查询异常:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "查询取消记录异常",
+    }
+  }
+}

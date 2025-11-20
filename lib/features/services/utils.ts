@@ -1,9 +1,9 @@
-import type { Service, Category, ServiceBadge } from './types'
+import type { Service, ServiceBadge, MultiLanguageText } from './types'
 
 /**
  * 获取分类名称(优先使用中文)
  */
-export function getCategoryName(category: Category): string {
+export function getCategoryName(category: { code: string; name: MultiLanguageText }): string {
   return category.name.zh || category.name.en || category.name.th || category.code
 }
 

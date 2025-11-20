@@ -46,7 +46,18 @@ export const serviceFormSchema = z.object({
         .int("排序必须为整数")
         .min(0, "排序不能小于0")
         .max(9999, "排序不能大于9999")
-        .default(999)
+        .default(999),
+    commission_rate: z.number()
+        .min(0, "提成比例不能小于0")
+        .max(1, "提成比例不能大于1")
+        .nullable()
+        .optional()
+        .refine(
+            (val) => val === null || val === undefined || (val >= 0 && val <= 1),
+            {
+                message: "提成比例必须在0-1之间（如0.4表示40%）"
+            }
+        )
 })
 
 // 服务时长定价验证模式
