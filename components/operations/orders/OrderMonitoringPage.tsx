@@ -21,12 +21,19 @@ import { getOrderStats, getMonitoringOrders, type OrderStats, type MonitoringOrd
 import { MonitoringOrderTable } from "./MonitoringOrderTable"
 import type { OrderStatus } from "@/lib/features/orders"
 
-export function OrderMonitoringPage() {
-  const [stats, setStats] = useState<OrderStats | null>(null)
-  const [loadingStats, setLoadingStats] = useState(true)
-  const [orders, setOrders] = useState<any[]>([])
-  const [loadingOrders, setLoadingOrders] = useState(true)
-  const [total, setTotal] = useState(0)
+// ✅ 优化：接收服务端传来的初始数据
+interface OrderMonitoringPageProps {
+  initialStats: OrderStats | null
+  initialOrders: any[]
+  initialTotal: number
+}
+
+export function OrderMonitoringPage({ initialStats, initialOrders, initialTotal }: OrderMonitoringPageProps) {
+  const [stats, setStats] = useState<OrderStats | null>(initialStats)
+  const [loadingStats, setLoadingStats] = useState(false)
+  const [orders, setOrders] = useState<any[]>(initialOrders)
+  const [loadingOrders, setLoadingOrders] = useState(false)
+  const [total, setTotal] = useState(initialTotal)
 
   // 筛选条件
   const [filters, setFilters] = useState<MonitoringOrderFilters>({
@@ -42,7 +49,7 @@ export function OrderMonitoringPage() {
   const loadStats = async () => {
     setLoadingStats(true)
     const result = await getOrderStats()
-    if (result.ok && result.data) {
+    if (result.ok) {
       setStats(result.data)
     } else {
       toast.error(result.error || "加载统计数据失败")
@@ -63,21 +70,20 @@ export function OrderMonitoringPage() {
     setLoadingOrders(false)
   }
 
-  // 初始化加载
+  // ✅ 优化：移除初始化加载，数据已由服务端传入
+  // 仅在筛选条件变化时重新加载
   useEffect(() => {
-    loadStats()
+    // 跳过首次渲染（已有初始数据）
+    if (filters.page === 1 && filters.time_range === 'today' && !filters.search && (!filters.status || filters.status.length === 0)) {
+      return
+    }
     loadOrders()
-  }, [])
-
-  // 筛选条件变化时重新加载
-  useEffect(() => {
-    loadOrders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters])
 
-  // 刷新数据
-  const handleRefresh = () => {
-    loadStats()
-    loadOrders()
+  // ✅ 优化：刷新数据
+  const handleRefresh = async () => {
+    await Promise.all([loadStats(), loadOrders()])
     toast.success("已刷新数据")
   }
 

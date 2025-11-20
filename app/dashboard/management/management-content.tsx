@@ -91,11 +91,17 @@ const createAdminSchema = z.object({
 
 type CreateAdminForm = z.infer<typeof createAdminSchema>
 
-export function ManagementContent() {
+// ✅ 优化：接收服务端传来的初始数据
+interface ManagementContentProps {
+  initialCurrentAdmin: AdminProfile
+  initialAdmins: AdminProfile[]
+}
+
+export function ManagementContent({ initialCurrentAdmin, initialAdmins }: ManagementContentProps) {
   const router = useRouter()
-  const [currentAdmin, setCurrentAdmin] = useState<AdminProfile | null>(null)
-  const [admins, setAdmins] = useState<AdminWithStatus[]>([])
-  const [loading, setLoading] = useState(true)
+  const [currentAdmin, setCurrentAdmin] = useState<AdminProfile>(initialCurrentAdmin)
+  const [admins, setAdmins] = useState<AdminWithStatus[]>(initialAdmins)
+  const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const pageSize = 10
   const [searchQuery, setSearchQuery] = useState("")
@@ -119,42 +125,8 @@ export function ManagementContent() {
     }
   })
 
-  useEffect(() => {
-    let mounted = true
-
-    async function checkAuthAndLoadData() {
-      try {
-        const result = await getAdminManagementInit()
-
-        if (!result.ok) {
-          if (result.error === "未登录") {
-            if (mounted) router.push('/login')
-          } else {
-            if (mounted) router.push('/dashboard')
-          }
-          return
-        }
-
-        if (mounted) {
-          if (result.currentAdmin) {
-            setCurrentAdmin(result.currentAdmin)
-          }
-          setAdmins(result.admins || [])
-        }
-      } catch (error) {
-        console.error('[ManagementContent] 异常:', error)
-        if (mounted) router.push('/login')
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-
-    checkAuthAndLoadData()
-
-    return () => {
-      mounted = false
-    }
-  }, [router])
+  // ✅ 优化：移除 useEffect 中的数据加载逻辑
+  // 数据已由服务端传入，无需客户端重复加载
 
   const loadAdmins = async () => {
     try {
@@ -330,7 +302,8 @@ export function ManagementContent() {
     }
   }
 
-  if (!loading && (!currentAdmin || !isSuperAdmin(currentAdmin.role))) {
+  // ✅ 优化：服务端已验证权限，这里只做二次检查
+  if (!isSuperAdmin(currentAdmin.role)) {
     return <div className="text-center p-8">权限不足</div>
   }
 

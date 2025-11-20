@@ -25,12 +25,18 @@ import {
 } from "@/app/dashboard/operations/therapists/actions"
 import { MonitoringTherapistTable } from "./MonitoringTherapistTable"
 
-export function TherapistMonitoringPage() {
+// ✅ 优化：接收服务端传来的初始数据
+interface TherapistMonitoringPageProps {
+  initialTherapists: any[]
+  initialTotal: number
+}
+
+export function TherapistMonitoringPage({ initialTherapists, initialTotal }: TherapistMonitoringPageProps) {
   const [stats, setStats] = useState<TherapistStats | null>(null)
   const [loadingStats, setLoadingStats] = useState(true)
-  const [therapists, setTherapists] = useState<any[]>([])
-  const [loadingTherapists, setLoadingTherapists] = useState(true)
-  const [total, setTotal] = useState(0)
+  const [therapists, setTherapists] = useState<any[]>(initialTherapists)
+  const [loadingTherapists, setLoadingTherapists] = useState(false)
+  const [total, setTotal] = useState(initialTotal)
   const isInitialMount = useRef(true)
 
   // 筛选条件
@@ -68,10 +74,9 @@ export function TherapistMonitoringPage() {
     setLoadingTherapists(false)
   }
 
-  // 初始化加载
+  // ✅ 优化：仅加载统计数据，技师列表已由服务端传入
   useEffect(() => {
     loadStats()
-    loadTherapists()
     isInitialMount.current = false
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

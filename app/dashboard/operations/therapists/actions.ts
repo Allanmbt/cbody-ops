@@ -107,6 +107,7 @@ export async function getTherapistStats() {
 
 /**
  * 获取监控技师列表
+ * ✅ 优化：使用视图，从2次查询减少到1次，移除客户端排序
  */
 export async function getMonitoringTherapists(filters: MonitoringTherapistFilters = {}) {
   try {
@@ -122,45 +123,20 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
       limit = 50
     } = filters
 
-    // 构建查询：JOIN girls、girls_status 和 cities 表
-    // 只查询已授权技师：is_blocked=false + is_verified=true
-    let query = supabase
-      .from('girls')
-      .select(`
-        id,
-        girl_number,
-        username,
-        name,
-        avatar_url,
-        city_id,
-        is_blocked,
-        is_verified,
-        cities (
-          id,
-          code,
-          name
-        ),
-        girls_status!inner (
-          status,
-          current_lat,
-          current_lng,
-          last_online_at,
-          cooldown_until_at,
-          next_available_time
-        )
-      `, { count: 'exact' })
-      .eq('is_blocked', false)
-      .eq('is_verified', true)
+    // ✅ 优化：使用视图 v_therapist_monitoring，一次查询包含所有数据
+    let query = (supabase as any)
+      .from('v_therapist_monitoring')
+      .select('*', { count: 'exact' })
 
-    // 状态筛选（在 girls_status 表上）
+    // ✅ 优化：状态筛选（直接在视图的 status 字段上）
     if (status && status.length > 0) {
-      query = query.in('girls_status.status', status)
+      query = query.in('status', status)
     } else if (!only_abnormal) {
       // 默认显示在线和忙碌
-      query = query.in('girls_status.status', ['available', 'busy'])
+      query = query.in('status', ['available', 'busy'])
     }
 
-    // 城市筛选（使用 city_id）
+    // 城市筛选
     if (city) {
       const cityId = parseInt(city)
       if (!isNaN(cityId)) {
@@ -178,8 +154,9 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
       }
     }
 
-    // 排序：按工号（JOIN 查询中无法直接对嵌套字段排序，状态排序在客户端处理）
-    query = query.order('girl_number', { ascending: true })
+    // ✅ 优化：使用数据库排序（status_order 字段），移除客户端排序
+    query = query.order('status_order', { ascending: true })
+      .order('girl_number', { ascending: true })
 
     // 分页
     const from = (page - 1) * limit
@@ -193,71 +170,28 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
       return { ok: false, error: `查询技师失败: ${error.message}` }
     }
 
-    // 查询每个技师的当前订单（如果 busy）
-    let therapistsWithOrders: any[] = therapistsData || []
-    if (therapistsData && therapistsData.length > 0) {
-      // 提取 girls_status 和 cities 并展平到主对象
-      const flattenedTherapists = therapistsData.map((t: any) => ({
-        ...t,
-        status: t.girls_status?.status || 'offline',
-        current_lat: t.girls_status?.current_lat || null,
-        current_lng: t.girls_status?.current_lng || null,
-        last_online_at: t.girls_status?.last_online_at || null,
-        cooldown_until_at: t.girls_status?.cooldown_until_at || null,
-        next_available_time: t.girls_status?.next_available_time || null,
-        city: t.cities || null,
-      }))
-
-      // 按状态排序（available > busy > offline）
-      const statusOrder: Record<string, number> = { available: 1, busy: 2, offline: 3 }
-      flattenedTherapists.sort((a, b) => {
-        const aOrder = statusOrder[a.status] || 999
-        const bOrder = statusOrder[b.status] || 999
-        return aOrder - bOrder
-      })
-
-      const busyTherapists = flattenedTherapists.filter((t: any) => t.status === 'busy')
-
-      if (busyTherapists.length > 0) {
-        const therapistIds = busyTherapists.map((t: any) => t.id)
-
-        const { data: ordersData, error: ordersError } = await supabase
-          .from('orders')
-          .select('id, order_number, status, girl_id')
-          .in('girl_id', therapistIds)
-          .in('status', ['confirmed', 'en_route', 'arrived', 'in_service'])
-
-        if (ordersError) {
-          console.error('[技师监控] 查询订单失败:', ordersError)
-        }
-
-        const ordersMap = new Map()
-        if (ordersData && ordersData.length > 0) {
-          ordersData.forEach((order: any) => {
-            // 每个技师只显示第一个订单（如果有多个）
-            if (!ordersMap.has(order.girl_id)) {
-              ordersMap.set(order.girl_id, order)
-            }
-          })
-          console.log(`[技师监控] 找到 ${ordersData.length} 个订单，关联到 ${ordersMap.size} 个技师`)
-        }
-
-        therapistsWithOrders = flattenedTherapists.map((therapist: any) => ({
-          ...therapist,
-          current_order: therapist.status === 'busy' ? ordersMap.get(therapist.id) : null
-        }))
-      } else {
-        therapistsWithOrders = flattenedTherapists.map((therapist: any) => ({
-          ...therapist,
-          current_order: null
-        }))
-      }
-    }
+    // ✅ 优化：视图已包含所有数据（技师+状态+城市+订单），无需额外处理
+    // 数据已在数据库中排序，无需客户端排序
+    const therapistsWithOrders = (therapistsData || []).map((t: any) => ({
+      ...t,
+      // 构建 city 对象（兼容前端）
+      city: t.city_code ? {
+        id: t.city_id,
+        code: t.city_code,
+        name: t.city_name
+      } : null,
+      // 构建 current_order 对象（兼容前端）
+      current_order: t.current_order_id ? {
+        id: t.current_order_id,
+        order_number: t.current_order_number,
+        status: t.current_order_status
+      } : null
+    }))
 
     const totalPages = Math.ceil((count || 0) / limit)
 
     return {
-      ok: true,
+      ok: true as const,
       data: {
         therapists: therapistsWithOrders,
         total: count || 0,
@@ -268,7 +202,7 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
     }
   } catch (error) {
     console.error('[技师监控] 查询异常:', error)
-    return { ok: false, error: "查询技师异常" }
+    return { ok: false as const, error: "查询技师异常" }
   }
 }
 

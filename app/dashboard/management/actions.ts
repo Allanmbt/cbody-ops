@@ -85,6 +85,7 @@ export async function getAdminsList(): Promise<{
 /**
  * 管理员管理首屏初始化数据
  * 合并：当前管理员信息 + 管理员列表
+ * ✅ 优化：使用 requireAdmin 减少重复查询
  */
 export async function getAdminManagementInit(): Promise<{
   ok: boolean
@@ -93,11 +94,8 @@ export async function getAdminManagementInit(): Promise<{
   error?: string
 }> {
   try {
-    // 先验证并获取当前管理员
-    const verification = await verifySuperAdmin()
-    if (!verification.ok || !verification.admin) {
-      return { ok: false, error: verification.error || '无管理员权限' }
-    }
+    // ✅ 优化：使用 requireAdmin 一次性获取当前管理员（内部已做权限验证）
+    const currentAdmin = await requireAdmin(['superadmin'])
 
     const adminClient = getSupabaseAdminClient()
     const { data, error } = await adminClient
@@ -106,17 +104,18 @@ export async function getAdminManagementInit(): Promise<{
       .order('created_at', { ascending: false })
 
     if (error) {
+      console.error('[getAdminManagementInit] 查询失败:', error)
       return { ok: false, error: '查询失败' }
     }
 
     return {
       ok: true,
-      currentAdmin: verification.admin,
+      currentAdmin,
       admins: data || []
     }
   } catch (error) {
     console.error('[getAdminManagementInit] 异常:', error)
-    return { ok: false, error: '查询异常' }
+    return { ok: false, error: error instanceof Error ? error.message : '查询异常' }
   }
 }
 
