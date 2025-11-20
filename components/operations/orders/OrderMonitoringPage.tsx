@@ -222,9 +222,11 @@ export function OrderMonitoringPage({ initialStats, initialOrders, initialTotal 
                   <SelectValue placeholder="时间范围" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="today">今日</SelectItem>
+                  <SelectItem value="today">今日（6:00起）</SelectItem>
+                  <SelectItem value="yesterday">昨日</SelectItem>
                   <SelectItem value="3days">近3天</SelectItem>
                   <SelectItem value="7days">近7天</SelectItem>
+                  <SelectItem value="all">全部</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -22,7 +22,7 @@ export interface OrderStats {
 export interface MonitoringOrderFilters {
   search?: string
   status?: OrderStatus[]
-  time_range?: 'today' | '3days' | '7days' | 'custom'
+  time_range?: 'today' | 'yesterday' | '3days' | '7days' | 'custom' | 'all'
   start_date?: string
   end_date?: string
   only_abnormal?: boolean
@@ -39,8 +39,22 @@ export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | 
     await requireAdmin()
     const supabase = getSupabaseAdminClient()
 
-    const now = new Date()
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+    // 🔧 使用泰国时区（UTC+7），以凌晨6点为分界点
+    const nowUTC = new Date()
+    const thailandOffset = 7 * 60 // 泰国时区偏移（分钟）
+    const thailandNow = new Date(nowUTC.getTime() + thailandOffset * 60 * 1000)
+
+    // 计算今天6点的时间戳（泰国时区）
+    const todayThailand = new Date(thailandNow)
+    todayThailand.setHours(6, 0, 0, 0)
+
+    // 如果当前时间小于今天6点，说明还在"昨天"
+    if (thailandNow.getHours() < 6) {
+      todayThailand.setDate(todayThailand.getDate() - 1)
+    }
+
+    // 转换回 UTC 时间
+    const todayStart = new Date(todayThailand.getTime() - thailandOffset * 60 * 1000).toISOString()
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
 
     // ✅ 优化：使用 RPC 函数一次性获取所有统计数据
@@ -145,13 +159,37 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
         service:services!service_id(id, code, title)
       `, { count: 'exact' })
 
-    // 时间范围筛选
+    // 🔧 时间范围筛选（泰国时区 UTC+7，以凌晨6点为分界点）
     let timeStart: string
-    const now = new Date()
+    let timeEnd: string | undefined
+
+    // 获取泰国当前时间（UTC+7）
+    const nowUTC = new Date()
+    const thailandOffset = 7 * 60 // 泰国时区偏移（分钟）
+    const thailandNow = new Date(nowUTC.getTime() + thailandOffset * 60 * 1000)
+
+    // 计算今天6点的时间戳（泰国时区）
+    const todayThailand = new Date(thailandNow)
+    todayThailand.setHours(6, 0, 0, 0)
+
+    // 如果当前时间小于今天6点，说明还在"昨天"
+    if (thailandNow.getHours() < 6) {
+      todayThailand.setDate(todayThailand.getDate() - 1)
+    }
+
+    // 转换回 UTC 时间
+    const todayStartUTC = new Date(todayThailand.getTime() - thailandOffset * 60 * 1000)
+    const yesterdayStartUTC = new Date(todayStartUTC.getTime() - 24 * 60 * 60 * 1000)
 
     if (time_range === 'today') {
-      timeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+      // 今日：从今天6点开始
+      timeStart = todayStartUTC.toISOString()
       query = query.gte('created_at', timeStart)
+    } else if (time_range === 'yesterday') {
+      // 昨日：昨天6点到今天6点
+      timeStart = yesterdayStartUTC.toISOString()
+      timeEnd = todayStartUTC.toISOString()
+      query = query.gte('created_at', timeStart).lt('created_at', timeEnd)
     } else if (time_range === '3days') {
       timeStart = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
       query = query.gte('created_at', timeStart)
@@ -164,12 +202,16 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
         query = query.lte('created_at', end_date)
       }
     }
+    // 注意：time_range === 'all' 时不限制时间
 
     // 状态筛选
     if (status && status.length > 0) {
       query = query.in('status', status)
     } else if (only_abnormal) {
-      // 仅异常订单：默认显示待确认和进行中
+      // 🔧 仅异常订单：待确认和进行中
+      query = query.in('status', ['pending', 'confirmed', 'en_route', 'arrived', 'in_service'])
+    } else {
+      // 默认显示进行中的订单
       query = query.in('status', ['pending', 'confirmed', 'en_route', 'arrived', 'in_service'])
     }
 

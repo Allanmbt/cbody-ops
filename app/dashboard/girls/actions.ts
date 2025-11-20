@@ -26,6 +26,74 @@ import type {
 // 注意：所有函数现在使用 requireAdmin() 进行统一的权限验证
 // 不再需要单独的 checkAdminPermission 函数
 
+/**
+ * 技师管理统计数据
+ */
+export interface AdminGirlStats {
+    total: number      // 总技师数
+    verified: number   // 已认证
+    pending: number    // 待审核
+    online: number     // 在线技师
+}
+
+/**
+ * 获取技师管理统计
+ */
+export async function getAdminGirlStats(): Promise<ApiResponse<AdminGirlStats>> {
+    try {
+        await requireAdmin(['superadmin', 'admin', 'support'])
+        const supabase = getSupabaseAdminClient()
+
+        // ✅ 优化：使用 RPC 函数一次性获取所有统计
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_admin_girl_stats')
+
+        if (!rpcError && rpcData) {
+            return {
+                ok: true as const,
+                data: rpcData as AdminGirlStats
+            }
+        }
+
+        // 回退方案：如果 RPC 不可用
+        console.warn('[技师统计] RPC 不可用，使用回退方案')
+
+        const { count: totalCount } = await supabase
+            .from('girls')
+            .select('*', { count: 'exact', head: true })
+            .is('deleted_at', null)
+
+        const { count: verifiedCount } = await supabase
+            .from('girls')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_verified', true)
+            .is('deleted_at', null)
+
+        const { count: pendingCount } = await supabase
+            .from('girls')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_blocked', true)
+            .is('deleted_at', null)
+
+        const { count: onlineCount } = await supabase
+            .from('girls_status')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'available')
+
+        return {
+            ok: true as const,
+            data: {
+                total: totalCount || 0,
+                verified: verifiedCount || 0,
+                pending: pendingCount || 0,
+                online: onlineCount || 0
+            } as AdminGirlStats
+        }
+    } catch (error) {
+        console.error('[技师统计] 获取失败:', error)
+        return { ok: false as const, error: "获取技师统计失败" }
+    }
+}
+
 // 获取城市列表
 export async function getCities(): Promise<ApiResponse<any[]>> {
     try {

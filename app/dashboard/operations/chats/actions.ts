@@ -32,30 +32,39 @@ export async function getChatStats() {
         await requireAdmin()
         const supabase = getSupabaseAdminClient()
 
+        // ✅ 优化：使用 RPC 函数一次性获取所有统计（3次查询 → 1次）
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_chat_stats')
+
+        if (!rpcError && rpcData) {
+            return {
+                ok: true as const,
+                data: rpcData as ChatStats
+            }
+        }
+
+        // 回退方案：如果 RPC 不可用，使用原来的方式
+        console.warn('[会话统计] RPC 不可用，使用回退方案')
         const now = new Date()
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-        // 活跃会话（24小时内有消息）
         const { count: activeCount } = await supabase
             .from('chat_threads')
             .select('*', { count: 'exact', head: true })
             .gte('last_message_at', yesterday.toISOString())
 
-        // 今日新增会话
         const { count: todayNewCount } = await supabase
             .from('chat_threads')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', todayStart.toISOString())
 
-        // 已锁定会话
         const { count: lockedCount } = await supabase
             .from('chat_threads')
             .select('*', { count: 'exact', head: true })
             .eq('is_locked', true)
 
         return {
-            ok: true,
+            ok: true as const,
             data: {
                 active: activeCount || 0,
                 today_new: todayNewCount || 0,
@@ -64,7 +73,7 @@ export async function getChatStats() {
         }
     } catch (error) {
         console.error('[会话统计] 获取失败:', error)
-        return { ok: false, error: "获取会话统计失败" }
+        return { ok: false as const, error: "获取会话统计失败" }
     }
 }
 
@@ -85,21 +94,10 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
             limit = 50
         } = filters
 
-        // 构建查询
+        // ✅ 优化：使用视图查询，预关联用户和技师信息（移除 N+1 查询）
         let query = supabase
-            .from('chat_threads')
-            .select(`
-        id,
-        thread_type,
-        customer_id,
-        girl_id,
-        support_id,
-        is_locked,
-        last_message_at,
-        last_message_text,
-        created_at,
-        updated_at
-      `, { count: 'exact' })
+            .from('v_chat_monitoring')
+            .select('*', { count: 'exact' })
 
         // 类型筛选
         if (thread_type && thread_type !== 'all') {
@@ -110,6 +108,16 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
         if (only_active) {
             const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
             query = query.gte('last_message_at', yesterday.toISOString())
+        }
+
+        // ✅ 优化：有订单筛选（数据库层面）
+        if (has_order) {
+            query = query.not('related_order', 'is', null)
+        }
+
+        // ✅ 优化：搜索筛选（数据库层面）
+        if (search) {
+            query = query.or(`customer_display_name.ilike.%${search}%,customer_username.ilike.%${search}%,girl_name.ilike.%${search}%,girl_username.ilike.%${search}%,support_display_name.ilike.%${search}%,support_username.ilike.%${search}%`)
         }
 
         // 排序：最后消息时间倒序
@@ -124,12 +132,12 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
 
         if (error) {
             console.error('[会话监管] 查询失败:', error)
-            return { ok: false, error: `查询会话失败: ${error.message}` }
+            return { ok: false as const, error: `查询会话失败: ${error.message}` }
         }
 
         if (!threadsData || threadsData.length === 0) {
             return {
-                ok: true,
+                ok: true as const,
                 data: {
                     threads: [],
                     total: count || 0,
@@ -140,165 +148,56 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
             }
         }
 
-        // 提取所有用户ID和技师ID
-        const userIds = new Set<string>()
-        const girlIds = new Set<string>()
+        // ✅ 优化：视图已包含所有关联数据，直接格式化即可
+        const enrichedThreads = threadsData.map((thread: any) => {
+            // 组装客户信息
+            const customer = thread.customer_user_id ? {
+                id: thread.customer_user_id,
+                username: thread.customer_username,
+                display_name: thread.customer_display_name,
+                avatar_url: thread.customer_avatar_url
+            } : null
 
-        threadsData.forEach((thread: any) => {
-            if (thread.customer_id) userIds.add(thread.customer_id)
-            if (thread.support_id) userIds.add(thread.support_id)
-            if (thread.girl_id) girlIds.add(thread.girl_id)
-        })
+            // 组装技师信息
+            const girl = thread.girl_id_full ? {
+                id: thread.girl_id_full,
+                girl_number: thread.girl_number,
+                name: thread.girl_name,
+                username: thread.girl_username,
+                avatar_url: thread.girl_avatar_url
+            } : null
 
-        // 批量查询用户信息
-        const usersMap = new Map()
-        if (userIds.size > 0) {
-            const { data: usersData } = await supabase
-                .from('user_profiles')
-                .select('id, username, display_name, avatar_url')
-                .in('id', Array.from(userIds))
-
-            if (usersData) {
-                usersData.forEach((user: any) => {
-                    usersMap.set(user.id, user)
-                })
-            }
-        }
-
-        // 批量查询技师信息
-        const girlsMap = new Map()
-        if (girlIds.size > 0) {
-            const { data: girlsData } = await supabase
-                .from('girls')
-                .select('id, girl_number, name, username, avatar_url')
-                .in('id', Array.from(girlIds))
-
-            if (girlsData) {
-                girlsData.forEach((girl: any) => {
-                    girlsMap.set(girl.id, girl)
-                })
-            }
-        }
-
-        // 批量查询未读数（通过 chat_receipts）
-        const unreadMap = new Map()
-        for (const thread of threadsData as any[]) {
-            const threadId = thread.id
-
-            // 获取该线程的所有参与者的已读记录
-            const { data: receiptsData } = await supabase
-                .from('chat_receipts')
-                .select('user_id, last_read_at')
-                .eq('thread_id', threadId)
-
-            // 获取该线程的消息总数和最后消息时间
-            const { count: totalMessages } = await supabase
-                .from('chat_messages')
-                .select('*', { count: 'exact', head: true })
-                .eq('thread_id', threadId)
-
-            const receiptsMap = new Map()
-            if (receiptsData) {
-                receiptsData.forEach((r: any) => {
-                    receiptsMap.set(r.user_id, r.last_read_at)
-                })
-            }
-
-            // 计算每个参与者的未读数
-            const unreadCounts: any = {}
-
-            if (thread.customer_id) {
-                const lastRead = receiptsMap.get(thread.customer_id)
-                const { count } = await supabase
-                    .from('chat_messages')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('thread_id', threadId)
-                    .neq('sender_id', thread.customer_id)
-                    .gt('created_at', lastRead || '1970-01-01')
-
-                unreadCounts.customer = count || 0
-            }
-
-            if (thread.girl_id) {
-                const girlUserId = girlsMap.get(thread.girl_id)?.user_id
-                if (girlUserId) {
-                    const lastRead = receiptsMap.get(girlUserId)
-                    const { count } = await supabase
-                        .from('chat_messages')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('thread_id', threadId)
-                        .neq('sender_id', girlUserId)
-                        .gt('created_at', lastRead || '1970-01-01')
-
-                    unreadCounts.girl = count || 0
-                }
-            }
-
-            unreadMap.set(threadId, unreadCounts)
-        }
-
-        // 批量查询关联订单
-        const ordersMap = new Map()
-        if (has_order) {
-            const threadIds = threadsData.map((t: any) => t.id)
-            const { data: messagesWithOrders } = await supabase
-                .from('chat_messages')
-                .select('thread_id, order_id, orders(order_number)')
-                .in('thread_id', threadIds)
-                .not('order_id', 'is', null)
-
-            if (messagesWithOrders) {
-                messagesWithOrders.forEach((msg: any) => {
-                    if (!ordersMap.has(msg.thread_id)) {
-                        ordersMap.set(msg.thread_id, msg.orders)
-                    }
-                })
-            }
-        }
-
-        // 组装数据
-        let enrichedThreads = threadsData.map((thread: any) => {
-            const customer = thread.customer_id ? usersMap.get(thread.customer_id) : null
-            const girl = thread.girl_id ? girlsMap.get(thread.girl_id) : null
-            const support = thread.support_id ? usersMap.get(thread.support_id) : null
-            const unreadCounts = unreadMap.get(thread.id) || {}
-            const order = ordersMap.get(thread.id)
+            // 组装客服信息
+            const support = thread.support_user_id ? {
+                id: thread.support_user_id,
+                username: thread.support_username,
+                display_name: thread.support_display_name,
+                avatar_url: thread.support_avatar_url
+            } : null
 
             return {
-                ...thread,
+                id: thread.id,
+                thread_type: thread.thread_type,
+                customer_id: thread.customer_id,
+                girl_id: thread.girl_id,
+                support_id: thread.support_id,
+                is_locked: thread.is_locked,
+                last_message_at: thread.last_message_at,
+                last_message_text: thread.last_message_text,
+                created_at: thread.created_at,
+                updated_at: thread.updated_at,
                 customer,
                 girl,
                 support,
-                unread_counts: unreadCounts,
-                order
+                order: thread.related_order,
+                unread_counts: {} // 暂时不显示未读数，后续可用 RPC 优化
             }
         })
-
-        // 搜索筛选（在内存中进行）
-        if (search) {
-            const searchLower = search.toLowerCase()
-            enrichedThreads = enrichedThreads.filter((thread: any) => {
-                const customerName = thread.customer?.display_name || thread.customer?.username || ''
-                const girlName = thread.girl?.name || thread.girl?.username || ''
-                const supportName = thread.support?.display_name || thread.support?.username || ''
-
-                return (
-                    customerName.toLowerCase().includes(searchLower) ||
-                    girlName.toLowerCase().includes(searchLower) ||
-                    supportName.toLowerCase().includes(searchLower)
-                )
-            })
-        }
-
-        // 有订单筛选
-        if (has_order) {
-            enrichedThreads = enrichedThreads.filter((thread: any) => thread.order)
-        }
 
         const totalPages = Math.ceil((count || 0) / limit)
 
         return {
-            ok: true,
+            ok: true as const,
             data: {
                 threads: enrichedThreads,
                 total: count || 0,
@@ -309,7 +208,7 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
         }
     } catch (error) {
         console.error('[会话监管] 查询异常:', error)
-        return { ok: false, error: "查询会话异常" }
+        return { ok: false as const, error: "查询会话异常" }
     }
 }
 

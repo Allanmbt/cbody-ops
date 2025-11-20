@@ -1,18 +1,32 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { RefreshCw, Filter } from "lucide-react"
+import { RefreshCw, Filter, AlertCircle, TrendingUp, Users, UserCheck } from "lucide-react"
 import { toast } from "sonner"
-import { getReports, type ReportListFilters, type ReportListResult } from "@/app/dashboard/operations/reports/actions"
+import { getReports, getReportStats, type ReportListFilters, type ReportListResult, type ReportStats, type ReportListItem } from "@/app/dashboard/operations/reports/actions"
 import { ReportsTable } from "./ReportsTable"
 
-export function ReportsPage() {
-    const [loading, setLoading] = useState(true)
-    const [reports, setReports] = useState<ReportListResult | null>(null)
+interface ReportsPageProps {
+    initialStats: ReportStats | null
+    initialReports: ReportListItem[]
+    initialTotal: number
+}
+
+export function ReportsPage({ initialStats, initialReports, initialTotal }: ReportsPageProps) {
+    const [stats, setStats] = useState<ReportStats | null>(initialStats)
+    const [loadingStats, setLoadingStats] = useState(false)
+    const [loading, setLoading] = useState(false)
+    const [reports, setReports] = useState<ReportListResult | null>({
+        reports: initialReports,
+        total: initialTotal,
+        page: 1,
+        limit: 50,
+        totalPages: Math.ceil(initialTotal / 50)
+    })
 
     const [filters, setFilters] = useState<ReportListFilters>({
         status: "pending",
@@ -20,6 +34,17 @@ export function ReportsPage() {
         page: 1,
         limit: 50,
     })
+
+    const loadStats = async () => {
+        setLoadingStats(true)
+        const result = await getReportStats()
+        if (result.ok) {
+            setStats(result.data)
+        } else {
+            toast.error(result.error || "加载统计数据失败")
+        }
+        setLoadingStats(false)
+    }
 
     const loadReports = async () => {
         setLoading(true)
@@ -32,13 +57,22 @@ export function ReportsPage() {
         setLoading(false)
     }
 
+    // ✅ 优化：移除初始化加载，数据已由服务端传入
+    // 使用 ref 跟踪是否是首次渲染
+    const isInitialMount = useRef(true)
+
     useEffect(() => {
+        // 跳过首次渲染（已有初始数据）
+        if (isInitialMount.current) {
+            isInitialMount.current = false
+            return
+        }
         loadReports()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filters.status, filters.reporter_role, filters.page])
 
-    const handleRefresh = () => {
-        loadReports()
+    const handleRefresh = async () => {
+        await Promise.all([loadStats(), loadReports()])
         toast.success("已刷新数据")
     }
 
@@ -67,6 +101,61 @@ export function ReportsPage() {
                     <RefreshCw className="mr-2 h-4 w-4" />
                     刷新
                 </Button>
+            </div>
+
+            {/* 统计卡片 */}
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">待处理</CardTitle>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.pending || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">个</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">今日新增</CardTitle>
+                        <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.today_new || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">个</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">技师举报</CardTitle>
+                        <UserCheck className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.girl_reports || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">个</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">客户举报</CardTitle>
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.customer_reports || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">个</span>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* 筛选区域 */}

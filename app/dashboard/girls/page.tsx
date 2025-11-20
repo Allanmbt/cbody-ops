@@ -12,6 +12,7 @@ import { Plus, Search, ChevronLeft, ChevronRight } from "lucide-react"
 import { GirlTable } from "@/components/girls/GirlTable"
 import { GirlFormDialog } from "@/components/girls/GirlFormDialog"
 import { GirlStatusDrawer } from "@/components/girls/GirlStatusDrawer"
+import { GirlStatsCards } from "@/components/girls/GirlStatsCards"
 import {
     getGirlsProfileList,
     getCities,
@@ -234,6 +235,9 @@ export default function GirlsPage() {
                     新建技师
                 </Button>
             </div>
+
+            {/* 统计卡片 */}
+            <GirlStatsCards />
 
             <div className="grid gap-6">
                 <div>

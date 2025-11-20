@@ -5,6 +5,16 @@ import { requireAdmin } from "@/lib/auth"
 
 export type ReportStatus = "pending" | "resolved"
 
+/**
+ * 举报统计数据
+ */
+export interface ReportStats {
+    pending: number          // 待处理
+    today_new: number        // 今日新增
+    girl_reports: number     // 技师举报
+    customer_reports: number // 客户举报
+}
+
 export interface ReportListFilters {
     status?: ReportStatus | "all"
     reporter_role?: "girl" | "customer" | "all"
@@ -56,9 +66,67 @@ export interface ReportListResult {
     totalPages: number
 }
 
+/**
+ * 获取举报统计
+ */
+export async function getReportStats() {
+    try {
+        await requireAdmin(["superadmin", "admin", "support"])
+        const supabase = getSupabaseAdminClient()
+
+        // ✅ 优化：使用 RPC 函数一次性获取所有统计（4次查询 → 1次）
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_report_stats')
+
+        if (!rpcError && rpcData) {
+            return {
+                ok: true as const,
+                data: rpcData as ReportStats
+            }
+        }
+
+        // 回退方案：如果 RPC 不可用
+        console.warn('[举报统计] RPC 不可用，使用回退方案')
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+
+        const { count: pendingCount } = await supabase
+            .from('reports')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending')
+
+        const { count: todayNewCount } = await supabase
+            .from('reports')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', todayStart.toISOString())
+
+        const { count: girlReportsCount } = await supabase
+            .from('reports')
+            .select('*', { count: 'exact', head: true })
+            .eq('reporter_role', 'girl')
+
+        const { count: customerReportsCount } = await supabase
+            .from('reports')
+            .select('*', { count: 'exact', head: true })
+            .eq('reporter_role', 'customer')
+
+        return {
+            ok: true as const,
+            data: {
+                pending: pendingCount || 0,
+                today_new: todayNewCount || 0,
+                girl_reports: girlReportsCount || 0,
+                customer_reports: customerReportsCount || 0
+            } as ReportStats
+        }
+    } catch (error) {
+        console.error('[举报统计] 获取失败:', error)
+        return { ok: false as const, error: "获取举报统计失败" }
+    }
+}
+
 export async function getReports(filters: ReportListFilters = {}) {
     try {
-        await requireAdmin(["superadmin", "admin", "support"]) // 管理员、超管、客服均可访问
+        await requireAdmin(["superadmin", "admin", "support"])
         const supabase = getSupabaseAdminClient()
 
         const {
@@ -68,8 +136,9 @@ export async function getReports(filters: ReportListFilters = {}) {
             limit = 50,
         } = filters
 
+        // ✅ 优化：使用视图查询，预关联用户和技师信息（4次查询 → 1次）
         let query = supabase
-            .from("reports")
+            .from("v_report_monitoring")
             .select("*", { count: "exact" })
 
         // 状态筛选
@@ -112,83 +181,26 @@ export async function getReports(filters: ReportListFilters = {}) {
             }
         }
 
-        // 收集用户ID
-        const userIds = Array.from(
-            new Set(
-                reports
-                    .flatMap((r) => [r.reporter_id, r.target_user_id])
-                    .filter(Boolean),
-            ),
-        ) as string[]
-
-        let profilesMap = new Map<string, {
-            user_id: string
-            display_name: string | null
-            avatar_url: string | null
-            girl_number?: number | null
-            girl_name?: string | null
-        }>()
-
-        if (userIds.length > 0) {
-            const { data: profilesData, error: profilesError } = await supabase
-                .from("user_profiles")
-                .select("id, display_name, avatar_url")
-                .in("id", userIds)
-
-            if (!profilesError && profilesData) {
-                profilesMap = new Map(
-                    profilesData.map((p: any) => [p.id, {
-                        user_id: p.id,
-                        display_name: p.display_name ?? null,
-                        avatar_url: p.avatar_url ?? null,
-                    }]),
-                )
-            }
-
-            // 查询技师信息（工号和姓名）
-            const { data: girlsData } = await supabase
-                .from("girls")
-                .select("user_id, girl_number, name, avatar_url")
-                .in("user_id", userIds)
-
-            if (girlsData && girlsData.length > 0) {
-                girlsData.forEach((girl: any) => {
-                    const existing = profilesMap.get(girl.user_id)
-                    if (existing) {
-                        profilesMap.set(girl.user_id, {
-                            ...existing,
-                            girl_number: girl.girl_number,
-                            girl_name: girl.name,
-                            avatar_url: girl.avatar_url || existing.avatar_url, // 优先使用技师头像
-                        })
-                    }
-                })
-            }
-        }
-
-        // 收集订单ID
-        const orderIds = Array.from(new Set(reports.map((r) => r.order_id).filter(Boolean))) as string[]
-        let ordersMap = new Map<string, { id: string; order_number: string }>()
-
-        if (orderIds.length > 0) {
-            const { data: ordersData, error: ordersError } = await supabase
-                .from("orders")
-                .select("id, order_number")
-                .in("id", orderIds)
-
-            if (!ordersError && ordersData) {
-                ordersMap = new Map(
-                    ordersData.map((o: any) => [o.id, { id: o.id, order_number: o.order_number }]),
-                )
-            }
-        }
-
+        // ✅ 优化：视图已包含所有关联数据，直接格式化即可
         const resultReports: ReportListItem[] = reports.map((r: any) => ({
-            ...r,
+            id: r.id,
+            reporter_id: r.reporter_id,
+            reporter_role: r.reporter_role,
+            target_user_id: r.target_user_id,
+            report_type: r.report_type,
+            description: r.description,
             screenshot_urls: r.screenshot_urls || [],
-            reporter_profile: profilesMap.get(r.reporter_id) || null,
-            target_profile: profilesMap.get(r.target_user_id) || null,
-            order: r.order_id ? (ordersMap.get(r.order_id) || null) : null,
+            status: r.status,
+            thread_id: r.thread_id,
+            order_id: r.order_id,
+            reviewed_by: r.reviewed_by,
+            reviewed_at: r.reviewed_at,
+            admin_notes: r.admin_notes,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            reporter_profile: r.reporter_profile,
+            target_profile: r.target_profile,
+            order: r.order_info
         }))
 
         const total = count || resultReports.length
@@ -213,13 +225,17 @@ export async function getReports(filters: ReportListFilters = {}) {
     }
 }
 
+/**
+ * 获取举报详情
+ * ✅ 优化：使用视图查询，移除重复查询
+ */
 export async function getReportDetail(id: string) {
     try {
         await requireAdmin(["superadmin", "admin", "support"])
         const supabase = getSupabaseAdminClient()
 
         const { data, error } = await supabase
-            .from("reports")
+            .from("v_report_monitoring")
             .select("*")
             .eq("id", id)
             .single()
@@ -231,71 +247,25 @@ export async function getReportDetail(id: string) {
 
         const report = data as any
 
-        // 加载用户信息
-        const userIds = [report.reporter_id, report.target_user_id].filter(Boolean) as string[]
-        let profilesMap = new Map<string, {
-            user_id: string
-            display_name: string | null
-            avatar_url: string | null
-            girl_number?: number | null
-            girl_name?: string | null
-        }>()
-
-        if (userIds.length > 0) {
-            const { data: profilesData } = await supabase
-                .from("user_profiles")
-                .select("id, display_name, avatar_url")
-                .in("id", userIds)
-
-            profilesMap = new Map(
-                (profilesData || []).map((p: any) => [p.id, {
-                    user_id: p.id,
-                    display_name: p.display_name ?? null,
-                    avatar_url: p.avatar_url ?? null,
-                }]),
-            )
-
-            // 查询技师信息（工号和姓名）
-            const { data: girlsData } = await supabase
-                .from("girls")
-                .select("user_id, girl_number, name, avatar_url")
-                .in("user_id", userIds)
-
-            if (girlsData && girlsData.length > 0) {
-                girlsData.forEach((girl: any) => {
-                    const existing = profilesMap.get(girl.user_id)
-                    if (existing) {
-                        profilesMap.set(girl.user_id, {
-                            ...existing,
-                            girl_number: girl.girl_number,
-                            girl_name: girl.name,
-                            avatar_url: girl.avatar_url || existing.avatar_url,
-                        })
-                    }
-                })
-            }
-        }
-
-        // 订单信息
-        let order: { id: string; order_number: string } | null = null
-        if (report.order_id) {
-            const { data: orderData } = await supabase
-                .from("orders")
-                .select("id, order_number")
-                .eq("id", report.order_id)
-                .maybeSingle()
-
-            if (orderData) {
-                order = { id: (orderData as any).id, order_number: (orderData as any).order_number }
-            }
-        }
-
         const result: ReportListItem = {
-            ...report,
+            id: report.id,
+            reporter_id: report.reporter_id,
+            reporter_role: report.reporter_role,
+            target_user_id: report.target_user_id,
+            report_type: report.report_type,
+            description: report.description,
             screenshot_urls: report.screenshot_urls || [],
-            reporter_profile: profilesMap.get(report.reporter_id) || null,
-            target_profile: profilesMap.get(report.target_user_id) || null,
-            order,
+            status: report.status,
+            thread_id: report.thread_id,
+            order_id: report.order_id,
+            reviewed_by: report.reviewed_by,
+            reviewed_at: report.reviewed_at,
+            admin_notes: report.admin_notes,
+            created_at: report.created_at,
+            updated_at: report.updated_at,
+            reporter_profile: report.reporter_profile,
+            target_profile: report.target_profile,
+            order: report.order_info
         }
 
         return { ok: true as const, data: result }

@@ -25,12 +25,22 @@ import {
 } from "@/app/dashboard/operations/chats/actions"
 import { ChatThreadTable } from "./ChatThreadTable"
 
-export function ChatMonitoringPage() {
-    const [stats, setStats] = useState<ChatStats | null>(null)
-    const [loadingStats, setLoadingStats] = useState(true)
-    const [threads, setThreads] = useState<any[]>([])
-    const [loadingThreads, setLoadingThreads] = useState(true)
-    const [total, setTotal] = useState(0)
+interface ChatMonitoringPageProps {
+    initialStats: ChatStats | null
+    initialThreads: any[]
+    initialTotal: number
+}
+
+export function ChatMonitoringPage({
+    initialStats,
+    initialThreads,
+    initialTotal
+}: ChatMonitoringPageProps) {
+    const [stats, setStats] = useState<ChatStats | null>(initialStats)
+    const [loadingStats, setLoadingStats] = useState(false)
+    const [threads, setThreads] = useState<any[]>(initialThreads)
+    const [loadingThreads, setLoadingThreads] = useState(false)
+    const [total, setTotal] = useState(initialTotal)
     const isInitialMount = useRef(true)
 
     // 筛选条件
@@ -68,12 +78,9 @@ export function ChatMonitoringPage() {
         setLoadingThreads(false)
     }
 
-    // 初始化加载
+    // ✅ 优化：移除初始化加载，使用服务端传入的数据
     useEffect(() => {
-        loadStats()
-        loadThreads()
         isInitialMount.current = false
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
     // 筛选条件变化时重新加载

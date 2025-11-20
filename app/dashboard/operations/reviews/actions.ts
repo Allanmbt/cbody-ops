@@ -5,6 +5,16 @@ import { requireAdmin } from "@/lib/auth"
 
 export type ReviewStatus = "pending" | "approved" | "rejected"
 
+/**
+ * 评论统计数据
+ */
+export interface ReviewStats {
+    pending: number    // 待审核
+    today_new: number  // 今日新增
+    approved: number   // 已通过
+    rejected: number   // 已驳回
+}
+
 export interface ReviewListFilters {
     status?: ReviewStatus | "all"
     page?: number
@@ -55,6 +65,64 @@ export interface ReviewListResult {
     totalPages: number
 }
 
+/**
+ * 获取评论统计
+ */
+export async function getReviewStats() {
+    try {
+        await requireAdmin(["superadmin", "admin", "support"])
+        const supabase = getSupabaseAdminClient()
+
+        // ✅ 优化：使用 RPC 函数一次性获取所有统计（4次查询 → 1次）
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_review_stats')
+
+        if (!rpcError && rpcData) {
+            return {
+                ok: true as const,
+                data: rpcData as ReviewStats
+            }
+        }
+
+        // 回退方案：如果 RPC 不可用
+        console.warn('[评论统计] RPC 不可用，使用回退方案')
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+
+        const { count: pendingCount } = await supabase
+            .from('order_reviews')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending')
+
+        const { count: todayNewCount } = await supabase
+            .from('order_reviews')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', todayStart.toISOString())
+
+        const { count: approvedCount } = await supabase
+            .from('order_reviews')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'approved')
+
+        const { count: rejectedCount } = await supabase
+            .from('order_reviews')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'rejected')
+
+        return {
+            ok: true as const,
+            data: {
+                pending: pendingCount || 0,
+                today_new: todayNewCount || 0,
+                approved: approvedCount || 0,
+                rejected: rejectedCount || 0
+            } as ReviewStats
+        }
+    } catch (error) {
+        console.error('[评论统计] 获取失败:', error)
+        return { ok: false as const, error: "获取评论统计失败" }
+    }
+}
+
 export async function getReviews(filters: ReviewListFilters = {}) {
     try {
         await requireAdmin(["superadmin", "admin", "support"])
@@ -66,8 +134,9 @@ export async function getReviews(filters: ReviewListFilters = {}) {
             limit = 50,
         } = filters
 
+        // ✅ 优化：使用视图查询，预关联订单、用户、技师信息（4次查询 → 1次）
         let query = supabase
-            .from("order_reviews")
+            .from("v_review_monitoring")
             .select("*", { count: "exact" })
 
         // 状态筛选
@@ -105,79 +174,29 @@ export async function getReviews(filters: ReviewListFilters = {}) {
             }
         }
 
-        // 收集关联 ID
-        const orderIds = Array.from(new Set(reviews.map((r) => r.order_id).filter(Boolean))) as string[]
-        const userIds = Array.from(new Set(reviews.map((r) => r.user_id).filter(Boolean))) as string[]
-        const girlIds = Array.from(new Set(reviews.map((r) => r.girl_id).filter(Boolean))) as string[]
-
-        // 查询订单信息
-        let ordersMap = new Map<string, { id: string; order_number: string }>()
-        if (orderIds.length > 0) {
-            const { data: ordersData } = await supabase
-                .from("orders")
-                .select("id, order_number")
-                .in("id", orderIds)
-
-            if (ordersData) {
-                ordersMap = new Map(
-                    ordersData.map((o: any) => [o.id, { id: o.id, order_number: o.order_number }]),
-                )
-            }
-        }
-
-        // 查询用户信息
-        let usersMap = new Map<string, {
-            user_id: string
-            display_name: string | null
-            avatar_url: string | null
-        }>()
-        if (userIds.length > 0) {
-            const { data: usersData } = await supabase
-                .from("user_profiles")
-                .select("id, display_name, avatar_url")
-                .in("id", userIds)
-
-            if (usersData) {
-                usersMap = new Map(
-                    usersData.map((u: any) => [u.id, {
-                        user_id: u.id,
-                        display_name: u.display_name ?? null,
-                        avatar_url: u.avatar_url ?? null,
-                    }]),
-                )
-            }
-        }
-
-        // 查询技师信息
-        let girlsMap = new Map<string, {
-            id: string
-            girl_number: number
-            name: string
-            avatar_url: string | null
-        }>()
-        if (girlIds.length > 0) {
-            const { data: girlsData } = await supabase
-                .from("girls")
-                .select("id, girl_number, name, avatar_url")
-                .in("id", girlIds)
-
-            if (girlsData) {
-                girlsMap = new Map(
-                    girlsData.map((g: any) => [g.id, {
-                        id: g.id,
-                        girl_number: g.girl_number,
-                        name: g.name,
-                        avatar_url: g.avatar_url ?? null,
-                    }]),
-                )
-            }
-        }
-
+        // ✅ 优化：视图已包含所有关联数据，直接格式化即可
         const resultReviews: ReviewListItem[] = reviews.map((r: any) => ({
-            ...r,
-            order: r.order_id ? (ordersMap.get(r.order_id) || null) : null,
-            user_profile: r.user_id ? (usersMap.get(r.user_id) || null) : null,
-            girl: r.girl_id ? (girlsMap.get(r.girl_id) || null) : null,
+            id: r.id,
+            order_id: r.order_id,
+            user_id: r.user_id,
+            girl_id: r.girl_id,
+            service_id: r.service_id,
+            rating_service: r.rating_service,
+            rating_attitude: r.rating_attitude,
+            rating_emotion: r.rating_emotion,
+            rating_similarity: r.rating_similarity,
+            rating_overall: r.rating_overall,
+            comment_text: r.comment_text,
+            min_user_level: r.min_user_level,
+            status: r.status,
+            reviewed_by: r.reviewed_by,
+            reviewed_at: r.reviewed_at,
+            reject_reason: r.reject_reason,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            order: r.order_info,
+            user_profile: r.user_profile,
+            girl: r.girl_info
         }))
 
         const total = count || resultReviews.length

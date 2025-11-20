@@ -1,23 +1,48 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, AlertCircle, TrendingUp, CheckCircle2, XCircle } from "lucide-react"
 import { toast } from "sonner"
-import { getReviews, type ReviewListFilters, type ReviewListResult } from "@/app/dashboard/operations/reviews/actions"
+import { getReviews, getReviewStats, type ReviewListFilters, type ReviewListResult, type ReviewStats, type ReviewListItem } from "@/app/dashboard/operations/reviews/actions"
 import { ReviewsTable } from "./ReviewsTable"
 
-export function ReviewsPage() {
-    const [loading, setLoading] = useState(true)
-    const [reviews, setReviews] = useState<ReviewListResult | null>(null)
+interface ReviewsPageProps {
+    initialStats: ReviewStats | null
+    initialReviews: ReviewListItem[]
+    initialTotal: number
+}
+
+export function ReviewsPage({ initialStats, initialReviews, initialTotal }: ReviewsPageProps) {
+    const [stats, setStats] = useState<ReviewStats | null>(initialStats)
+    const [loadingStats, setLoadingStats] = useState(false)
+    const [loading, setLoading] = useState(false)
+    const [reviews, setReviews] = useState<ReviewListResult | null>({
+        reviews: initialReviews,
+        total: initialTotal,
+        page: 1,
+        limit: 50,
+        totalPages: Math.ceil(initialTotal / 50)
+    })
 
     const [filters, setFilters] = useState<ReviewListFilters>({
         status: "pending",
         page: 1,
         limit: 50,
     })
+
+    const loadStats = async () => {
+        setLoadingStats(true)
+        const result = await getReviewStats()
+        if (result.ok) {
+            setStats(result.data)
+        } else {
+            toast.error(result.error || "加载统计数据失败")
+        }
+        setLoadingStats(false)
+    }
 
     const loadReviews = async () => {
         setLoading(true)
@@ -30,13 +55,21 @@ export function ReviewsPage() {
         setLoading(false)
     }
 
+    // ✅ 优化：移除初始化加载，数据已由服务端传入
+    const isInitialMount = useRef(true)
+
     useEffect(() => {
+        // 跳过首次渲染（已有初始数据）
+        if (isInitialMount.current) {
+            isInitialMount.current = false
+            return
+        }
         loadReviews()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filters.status, filters.page])
 
-    const handleRefresh = () => {
-        loadReviews()
+    const handleRefresh = async () => {
+        await Promise.all([loadStats(), loadReviews()])
         toast.success("已刷新数据")
     }
 
@@ -56,6 +89,61 @@ export function ReviewsPage() {
                     <RefreshCw className="mr-2 h-4 w-4" />
                     刷新
                 </Button>
+            </div>
+
+            {/* 统计卡片 */}
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">待审核</CardTitle>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.pending || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">条</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">今日新增</CardTitle>
+                        <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.today_new || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">条</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">已通过</CardTitle>
+                        <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.approved || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">条</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">已驳回</CardTitle>
+                        <XCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {loadingStats ? "-" : stats?.rejected || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">条</span>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* 筛选区域 */}

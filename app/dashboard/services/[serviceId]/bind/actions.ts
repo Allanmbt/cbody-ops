@@ -84,17 +84,10 @@ export async function getServiceGirlBindList(
 
         const supabase = getSupabaseAdminClient()
 
-        // 构建基础查询
+        // ✅ 优化：使用视图查询，预关联所有数据（150次查询 → 1次）
         let query = supabase
-            .from('girls')
-            .select(`
-                id,
-                girl_number,
-                username,
-                name,
-                avatar_url,
-                city:cities(id, name)
-            `, { count: 'exact' })
+            .from('v_admin_service_girl_binding')
+            .select('*', { count: 'exact' })
 
         // 搜索条件
         if (search) {
@@ -129,85 +122,50 @@ export async function getServiceGirlBindList(
             return { ok: false, error: "获取技师列表失败" }
         }
 
-        // 获取每个技师的分类和绑定信息
-        const girlsWithBinding = await Promise.all(
-            (girls || []).map(async (girl: any) => {
-                // 获取分类
-                const { data: categoryData } = await supabase
-                    .from('girls_categories')
-                    .select(`
-                        category_id,
-                        categories:category_id(id, name)
-                    `)
-                    .eq('girl_id', girl.id)
+        // ✅ 优化：视图已包含所有数据，直接处理即可
+        const filteredGirls = (girls || []).map((girl: any) => {
+            // 从 service_bindings 中找到当前服务的绑定信息
+            const serviceBindings = girl.service_bindings || []
+            const binding = serviceBindings.find((b: any) => b.service_id === serviceId)
 
-                const categories = (categoryData || [])
-                    .map((item: any) => item.categories)
-                    .filter(Boolean)
-
-                // 如果有分类筛选，检查是否匹配
-                if (category_id) {
-                    const hasCategory = (categoryData || []).some(
-                        (item: any) => item.category_id === category_id
-                    )
-                    if (!hasCategory) {
-                        return null // 不匹配，跳过
-                    }
+            // 分类筛选
+            if (category_id) {
+                const categories = girl.categories || []
+                const hasCategory = categories.some((cat: any) => cat.id === category_id)
+                if (!hasCategory) {
+                    return null
                 }
+            }
 
-                // 获取绑定信息
-                const { data: binding } = await supabase
-                    .from('admin_girl_services')
-                    .select('id, is_qualified, notes')
-                    .eq('girl_id', girl.id)
-                    .eq('service_id', serviceId)
-                    .single()
-
-                let bindingInfo = null
-                if (binding) {
-                    // 统计已启用的时长数量
-                    const { count: durationsCount } = await supabase
-                        .from('girl_service_durations')
-                        .select('id', { count: 'exact', head: true })
-                        .eq('admin_girl_service_id', (binding as any).id)
-                        .eq('is_active', true)
-
-                    bindingInfo = {
-                        id: (binding as any).id,
-                        is_qualified: (binding as any).is_qualified,
-                        notes: (binding as any).notes,
-                        enabled_durations_count: durationsCount || 0
-                    }
+            // 绑定状态筛选
+            if (bind_status !== 'all') {
+                if (bind_status === 'unbound' && binding) {
+                    return null
                 }
-
-                // 根据绑定状态筛选
-                if (bind_status !== 'all') {
-                    if (bind_status === 'unbound' && bindingInfo) {
-                        return null
-                    }
-                    if (bind_status === 'bound-enabled' && (!bindingInfo || !bindingInfo.is_qualified)) {
-                        return null
-                    }
-                    if (bind_status === 'bound-disabled' && (!bindingInfo || bindingInfo.is_qualified)) {
-                        return null
-                    }
+                if (bind_status === 'bound-enabled' && (!binding || !binding.is_qualified)) {
+                    return null
                 }
-
-                return {
-                    id: girl.id,
-                    girl_number: girl.girl_number,
-                    username: girl.username,
-                    name: girl.name,
-                    avatar_url: girl.avatar_url,
-                    city: girl.city,
-                    categories,
-                    binding: bindingInfo
+                if (bind_status === 'bound-disabled' && (!binding || binding.is_qualified)) {
+                    return null
                 }
-            })
-        )
+            }
 
-        // 过滤掉null项（不匹配筛选条件的）
-        const filteredGirls = girlsWithBinding.filter(g => g !== null) as ServiceGirlBindItem[]
+            return {
+                id: girl.id,
+                girl_number: girl.girl_number,
+                username: girl.username,
+                name: girl.name,
+                avatar_url: girl.avatar_url,
+                city: girl.city,
+                categories: girl.categories || [],
+                binding: binding ? {
+                    id: binding.id,
+                    is_qualified: binding.is_qualified,
+                    notes: binding.notes,
+                    enabled_durations_count: binding.enabled_durations_count || 0
+                } : null
+            }
+        }).filter(g => g !== null) as ServiceGirlBindItem[]
 
         const totalPages = Math.ceil((count || 0) / limit)
 
