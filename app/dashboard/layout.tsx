@@ -79,6 +79,7 @@ import type { AdminProfile, AdminRole } from "@/lib/types/admin"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { PageLoading } from "@/components/ui/loading"
+import { useSidebar } from "@/components/ui/sidebar"
 
 type SidebarNavChild = {
   key: string
@@ -308,6 +309,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // ✅ 优化：预加载常用页面，提升切换速度
+  useEffect(() => {
+    // 预加载最常访问的页面
+    router.prefetch('/dashboard/operations/orders')
+    router.prefetch('/dashboard/operations/therapists')
+    router.prefetch('/dashboard/management')
+    router.prefetch('/dashboard/girls')
+    router.prefetch('/dashboard/operations/reviews')
+  }, [router])
+
   useEffect(() => {
     async function checkAuth() {
       try {
@@ -413,6 +424,56 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <SidebarProvider>
+      <DashboardLayoutContent
+        filteredSidebarGroups={filteredSidebarGroups}
+        expandedMenus={expandedMenus}
+        handleToggle={handleToggle}
+        pathname={pathname}
+        breadcrumb={breadcrumb}
+        adminProfile={adminProfile}
+        handleSignOut={handleSignOut}
+      >
+        {children}
+      </DashboardLayoutContent>
+    </SidebarProvider>
+  )
+}
+
+interface DashboardLayoutContentProps {
+  filteredSidebarGroups: typeof sidebarGroups
+  expandedMenus: string[]
+  handleToggle: (key: string, open: boolean) => void
+  pathname: string
+  breadcrumb: Array<{ label: string; href?: string }>
+  adminProfile: AdminProfile
+  handleSignOut: () => void
+  children: React.ReactNode
+}
+
+function DashboardLayoutContent({
+  filteredSidebarGroups,
+  expandedMenus,
+  handleToggle,
+  pathname,
+  breadcrumb,
+  adminProfile,
+  handleSignOut,
+  children
+}: DashboardLayoutContentProps) {
+  const { setOpenMobile } = useSidebar()
+
+  // ✅ 优化：移动端路由切换时自动关闭侧边栏
+  useEffect(() => {
+    setOpenMobile(false)
+  }, [pathname, setOpenMobile])
+
+  const hasAccess = (requiredRoles?: AdminRole[]) => {
+    if (!adminProfile || !requiredRoles) return true
+    return requiredRoles.includes(adminProfile.role)
+  }
+
+  return (
+    <>
       <Sidebar variant="floating" collapsible="icon">
         <SidebarHeader>
           <DashboardBranding />
@@ -591,7 +652,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           {children}
         </div>
       </SidebarInset>
-    </SidebarProvider>
+    </>
   )
 }
 
