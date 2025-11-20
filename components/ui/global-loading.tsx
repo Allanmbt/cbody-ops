@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { usePathname, useSearchParams } from "next/navigation"
+import { usePathname } from "next/navigation"
 
 /**
  * 全局加载指示器
@@ -9,14 +9,13 @@ import { usePathname, useSearchParams } from "next/navigation"
  */
 export function GlobalLoading() {
     const pathname = usePathname()
-    const searchParams = useSearchParams()
     const [loading, setLoading] = useState(false)
 
     useEffect(() => {
         setLoading(true)
         const timeout = setTimeout(() => setLoading(false), 100)
         return () => clearTimeout(timeout)
-    }, [pathname, searchParams])
+    }, [pathname])
 
     if (!loading) return null
 
