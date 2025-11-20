@@ -136,14 +136,13 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
       limit = 50
     } = filters
 
-    // ✅ 优化：直接 JOIN user_profiles，避免使用 listUsers()
+    // ✅ 优化：查询订单，暂时不 JOIN user_profiles（因为外键关系复杂）
     let query = supabase
       .from('orders')
       .select(`
         *,
         girl:girls!girl_id(id, girl_number, username, name, avatar_url),
-        service:services!service_id(id, code, title),
-        user:user_profiles!user_id(id, username, display_name, avatar_url)
+        service:services!service_id(id, code, title)
       `, { count: 'exact' })
 
     // 时间范围筛选
@@ -206,10 +205,10 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
 
     if (error) {
       console.error('[订单监控] 查询失败:', error)
-      return { ok: false, error: `查询订单失败: ${error.message}` }
+      return { ok: false as const, error: "查询订单失败" }
     }
 
-    // ✅ 优化：用户信息已通过 JOIN 获取，无需额外查询
+    // 数据处理：订单列表
     let ordersWithUsers: any[] = ordersData || []
 
     // 客户名称/电话搜索过滤（如果有搜索条件）
@@ -229,10 +228,6 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
         // 联系人电话匹配
         const contactPhone = order.address_snapshot?.contact?.p
         if (contactPhone && contactPhone.toLowerCase().includes(searchLower)) return true
-
-        // 用户名匹配
-        if (order.user?.username && order.user.username.toLowerCase().includes(searchLower)) return true
-        if (order.user?.display_name && order.user.display_name.toLowerCase().includes(searchLower)) return true
 
         return false
       })
