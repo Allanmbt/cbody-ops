@@ -197,7 +197,7 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
     let therapistsWithOrders: any[] = therapistsData || []
     if (therapistsData && therapistsData.length > 0) {
       // 提取 girls_status 和 cities 并展平到主对象
-      let flattenedTherapists = therapistsData.map((t: any) => ({
+      const flattenedTherapists = therapistsData.map((t: any) => ({
         ...t,
         status: t.girls_status?.status || 'offline',
         current_lat: t.girls_status?.current_lat || null,
