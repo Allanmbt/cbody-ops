@@ -18,6 +18,7 @@ import { toast } from "sonner"
 import { ServiceTable } from "@/components/services/ServiceTable"
 import { ServiceFormDialog } from "@/components/services/ServiceFormDialog"
 import { ServiceDurationsDrawer } from "@/components/services/ServiceDurationsDrawer"
+import { ServiceStatsCards } from "@/components/services/ServiceStatsCards"
 import type { Service, Category, ServiceListParams, PaginatedResponse } from "@/lib/features/services"
 import { getCategoryName } from "@/lib/features/services"
 import { getServices, getCategories } from "./actions"
@@ -192,6 +193,9 @@ export default function ServicesPage() {
                     新建服务
                 </Button>
             </div>
+
+            {/* 统计卡片 */}
+            <ServiceStatsCards />
 
             {/* 筛选区域 */}
             <Card>

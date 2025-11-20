@@ -138,9 +138,9 @@ export async function getMediaList(params: unknown): Promise<PaginatedMediaRespo
 
         console.log('[Media Actions] Query params:', { status, girl_id, kind, min_user_level, date_from, date_to, search, sort_by, sort_order, page, limit })
 
-        // 构建查询 - 先不使用关联查询，避免权限问题
+        // ✅ 优化：使用视图查询，预关联技师和审核人信息（3次查询 → 1次）
         let query = supabase
-            .from('girls_media')
+            .from('v_admin_media_list')
             .select('*', { count: 'exact' })
 
         // 过滤条件
@@ -221,56 +221,29 @@ export async function getMediaList(params: unknown): Promise<PaginatedMediaRespo
 
         console.log('[Media Actions] Fetched', data?.length, 'media items')
 
-        // 如果有数据，额外获取关联的技师和审核人信息
-        let items: MediaListItem[] = []
-
-        if (data && data.length > 0) {
-            const girlIds = [...new Set(data.map((item: any) => item.girl_id).filter(Boolean))]
-            const reviewerIds = [...new Set(data.map((item: any) => item.reviewed_by).filter(Boolean))]
-
-            // 获取技师信息
-            const girlsMap: Record<string, { name: string; username: string; girl_number: number | null }> = {}
-            if (girlIds.length > 0) {
-                const { data: girls } = await supabase
-                    .from('girls')
-                    .select('id, name, username, girl_number')
-                    .in('id', girlIds)
-
-                if (girls) {
-                    girls.forEach((girl: any) => {
-                        girlsMap[girl.id] = {
-                            name: girl.name,
-                            username: girl.username,
-                            girl_number: girl.girl_number ?? null,
-                        }
-                    })
-                }
-            }
-
-            // 获取审核人信息
-            const reviewersMap: Record<string, string> = {}
-            if (reviewerIds.length > 0) {
-                const { data: reviewers } = await supabase
-                    .from('admin_profiles')
-                    .select('id, display_name')
-                    .in('id', reviewerIds)
-
-                if (reviewers) {
-                    reviewers.forEach((reviewer: any) => {
-                        reviewersMap[reviewer.id] = reviewer.display_name
-                    })
-                }
-            }
-
-            // 格式化数据
-            items = data.map((item: any) => ({
-                ...item,
-                girl_name: item.girl_id ? girlsMap[item.girl_id]?.name : undefined,
-                girl_username: item.girl_id ? girlsMap[item.girl_id]?.username : undefined,
-                girl_number: item.girl_id ? girlsMap[item.girl_id]?.girl_number ?? null : null,
-                reviewer_name: item.reviewed_by ? reviewersMap[item.reviewed_by] : undefined,
-            }))
-        }
+        // ✅ 优化：视图已包含所有关联数据，直接使用即可
+        const items: MediaListItem[] = (data || []).map((item: any) => ({
+            id: item.id,
+            girl_id: item.girl_id,
+            kind: item.kind,
+            status: item.status,
+            storage_key: item.storage_key,
+            thumb_key: item.thumb_key,
+            provider: item.provider,
+            meta: item.meta,
+            min_user_level: item.min_user_level,
+            sort_order: item.sort_order,
+            reviewed_by: item.reviewed_by,
+            reviewed_at: item.reviewed_at,
+            reject_reason: item.reject_reason,
+            created_by: item.created_by,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+            girl_name: item.girl_name,
+            girl_username: item.girl_username,
+            girl_number: item.girl_number,
+            reviewer_name: item.reviewer_name
+        }))
 
         return {
             data: items,
@@ -297,7 +270,15 @@ export async function getMediaStats(): Promise<MediaStats> {
         // 使用统一的 Admin 客户端
         const supabase = getSupabaseAdminClient()
 
-        // 分别统计三种状态的数量，避免全表扫描加载数据
+        // ✅ 优化：使用 RPC 函数一次性获取所有统计（3次查询 → 1次）
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_admin_media_stats')
+
+        if (!rpcError && rpcData) {
+            return rpcData as MediaStats
+        }
+
+        // 回退方案：如果 RPC 不可用
+        console.warn('[媒体统计] RPC 不可用，使用回退方案')
         const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
             (supabase as any)
                 .from('girls_media')

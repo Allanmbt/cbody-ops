@@ -13,6 +13,86 @@ import type {
 } from "@/lib/features/orders"
 
 /**
+ * 订单管理统计数据
+ */
+export interface AdminOrderStats {
+  total: number              // 总订单数
+  pending: number            // 待确认
+  active: number             // 进行中
+  today_completed: number    // 今日完成（泰国时区6点起）
+  today_cancelled: number    // 今日取消（泰国时区6点起）
+  yesterday_completed: number // 昨日完成
+  yesterday_cancelled: number // 昨日取消
+}
+
+/**
+ * 获取订单管理统计
+ */
+export async function getAdminOrderStats(): Promise<ApiResponse<AdminOrderStats>> {
+  try {
+    await requireAdmin(['superadmin', 'admin', 'finance', 'support'])
+    const supabase = getSupabaseAdminClient()
+
+    // ✅ 优化：使用 RPC 函数一次性获取所有统计
+    const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_admin_order_stats')
+
+    if (!rpcError && rpcData) {
+      return {
+        ok: true as const,
+        data: rpcData as AdminOrderStats
+      }
+    }
+
+    // 回退方案：如果 RPC 不可用
+    console.warn('[订单统计] RPC 不可用，使用回退方案')
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const { count: totalCount } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+
+    const { count: pendingCount } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+
+    const { count: activeCount } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['confirmed', 'en_route', 'arrived', 'in_service'])
+
+    const { count: todayCompletedCount } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'completed')
+      .gte('completed_at', todayStart.toISOString())
+
+    const { count: todayCancelledCount } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'cancelled')
+      .gte('updated_at', todayStart.toISOString())
+
+    return {
+      ok: true as const,
+      data: {
+        total: totalCount || 0,
+        pending: pendingCount || 0,
+        active: activeCount || 0,
+        today_completed: todayCompletedCount || 0,
+        today_cancelled: todayCancelledCount || 0,
+        yesterday_completed: 0,
+        yesterday_cancelled: 0
+      } as AdminOrderStats
+    }
+  } catch (error) {
+    console.error('[订单统计] 获取失败:', error)
+    return { ok: false as const, error: "获取订单统计失败" }
+  }
+}
+
+/**
  * 获取订单列表
  */
 export async function getOrders(params: OrderListParams): Promise<ApiResponse<PaginatedResponse<Order>>> {
@@ -28,35 +108,42 @@ export async function getOrders(params: OrderListParams): Promise<ApiResponse<Pa
 
     const supabase = getSupabaseAdminClient()
 
-    // 注意：user_id 引用 auth.users（跨 schema），需要特殊处理
-    // 先查询订单基本信息和 public schema 的关联
+    // ✅ 优化：使用视图查询，预关联所有信息（查询所有用户 → 1次查询）
     let query = supabase
-      .from('orders')
-      .select(`
-        *,
-        girl:girls!girl_id(id, girl_number, username, name, avatar_url),
-        service:services!service_id(id, code, title),
-        service_duration_detail:service_durations!service_duration_id(id, duration_minutes)
-      `, { count: 'exact' })
+      .from('v_admin_orders_list')
+      .select('*', { count: 'exact' })
 
     console.log('[订单查询] 开始执行查询...')
 
-    // 搜索条件（订单号、技师工号、技师名）
-    // 注意：由于 PostgREST 限制，关联表搜索需要特殊处理
-    let girlIdsFromSearch: string[] = []
+    // ✅ 优化：搜索条件（订单号、技师工号、技师名）
     if (search) {
-      // 先搜索 girls 表获取匹配的技师 ID
-      const { data: matchedGirls } = await supabase
-        .from('girls')
-        .select('id')
-        .or(`girl_number.eq.${parseInt(search) || 0},name.ilike.%${search}%,username.ilike.%${search}%`)
+      // 由于视图中的 girl 是 JSON 类型，不能直接用 ilike，需要先查询技师表
+      const searchNum = parseInt(search)
+      let girlIdsFromSearch: string[] = []
 
-      if (matchedGirls && matchedGirls.length > 0) {
-        girlIdsFromSearch = matchedGirls.map((g: any) => g.id)
-        console.log('[订单查询] 找到匹配技师:', girlIdsFromSearch.length, '个')
+      if (!isNaN(searchNum)) {
+        // 数字搜索：查询技师工号
+        const { data: matchedGirls } = await supabase
+          .from('girls')
+          .select('id')
+          .eq('girl_number', searchNum)
+
+        if (matchedGirls && matchedGirls.length > 0) {
+          girlIdsFromSearch = matchedGirls.map((g: any) => g.id)
+        }
+      } else {
+        // 文本搜索：查询技师名
+        const { data: matchedGirls } = await supabase
+          .from('girls')
+          .select('id')
+          .or(`name.ilike.%${search}%,username.ilike.%${search}%`)
+
+        if (matchedGirls && matchedGirls.length > 0) {
+          girlIdsFromSearch = matchedGirls.map((g: any) => g.id)
+        }
       }
 
-      // 在 orders 表中搜索订单号 或 匹配的技师ID
+      // 搜索订单号或匹配的技师ID
       if (girlIdsFromSearch.length > 0) {
         query = query.or(`order_number.ilike.%${search}%,girl_id.in.(${girlIdsFromSearch.join(',')})`)
       } else {
@@ -100,35 +187,19 @@ export async function getOrders(params: OrderListParams): Promise<ApiResponse<Pa
       return { ok: false, error: `获取订单列表失败: ${error.message}` }
     }
 
-    // 获取用户信息（auth.users 在不同 schema，需要单独查询）
-    let ordersWithUsers: any[] = ordersData || []
-    if (ordersData && ordersData.length > 0) {
-      const userIds = [...new Set((ordersData as any[]).map((o: any) => o.user_id).filter(Boolean))]
-      console.log('[订单查询] 查询用户信息:', userIds.length, '个用户')
+    // ✅ 优化：视图已包含所有关联数据，直接使用即可
+    const ordersWithUsers = (ordersData || []).map((order: any) => ({
+      ...order,
+      // 如果有 user_profile，转换为 user 格式
+      user: order.user_profile ? {
+        id: order.user_profile.id,
+        email: null, // 视图中没有 email，如需要可以添加
+        raw_user_meta_data: {
+          username: order.user_profile.display_name
+        }
+      } : null
+    }))
 
-      if (userIds.length > 0) {
-        const { data: usersData } = await supabase.auth.admin.listUsers()
-        console.log('[订单查询] 用户查询完成:', usersData.users.length, '个用户')
-
-        const usersMap = new Map(
-          usersData.users.map(u => [
-            u.id,
-            {
-              id: u.id,
-              email: u.email ?? null,
-              raw_user_meta_data: u.user_metadata || {}
-            }
-          ])
-        )
-
-        ordersWithUsers = (ordersData as any[]).map((order: any) => ({
-          ...order,
-          user: usersMap.get(order.user_id) || null
-        }))
-      }
-    }
-
-    // 如果有搜索，总数应该是过滤后的数量
     const actualTotal = count || 0
     const totalPages = Math.ceil(actualTotal / limit)
     console.log('[订单查询] 返回结果 - 总记录数:', actualTotal, '总页数:', totalPages, '当前页数据:', ordersWithUsers.length)

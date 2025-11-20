@@ -4,6 +4,8 @@ import * as React from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import NProgress from "nprogress"
+import "nprogress/nprogress.css"
 import {
   Bell,
   ChartBarStacked,
@@ -24,6 +26,8 @@ import {
   MessageSquare,
   AlertTriangle,
   Star,
+  Moon,
+  Sun,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -80,6 +84,7 @@ import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { PageLoading } from "@/components/ui/loading"
 import { useSidebar } from "@/components/ui/sidebar"
+import { useTheme } from "next-themes"
 
 type SidebarNavChild = {
   key: string
@@ -309,6 +314,35 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // ✅ 优化：路由切换时显示加载条
+  useEffect(() => {
+    // 配置 NProgress
+    NProgress.configure({
+      showSpinner: false,
+      trickleSpeed: 200,
+      minimum: 0.08
+    })
+
+    // 监听所有链接点击
+    const handleLinkClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const link = target.closest('a')
+      if (link && link.href && link.href.startsWith(window.location.origin)) {
+        NProgress.start()
+      }
+    }
+
+    document.addEventListener('click', handleLinkClick)
+
+    // 路由切换完成
+    NProgress.done()
+
+    return () => {
+      document.removeEventListener('click', handleLinkClick)
+      NProgress.done()
+    }
+  }, [pathname])
+
   // ✅ 优化：预加载常用页面，提升切换速度
   useEffect(() => {
     // 预加载最常访问的页面
@@ -461,6 +495,7 @@ function DashboardLayoutContent({
   children
 }: DashboardLayoutContentProps) {
   const { setOpenMobile } = useSidebar()
+  const { theme, setTheme } = useTheme()
 
   // ✅ 优化：移动端路由切换时自动关闭侧边栏
   useEffect(() => {
@@ -470,6 +505,10 @@ function DashboardLayoutContent({
   const hasAccess = (requiredRoles?: AdminRole[]) => {
     if (!adminProfile || !requiredRoles) return true
     return requiredRoles.includes(adminProfile.role)
+  }
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark')
   }
 
   return (
@@ -603,6 +642,9 @@ function DashboardLayoutContent({
             <Button variant="ghost" size="icon">
               <Bell className="size-4" />
             </Button>
+            <Button variant="ghost" size="icon" onClick={toggleTheme}>
+              {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </Button>
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2 h-10 px-2 py-1 relative shrink-0">
@@ -627,20 +669,6 @@ function DashboardLayoutContent({
                 collisionPadding={16}
                 side="bottom"
               >
-                <DropdownMenuLabel className="px-3 py-2">快速操作</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {isSuperAdmin(adminProfile.role) && (
-                  <>
-                    <DropdownMenuItem asChild>
-                      <Link href="/dashboard/management" className="px-3 py-2">管理员管理</Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                <DropdownMenuItem asChild>
-                  <Link href="/dashboard/profile" className="px-3 py-2">个人中心</Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-red-600 px-3 py-2">
                   退出登录
                 </DropdownMenuItem>

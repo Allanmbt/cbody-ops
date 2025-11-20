@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
 import { OrderTable } from "@/components/orders/OrderTable"
 import { OrderDetailDrawer } from "@/components/orders/OrderDetailDrawer"
+import { OrderStatsCards } from "@/components/orders/OrderStatsCards"
 import type { Order, OrderListParams, PaginatedResponse, OrderStatus } from "@/lib/features/orders"
 import { getOrders } from "./actions"
 
@@ -94,22 +95,44 @@ export default function OrdersPage() {
     loadOrders(newFilters)
   }
 
-  // 时间范围筛选
+  // 时间范围筛选（泰国时区，6点为起点）
   const handleTimeRangeFilter = (value: string) => {
-    const now = new Date()
     let start_date: string | undefined
     let end_date: string | undefined
 
+    // 🔧 使用泰国时区（UTC+7），以凌晨6点为分界点
+    const nowUTC = new Date()
+    const thailandOffset = 7 * 60 // 泰国时区偏移（分钟）
+    const thailandNow = new Date(nowUTC.getTime() + thailandOffset * 60 * 1000)
+
+    // 计算今天6点的时间戳（泰国时区）
+    const todayThailand = new Date(thailandNow)
+    todayThailand.setHours(6, 0, 0, 0)
+
+    // 如果当前时间小于今天6点，说明还在"昨天"
+    if (thailandNow.getHours() < 6) {
+      todayThailand.setDate(todayThailand.getDate() - 1)
+    }
+
+    // 转换回 UTC 时间
+    const todayStartUTC = new Date(todayThailand.getTime() - thailandOffset * 60 * 1000)
+    const yesterdayStartUTC = new Date(todayStartUTC.getTime() - 24 * 60 * 60 * 1000)
+
     switch (value) {
       case 'today':
-        start_date = new Date(now.setHours(0, 0, 0, 0)).toISOString()
-        end_date = new Date(now.setHours(23, 59, 59, 999)).toISOString()
+        // 今日：从今天6点开始
+        start_date = todayStartUTC.toISOString()
+        break
+      case 'yesterday':
+        // 昨日：昨天6点到今天6点
+        start_date = yesterdayStartUTC.toISOString()
+        end_date = todayStartUTC.toISOString()
         break
       case 'week':
-        start_date = new Date(now.setDate(now.getDate() - 7)).toISOString()
+        start_date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
         break
       case 'month':
-        start_date = new Date(now.setMonth(now.getMonth() - 1)).toISOString()
+        start_date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
         break
       case 'all':
       default:
@@ -158,6 +181,9 @@ export default function OrdersPage() {
         <h1 className="text-2xl font-bold">订单管理</h1>
       </div>
 
+      {/* 统计卡片 */}
+      <OrderStatsCards />
+
       {/* 筛选区域 */}
       <Card>
         <CardContent className="p-4">
@@ -186,7 +212,8 @@ export default function OrdersPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部时间</SelectItem>
-                    <SelectItem value="today">今日</SelectItem>
+                    <SelectItem value="today">今日（6:00起）</SelectItem>
+                    <SelectItem value="yesterday">昨日</SelectItem>
                     <SelectItem value="week">近7天</SelectItem>
                     <SelectItem value="month">近30天</SelectItem>
                   </SelectContent>

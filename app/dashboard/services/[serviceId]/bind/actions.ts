@@ -29,14 +29,17 @@ export async function getServiceDetail(serviceId: number): Promise<ApiResponse<S
         await requireAdmin(['superadmin', 'admin'])
         const supabase = getSupabaseAdminClient()
 
-        // 获取服务基本信息
+        // ✅ 优化：一次性获取服务信息和时长列表（2次查询 → 1次）
         const { data: service, error: serviceError } = await supabase
             .from('services')
             .select(`
                 *,
-                category:categories(id, code, name)
+                category:categories(id, code, name),
+                durations:service_durations!service_durations_service_id_fkey(*)
             `)
             .eq('id', serviceId)
+            .eq('durations.is_active', true)
+            .order('duration_minutes', { foreignTable: 'durations', ascending: true })
             .single()
 
         if (serviceError) {
@@ -44,24 +47,9 @@ export async function getServiceDetail(serviceId: number): Promise<ApiResponse<S
             return { ok: false, error: "获取服务信息失败" }
         }
 
-        // 获取服务时长列表
-        const { data: durations, error: durationsError } = await supabase
-            .from('service_durations')
-            .select('*')
-            .eq('service_id', serviceId)
-            .eq('is_active', true)
-            .order('duration_minutes', { ascending: true })
-
-        if (durationsError) {
-            console.error('获取时长信息失败:', durationsError)
-        }
-
         return {
             ok: true,
-            data: {
-                ...(service as any),
-                durations: durations || []
-            }
+            data: service as any
         }
     } catch (error) {
         console.error('获取服务详情异常:', error)

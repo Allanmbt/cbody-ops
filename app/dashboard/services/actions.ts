@@ -20,6 +20,75 @@ import type {
 
 // 注意：所有函数现在使用 requireAdmin() 进行统一的权限验证
 
+/**
+ * 服务管理统计数据
+ */
+export interface AdminServiceStats {
+    total_count: number      // 总服务数
+    active_count: number     // 上架服务数
+    this_month_count: number // 本月新增
+    total_sales: number      // 总销量
+}
+
+/**
+ * 获取服务管理统计
+ */
+export async function getAdminServiceStats(): Promise<ApiResponse<AdminServiceStats>> {
+    try {
+        await requireAdmin(['superadmin', 'admin'])
+        const supabase = getSupabaseAdminClient()
+
+        // ✅ 优化：使用 RPC 函数一次性获取所有统计
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_admin_service_stats')
+
+        if (!rpcError && rpcData) {
+            return {
+                ok: true as const,
+                data: rpcData as AdminServiceStats
+            }
+        }
+
+        // 回退方案：如果 RPC 不可用
+        console.warn('[服务统计] RPC 不可用，使用回退方案')
+        const monthStart = new Date()
+        monthStart.setDate(1)
+        monthStart.setHours(0, 0, 0, 0)
+
+        const { count: totalCount } = await supabase
+            .from('services')
+            .select('*', { count: 'exact', head: true })
+
+        const { count: activeCount } = await supabase
+            .from('services')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_active', true)
+
+        const { count: thisMonthCount } = await supabase
+            .from('services')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', monthStart.toISOString())
+
+        const { data: salesData } = await supabase
+            .from('services')
+            .select('total_sales')
+
+        const totalSales = (salesData || []).reduce((sum, s: any) => sum + (s.total_sales || 0), 0)
+
+        return {
+            ok: true as const,
+            data: {
+                total_count: totalCount || 0,
+                active_count: activeCount || 0,
+                this_month_count: thisMonthCount || 0,
+                total_sales: totalSales
+            } as AdminServiceStats
+        }
+    } catch (error) {
+        console.error('[服务统计] 获取失败:', error)
+        return { ok: false as const, error: "获取服务统计失败" }
+    }
+}
+
 // 获取分类列表
 export async function getCategories(): Promise<ApiResponse<Category[]>> {
     try {
