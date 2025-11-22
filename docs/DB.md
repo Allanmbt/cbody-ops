@@ -709,34 +709,52 @@ WHERE is_whitelisted = true;
 |--------|----------|------|--------|------|
 | id | UUID | 是 | gen_random_uuid() | 主键 |
 | girl_id | UUID | 是 | - | 技师ID，关联girls表（唯一） |
-| deposit_amount | DECIMAL(10,2) | 是 | 0 | 技师已付定金金额（也作为欠款阈值） |
-| balance | DECIMAL(10,2) | 是 | 0 | 当前余额（正数=平台欠技师，负数=技师欠平台） |
-| currency | VARCHAR(3) | 是 | 'THB' | 币种 |
+| deposit_amount | DECIMAL(10,2) | 是 | 0 | 技师已付定金总额（THB），同时作为欠款阈值 |
+| balance | DECIMAL(10,2) | 是 | 0 | 技师当前欠平台的金额（THB），始终 ≥ 0 |
+| platform_collected_rmb_balance | DECIMAL(10,2) | 是 | 0 | 平台代技师收款的累计金额（通常为人民币） |
+| currency | VARCHAR(3) | 是 | 'THB' | 主币种（用于 balance 和 deposit_amount） |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
 | updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
 
 **索引**：
 - PRIMARY KEY (id)
 - UNIQUE INDEX idx_girl_settlement_girl_id (girl_id)
-- INDEX idx_girl_settlement_balance (balance)
-- INDEX idx_girl_settlement_negative_balance (balance) WHERE balance < 0
+- INDEX idx_girl_settlement_balance (balance) WHERE balance > 0
+- INDEX idx_girl_settlement_rmb_balance (platform_collected_rmb_balance) WHERE platform_collected_rmb_balance > 0
 
 **外键约束**：
 - FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE CASCADE
 
 **CHECK约束**：
 - CHECK (deposit_amount >= 0)
+- CHECK (balance >= 0)
+- CHECK (platform_collected_rmb_balance >= 0)
 
 **说明**：
-- 每个技师一条记录，订单完成时自动更新余额
-- `balance` 正数表示平台需付给技师，负数表示技师需付给平台
-- `deposit_amount` 既记录实际定金，也作为欠款阈值（技师付多少定金就能欠多少）
-- 最低提现标准统一使用配置表 `app_configs.settlement.default_min_withdrawal`
-- 余额超过 `deposit_threshold` 负数阈值时禁止上线
+- 每个技师一条记录，订单完成时自动更新
+- **`balance`（技师欠平台的金额，THB）**：
+  - 仅用于记录「订单抽成」导致的技师欠费，始终为正数或 0
+  - 订单完成时，平台应得抽成累加到此字段
+  - 技师结账时，减少此字段
+  - 与平台是否代收无关
+- **`platform_collected_rmb_balance`（平台代收金额，通常为 RMB）**：
+  - 仅用于记录「平台收款码代收」的金额
+  - 由订单维度的 `customer_paid_to_platform` 累加
+  - 技师提现时，减少此字段
+  - 原币种金额直接累加，不做汇率换算
+- **`deposit_amount`（定金总额，THB）**：
+  - 既记录技师实际已付定金，也作为欠款阈值
+  - 技师付多少定金就能欠多少
+- **上线规则**：
+  - 当 `balance >= deposit_amount * 0.8` 时，给技师预警
+  - 当 `balance > deposit_amount` 时，禁止技师继续上线接单
+- **提现规则**：
+  - 当 `platform_collected_rmb_balance >= app_configs.settlement.min_withdrawal_amount_rmb` 时技师才可发起提现申请
+  - 提现金额 ≤ `platform_collected_rmb_balance`（或减去平台设定的留存值）
 
 ---
 
-## order_settlements（订单结算明细表）
+## order_settlements（订单核验明细表）
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
 |--------|----------|------|--------|------|
@@ -747,11 +765,15 @@ WHERE is_whitelisted = true;
 | extra_fee | DECIMAL(10,2) | 是 | 0 | 额外费用快照 |
 | service_commission_rate | DECIMAL(5,4) | 是 | - | 服务提成比例快照（0.4=40%） |
 | extra_commission_rate | DECIMAL(5,4) | 是 | - | 额外费用提成比例快照（0.2=20%） |
-| platform_should_get | DECIMAL(10,2) | 是 | - | 平台应得=service_fee×service_rate+extra_fee×extra_rate |
-| customer_paid_to_platform | DECIMAL(10,2) | 是 | 0 | 顾客已付给平台的金额 |
-| settlement_amount | DECIMAL(10,2) | 是 | - | 结算金额=platform_should_get-customer_paid_to_platform |
+| platform_should_get | DECIMAL(10,2) | 是 | - | 平台应得抽成（THB）=service_fee×service_rate+extra_fee×extra_rate |
+| customer_paid_to_platform | DECIMAL(10,2) | 是 | 0 | 顾客以 THB 直接支付到平台账户的金额（如泰铢银行转账、信用卡） |
+| actual_paid_amount | DECIMAL(10,2) | 否 | NULL | 平台收款码代收的原币种金额（通常为人民币） |
+| settlement_amount | DECIMAL(10,2) | 是 | - | 净差额（THB）=platform_should_get-customer_paid_to_platform，仅用于展示 |
+| payment_content_type | TEXT | 否 | NULL | 支付内容类型（NULL=技师自己收款）：deposit/full_amount/tip/other |
+| payment_method | TEXT | 否 | NULL | 支付方式：wechat/alipay/thb_bank_transfer/credit_card/cash/other |
+| payment_notes | TEXT | 否 | NULL | 支付备注说明 |
 | settlement_status | TEXT | 是 | 'pending' | 状态：pending/settled |
-| settled_at | TIMESTAMPTZ | 否 | NULL | 结算时间 |
+| settled_at | TIMESTAMPTZ | 否 | NULL | 核验通过时间 |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
 | updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
 
@@ -761,6 +783,8 @@ WHERE is_whitelisted = true;
 - INDEX idx_order_settlement_girl_id (girl_id)
 - INDEX idx_order_settlement_status (settlement_status)
 - INDEX idx_order_settlement_pending (girl_id, created_at DESC) WHERE settlement_status = 'pending'
+- INDEX idx_order_settlement_payment_content (payment_content_type) WHERE payment_content_type IS NOT NULL
+- INDEX idx_order_settlement_payment_method (payment_method) WHERE payment_method IS NOT NULL
 
 **外键约束**：
 - FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
@@ -768,6 +792,8 @@ WHERE is_whitelisted = true;
 
 **CHECK约束**：
 - CHECK (settlement_status IN ('pending', 'settled'))
+- CHECK (payment_content_type IS NULL OR payment_content_type IN ('deposit', 'full_amount', 'tip', 'other'))
+- CHECK (payment_method IS NULL OR payment_method IN ('wechat', 'alipay', 'thb_bank_transfer', 'credit_card', 'cash', 'other'))
 - CHECK (service_commission_rate >= 0 AND service_commission_rate <= 1)
 - CHECK (extra_commission_rate >= 0 AND extra_commission_rate <= 1)
 - CHECK (service_fee >= 0 AND extra_fee >= 0)
@@ -775,71 +801,76 @@ WHERE is_whitelisted = true;
 
 **说明**：
 - 订单完成时自动创建记录并计算
-- `settlement_amount` 正数表示技师需付平台，负数表示平台需付技师
-- 记录所有计算过程，便于对账
-- **作为订单结算流水**，技师查看流水明细时使用此表
+- **字段语义**：
+  - `platform_should_get`（THB）：平台应得抽成，核验通过时累加到 `girl_settlement_accounts.balance`
+  - `customer_paid_to_platform`（THB）：顾客以泰铢直接支付到平台账户的金额
+  - `actual_paid_amount`（RMB）：平台收款码代收的原币种金额，核验通过时累加到 `girl_settlement_accounts.platform_collected_rmb_balance`
+  - `settlement_amount`（THB）：净差额，仅用于展示，不直接用于更新账户余额
+- **核验逻辑**（`settlement_status` 从 `pending` → `settled` 时）：
+  - 订单抽成记账：将 `platform_should_get` 累加到 `girl_settlement_accounts.balance`（THB 欠款）
+  - 平台代收记账：若 `payment_method` in ('wechat','alipay') 且 `actual_paid_amount > 0`，将 `actual_paid_amount` 累加到 `girl_settlement_accounts.platform_collected_rmb_balance`（RMB）
+- **平台收款信息录入规则**：
+  - 必须从订单详情页录入（`actual_paid_amount` + `payment_method` + 截图等）
+  - 仅在订单处于 `pending/confirmed/in_service` 状态时开放入口
+  - 订单 `completed` 后仅允许在有限时间窗口内（如 30 分钟）补录或修改
+  - 避免在结算管理页出现无订单号的平台收款记录
 
----
+## settlement_transactions（结账/提现申请表）
 
-## settlement_transactions（结算交易记录表）
+**唯一记录"真实资金流动"的申请与确认**：要么技师给平台结账，要么平台向技师打款提现。订单层面的应收应付由 `order_settlements` 负责，本表不再关联具体订单。
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
 |--------|----------|------|--------|------|
 | id | UUID | 是 | gen_random_uuid() | 主键 |
 | girl_id | UUID | 是 | - | 技师ID，关联girls表 |
-| transaction_type | TEXT | 是 | - | 交易类型：deposit/payment/withdrawal/adjustment |
-| amount | DECIMAL(10,2) | 是 | - | 交易金额（正数） |
-| direction | TEXT | 是 | - | 资金流向：to_platform/to_girl |
-| order_id | UUID | 否 | NULL | 关联订单ID（如果是订单结算） |
-| order_settlement_id | UUID | 否 | NULL | 关联订单结算记录ID |
-| payment_method | TEXT | 否 | NULL | 支付方式：cash/wechat/alipay/bank |
-| payment_proof_url | TEXT | 否 | NULL | 支付凭证URL |
-| notes | TEXT | 否 | NULL | 备注说明 |
-| operator_id | UUID | 否 | NULL | 操作人ID（管理员） |
-| approval_status | TEXT | 否 | 'pending' | 审核状态：pending/approved/rejected |
-| approved_at | TIMESTAMPTZ | 否 | NULL | 审核时间 |
-| reject_reason | TEXT | 否 | NULL | 拒绝原因 |
+| transaction_type | TEXT | 是 | - | 交易类型：settlement（技师结账给平台）/ withdrawal（技师提现） |
+| direction | TEXT | 是 | - | 资金流向：to_platform / to_girl（与 transaction_type 强绑定） |
+| amount | DECIMAL(10,2) | 是 | - | 本次结账/提现金额（正数） |
+| payment_method | TEXT | 否 | NULL | 支付方式：cash/wechat/alipay/bank 等 |
+| payment_proof_url | TEXT | 否 | NULL | 支付凭证截图 URL（技师结账时通常必传） |
+| notes | TEXT | 否 | NULL | 备注说明（如账号信息、特殊情况） |
+| status | TEXT | 是 | 'pending' | 审核状态：pending/confirmed/cancelled |
+| operator_id | UUID | 否 | NULL | 审核人/操作人ID（管理员），仅在 confirmed/cancelled 时填写 |
+| confirmed_at | TIMESTAMPTZ | 否 | NULL | 审核通过时间（status = confirmed 时） |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
 
 **索引**：
 - PRIMARY KEY (id)
 - INDEX idx_settlement_tx_girl_id (girl_id, created_at DESC)
 - INDEX idx_settlement_tx_type (transaction_type)
-- INDEX idx_settlement_tx_order (order_id) WHERE order_id IS NOT NULL
-- INDEX idx_settlement_tx_operator (operator_id) WHERE operator_id IS NOT NULL
-- INDEX idx_settlement_tx_approval_status (approval_status) WHERE approval_status = 'pending'
+- INDEX idx_settlement_tx_status_pending (status) WHERE status = 'pending'
 
 **外键约束**：
 - FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE CASCADE
-- FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
-- FOREIGN KEY (order_settlement_id) REFERENCES order_settlements(id) ON DELETE SET NULL
 - FOREIGN KEY (operator_id) REFERENCES auth.users(id) ON DELETE SET NULL
 
 **CHECK约束**：
-- CHECK (transaction_type IN ('deposit', 'payment', 'withdrawal', 'adjustment'))
+- CHECK (transaction_type IN ('settlement', 'withdrawal'))
 - CHECK (direction IN ('to_platform', 'to_girl'))
+- CHECK ((transaction_type = 'settlement' AND direction = 'to_platform') OR (transaction_type = 'withdrawal' AND direction = 'to_girl'))
 - CHECK (amount > 0)
-- CHECK (approval_status IN ('pending', 'approved', 'rejected'))
+- CHECK (status IN ('pending', 'confirmed', 'cancelled'))
 
 **说明**：
-- **专门记录需要审核或人工操作的申请/调整记录**
-- 订单完成时**不再**自动生成记录（订单流水由 `order_settlements` 承担）
-- `transaction_type` 说明：
-  - `deposit`: 技师付定金
-  - `payment`: 技师申请结账（需审核，有 `approval_status`）
-  - `withdrawal`: 技师申请提现（需审核，有 `approval_status`）
-  - `adjustment`: 管理员人工调整（直接批准，`approval_status = 'approved'`）
-- `approval_status` 说明：
-  - `pending`: 待审核（技师提交的申请）
-  - `approved`: 已批准（管理员审核通过或管理员操作）
-  - `rejected`: 已拒绝（管理员审核拒绝）
-- 所有交易不可删除，仅可追加
+- **本表只记录**：
+  - 技师向平台结账（THB）：上传付款截图，待财务确认
+  - 技师向平台提现（RMB）：待财务打款确认
+- **字段含义**：
+  - `transaction_type`：`settlement`（技师结账，THB）/ `withdrawal`（技师提现，RMB）
+  - `direction`：`settlement` 固定为 `to_platform`；`withdrawal` 固定为 `to_girl`
+  - `amount`：`settlement` 时为 THB 金额（≤ 当前 balance）；`withdrawal` 时为 RMB 金额（≤ 当前 platform_collected_rmb_balance）
+  - `status`：`pending`（待对账）/ `confirmed`（已确认，触发余额更新）/ `cancelled`（作废，不触发余额变化）
+- **记账逻辑**（`status` 从 `pending` → `confirmed` 时）：
+  - `settlement / to_platform`：从 `girl_settlement_accounts.balance` 中减去 `amount`（THB 欠款减少）
+  - `withdrawal / to_girl`：从 `girl_settlement_accounts.platform_collected_rmb_balance` 中减去 `amount`（RMB 代收减少）
+- **风控与业务限制**（在 RPC/服务层校验）：
+  - 技师发起 `settlement`：仅当 `balance > 0` 时允许，且 `amount` ≤ 当前 `balance`
+  - 技师发起 `withdrawal`：仅当 `platform_collected_rmb_balance` ≥ 最小提现额度时允许，且 `amount` ≤ 当前 `platform_collected_rmb_balance`
+  - 一条记录从 `pending` 变为 `confirmed/cancelled` 后，不允许修改 `amount`、`transaction_type` 和 `direction`
+- **不再使用** `order_id`、`order_settlement_id` 字段，已从表结构中移除
+- 所有记录不可物理删除，只允许新增和更新 `status` / `notes` / `operator_id` / `confirmed_at` 等字段
 
 ---
-
-
-
-
 
 ## travel_od_dual（OD快照表 - 出行距离与时长缓存）
 

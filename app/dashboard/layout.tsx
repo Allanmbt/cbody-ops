@@ -8,10 +8,8 @@ import NProgress from "nprogress"
 import "nprogress/nprogress.css"
 import {
   Bell,
-  ChartBarStacked,
   ChevronRight,
   LayoutDashboard,
-  LineChart,
   Settings,
   Sparkle,
   Users,
@@ -21,13 +19,16 @@ import {
   UserCheck,
   Image,
   Activity,
-  ClipboardList,
   UserCog,
   MessageSquare,
   AlertTriangle,
   Star,
   Moon,
   Sun,
+  Wallet,
+  Receipt,
+  CreditCard,
+  ArrowUpDown,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -209,21 +210,28 @@ const sidebarGroups: {
       ],
     },
     {
-      label: "数据分析",
+      label: "财务管理",
       items: [
         {
-          key: "reports",
-          title: "财务报表",
-          icon: ChartBarStacked,
-          href: "/dashboard/reports",
-          requiredRole: ['superadmin', 'finance'],
+          key: "finance-settlements",
+          title: "订单核验",
+          icon: Receipt,
+          href: "/dashboard/finance/settlements",
+          requiredRole: ['superadmin', 'admin', 'finance'],
         },
         {
-          key: "analytics",
-          title: "数据洞察",
-          icon: LineChart,
-          href: "/dashboard/analytics",
-          requiredRole: ['superadmin', 'admin'],
+          key: "finance-accounts",
+          title: "技师账户",
+          icon: Users,
+          href: "/dashboard/finance/accounts",
+          requiredRole: ['superadmin', 'admin', 'finance'],
+        },
+        {
+          key: "finance-transactions",
+          title: "交易记录",
+          icon: ArrowUpDown,
+          href: "/dashboard/finance/transactions",
+          requiredRole: ['superadmin', 'admin', 'finance'],
         },
       ],
     },
@@ -290,10 +298,18 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
     breadcrumbs.push({ label: "用户管理" })
   } else if (segments[1] === 'orders') {
     breadcrumbs.push({ label: "订单管理" })
-  } else if (segments[1] === 'reports') {
-    breadcrumbs.push({ label: "财务报表" })
-  } else if (segments[1] === 'analytics') {
-    breadcrumbs.push({ label: "数据洞察" })
+  } else if (segments[1] === 'finance') {
+    breadcrumbs.push({ label: "财务管理", href: "/dashboard/finance" })
+    if (segments[2] === 'accounts') {
+      breadcrumbs.push({ label: "技师账户", href: "/dashboard/finance/accounts" })
+      if (segments[3]) {
+        breadcrumbs.push({ label: "账户详情" })
+      }
+    } else if (segments[2] === 'settlements') {
+      breadcrumbs.push({ label: "订单核验" })
+    } else if (segments[2] === 'transactions') {
+      breadcrumbs.push({ label: "交易记录" })
+    }
   } else if (segments[1] === 'configs') {
     breadcrumbs.push({ label: "配置管理" })
     if (segments[2] === 'fare') {

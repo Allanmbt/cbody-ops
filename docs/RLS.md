@@ -1373,42 +1373,44 @@ GRANT SELECT ON public.order_settlements TO authenticated;
 
 ## settlement_transactions 结算交易记录表策略
 
-**用途说明**：专门记录需要审核或人工操作的申请/调整记录（不包含订单自动生成的流水）
+**用途说明**：唯一记录"真实资金流动"的申请与确认。只记录技师给平台结账或平台向技师打款提现，不再关联具体订单。
 
 ```sql
 ALTER TABLE public.settlement_transactions ENABLE ROW LEVEL SECURITY;
 
--- 技师查看自己的交易记录
+-- 技师查看自己的结账/提现记录
 CREATE POLICY "settlement_transactions.self.select"
   ON public.settlement_transactions
   FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM public.girls g
-      WHERE g.id = girl_id AND g.user_id = auth.uid()
+      WHERE g.id = settlement_transactions.girl_id 
+        AND g.user_id = auth.uid()
     )
   );
 
--- 技师可以插入交易记录（支付凭证、提现申请，默认待审核）
+-- 技师可以创建结账/提现申请（默认待审核）
 CREATE POLICY "settlement_transactions.self.insert"
   ON public.settlement_transactions
   FOR INSERT
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM public.girls g
-      WHERE g.id = girl_id AND g.user_id = auth.uid()
+      WHERE g.id = settlement_transactions.girl_id 
+        AND g.user_id = auth.uid()
     )
-    AND transaction_type IN ('payment', 'withdrawal')
-    AND approval_status = 'pending'
+    AND transaction_type IN ('settlement', 'withdrawal')
+    AND status = 'pending'
   );
 
--- 管理员查看所有交易
+-- 管理员查看所有记录
 CREATE POLICY "settlement_transactions.admin.select"
   ON public.settlement_transactions
   FOR SELECT
   USING (public.is_admin());
 
--- 管理员可以创建所有类型交易（包括调整）
+-- 管理员可以管理所有记录（审核、取消等）
 CREATE POLICY "settlement_transactions.admin.all"
   ON public.settlement_transactions
   FOR ALL

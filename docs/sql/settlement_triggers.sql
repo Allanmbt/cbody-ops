@@ -37,21 +37,17 @@ BEGIN
   )
   ON CONFLICT (girl_id) DO NOTHING;
 
-  -- 2. 创建结算账户记录
+  -- 2. 创建结算账户记录（最低提现标准从配置读取）
   INSERT INTO public.girl_settlement_accounts (
     girl_id,
     deposit_amount,
     balance,
-    min_withdrawal_amount,
-    deposit_threshold,
     currency
   )
   VALUES (
     NEW.id,
     0,
     0,
-    3000,
-    3000,
     'THB'
   )
   ON CONFLICT (girl_id) DO NOTHING;
@@ -159,51 +155,31 @@ BEGIN
     ON CONFLICT (order_id) DO NOTHING;
     
     -- 7. 更新技师结算账户余额
-    -- balance 正数表示平台欠技师，负数表示技师欠平台
-    -- settlement_amount 正数表示技师需付平台，所以要减去
+    -- 新逻辑：balance 为技师欠平台的金额（正数），settlement_amount 正数表示技师需付平台
+    -- 所以要累加到 balance
     UPDATE public.girl_settlement_accounts
     SET 
-      balance = balance - v_settlement_amount,
+      balance = balance + v_settlement_amount,
       updated_at = NOW()
     WHERE girl_id = NEW.girl_id;
     
-    -- 8. 记录交易到 settlement_transactions（用于审计）
-    INSERT INTO public.settlement_transactions (
-      girl_id,
-      transaction_type,
-      amount,
-      direction,
-      order_id,
-      order_settlement_id,
-      notes,
-      created_at
-    )
-    SELECT
-      NEW.girl_id,
-      'payment',
-      ABS(v_settlement_amount),
-      CASE 
-        WHEN v_settlement_amount > 0 THEN 'to_platform'
-        ELSE 'to_girl'
-      END,
-      NEW.id,
-      os.id,
-      '订单完成自动结算: ' || NEW.order_number,
-      NOW()
-    FROM public.order_settlements os
-    WHERE os.order_id = NEW.id;
-    
-    -- 9. 检查是否超过欠款阈值，如果超过则记录日志（可扩展为自动禁止上线）
+    -- 8. 检查是否超过欠款阈值，如果超过则记录日志（可扩展为自动禁止上线）
     DECLARE
       v_balance DECIMAL(10,2);
-      v_threshold DECIMAL(10,2);
+      v_deposit_amount DECIMAL(10,2);
     BEGIN
-      SELECT balance, deposit_threshold INTO v_balance, v_threshold
+      SELECT balance, deposit_amount INTO v_balance, v_deposit_amount
       FROM public.girl_settlement_accounts
       WHERE girl_id = NEW.girl_id;
       
-      IF v_balance <= -v_threshold THEN
-        RAISE NOTICE '技师 % 欠款已达阈值: balance=%, threshold=%', NEW.girl_id, v_balance, v_threshold;
+      -- 使用 deposit_amount 作为欠款阈值
+      -- balance 为正数，表示技师欠平台
+      IF v_balance >= v_deposit_amount * 0.8 THEN
+        RAISE NOTICE '技师 % 欠款预警: balance=%, deposit_amount=%, 已达80%%阈值', NEW.girl_id, v_balance, v_deposit_amount;
+      END IF;
+      
+      IF v_balance > v_deposit_amount THEN
+        RAISE NOTICE '技师 % 欠款超限: balance=%, deposit_amount=%, 应禁止上线', NEW.girl_id, v_balance, v_deposit_amount;
         -- 可扩展：自动将技师设为 offline 或添加标记
       END IF;
     END;
@@ -226,7 +202,7 @@ CREATE TRIGGER trg_order_completed_settlement
 COMMENT ON FUNCTION public.calculate_order_settlement() IS '订单完成时自动创建结算记录并更新账户余额';
 
 -- =====================================================
--- 触发器3：更新 order_settlements 时同步更新账户余额
+-- 触发器3：订单核验通过时同步更新账户余额
 -- =====================================================
 CREATE OR REPLACE FUNCTION public.sync_settlement_balance()
 RETURNS TRIGGER
@@ -234,48 +210,24 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-DECLARE
-  v_balance_change DECIMAL(10,2);
 BEGIN
-  -- 仅在 customer_paid_to_platform 或 settlement_amount 变化时触发
-  IF OLD.customer_paid_to_platform != NEW.customer_paid_to_platform OR 
-     OLD.settlement_amount != NEW.settlement_amount THEN
+  -- 仅在 settlement_status 从 pending 变为 settled 时触发
+  IF OLD.settlement_status = 'pending' AND NEW.settlement_status = 'settled' THEN
     
-    -- 计算余额变化量
-    v_balance_change := (OLD.settlement_amount - NEW.settlement_amount);
-    
-    -- 更新账户余额
+    -- 1. 订单抽成记账：将 platform_should_get 累加到 balance（THB 欠款）
     UPDATE public.girl_settlement_accounts
     SET 
-      balance = balance + v_balance_change,
+      balance = balance + NEW.platform_should_get,
       updated_at = NOW()
     WHERE girl_id = NEW.girl_id;
     
-    -- 记录交易
-    IF v_balance_change != 0 THEN
-      INSERT INTO public.settlement_transactions (
-        girl_id,
-        transaction_type,
-        amount,
-        direction,
-        order_id,
-        order_settlement_id,
-        notes,
-        created_at
-      )
-      VALUES (
-        NEW.girl_id,
-        'adjustment',
-        ABS(v_balance_change),
-        CASE 
-          WHEN v_balance_change > 0 THEN 'to_girl'
-          ELSE 'to_platform'
-        END,
-        NEW.order_id,
-        NEW.id,
-        '订单结算调整: 顾客支付 ' || NEW.customer_paid_to_platform,
-        NOW()
-      );
+    -- 2. 平台代收记账：若使用平台收款码代收且有金额，累加到 platform_collected_rmb_balance
+    IF NEW.payment_method IN ('wechat', 'alipay') AND COALESCE(NEW.actual_paid_amount, 0) > 0 THEN
+      UPDATE public.girl_settlement_accounts
+      SET 
+        platform_collected_rmb_balance = platform_collected_rmb_balance + NEW.actual_paid_amount,
+        updated_at = NOW()
+      WHERE girl_id = NEW.girl_id;
     END IF;
     
   END IF;
@@ -293,25 +245,3 @@ CREATE TRIGGER trg_sync_settlement_balance
   EXECUTE FUNCTION public.sync_settlement_balance();
 
 COMMENT ON FUNCTION public.sync_settlement_balance() IS '更新订单结算记录时同步更新账户余额';
-
--- =====================================================
--- 初始化：为现有技师创建结算账户
--- =====================================================
-INSERT INTO public.girl_settlement_accounts (
-  girl_id,
-  deposit_amount,
-  balance,
-  min_withdrawal_amount,
-  deposit_threshold,
-  currency
-)
-SELECT 
-  id,
-  0,
-  0,
-  3000,
-  3000,
-  'THB'
-FROM public.girls
-ON CONFLICT (girl_id) DO NOTHING;
-
