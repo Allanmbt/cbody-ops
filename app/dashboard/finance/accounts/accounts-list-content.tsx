@@ -40,7 +40,10 @@ import {
     AlertTriangle,
     XCircle,
     Download,
-    RefreshCw
+    RefreshCw,
+    ArrowUpDown,
+    ArrowUp,
+    ArrowDown
 } from "lucide-react"
 import { getSettlementAccounts } from "@/lib/features/finance/actions"
 import type { GirlSettlementAccountWithGirl, AccountListFilters } from "@/lib/features/finance"
@@ -51,11 +54,11 @@ import { AccountDetailDialog } from "./account-detail-dialog"
 export function AccountsListContent() {
     const searchParams = useSearchParams()
 
-    const [accounts, setAccounts] = useState<GirlSettlementAccountWithGirl[]>([])
+    const [allAccounts, setAllAccounts] = useState<GirlSettlementAccountWithGirl[]>([])
     const [loading, setLoading] = useState(true)
-    const [total, setTotal] = useState(0)
+    
+    // 分页状态
     const [page, setPage] = useState(1)
-    const [totalPages, setTotalPages] = useState(1)
     const pageSize = 20
 
     // 筛选条件
@@ -73,54 +76,30 @@ export function AccountsListContent() {
     const [detailGirlId, setDetailGirlId] = useState<string | null>(null)
     const [detailOpen, setDetailOpen] = useState(false)
 
-    // 统计数据
-    const [stats, setStats] = useState({
-        total: 0,
-        normal: 0,
-        warning: 0,
-        exceeded: 0
-    })
-
     useEffect(() => {
         loadAccounts()
-    }, [page, debtStatus])
+    }, [])
 
-    // 自动搜索：输入2个字符后自动搜索
+    // 筛选条件变化时重置到第一页
     useEffect(() => {
-        if (search.length >= 2) {
-            const timer = setTimeout(() => {
-                setPage(1)
-                loadAccounts()
-            }, 500) // 500ms 防抖
-            return () => clearTimeout(timer)
-        } else if (search.length === 0) {
-            // 清空搜索时重新加载
-            setPage(1)
-            loadAccounts()
-        }
-    }, [search])
+        setPage(1)
+    }, [search, cityFilter, statusFilter])
+
+    // 搜索防抖已移除，改为前端实时筛选
 
     async function loadAccounts() {
         try {
             setLoading(true)
 
-            const filters: AccountListFilters = {}
-            if (search) filters.search = search
-            if (debtStatus !== 'all') filters.debt_status = debtStatus as any
-
-            const result = await getSettlementAccounts(filters, { page, pageSize })
+            // 一次性加载所有数据（不分页）
+            const result = await getSettlementAccounts({}, { page: 1, pageSize: 9999 })
 
             if (!result.ok) {
                 toast.error(result.error || "获取账户列表失败")
                 return
             }
 
-            setAccounts(result.data!.data)
-            setTotal(result.data!.total)
-            setTotalPages(result.data!.totalPages || Math.ceil(result.data!.total / pageSize))
-
-            // 计算统计数据
-            calculateStats(result.data!.data)
+            setAllAccounts(result.data!.data)
         } catch (error) {
             console.error('[AccountsList] 加载失败:', error)
             toast.error("加载账户列表失败")
@@ -129,29 +108,7 @@ export function AccountsListContent() {
         }
     }
 
-    function handleSearch() {
-        setPage(1)
-        loadAccounts()
-    }
 
-    // 计算统计数据
-    function calculateStats(data: GirlSettlementAccountWithGirl[]) {
-        const newStats = {
-            total: data.length,
-            normal: 0,
-            warning: 0,
-            exceeded: 0
-        }
-
-        data.forEach(account => {
-            const status = getDebtStatus(Number(account.balance), Number(account.deposit_amount))
-            if (status.type === 'normal') newStats.normal++
-            else if (status.type === 'warning') newStats.warning++
-            else if (status.type === 'exceeded') newStats.exceeded++
-        })
-
-        setStats(newStats)
-    }
 
     // 获取欠款状态
     function getDebtStatus(balance: number, depositAmount: number) {
@@ -194,7 +151,7 @@ export function AccountsListContent() {
 
             // 构建 CSV 内容
             const headers = ['工号', '姓名', '城市', '押金(THB)', '欠款(THB)', '代收(RMB)', '状态']
-            const rows = accounts.map(account => {
+            const rows = filteredAndSortedAccounts.map(account => {
                 const status = getDebtStatus(Number(account.balance), Number(account.deposit_amount))
                 return [
                     account.girls?.girl_number || '-',
@@ -225,7 +182,7 @@ export function AccountsListContent() {
         }
     }
 
-    // 排序切换函数
+    // 排序切换函数（前端排序，重置到第一页）
     function toggleSort(field: typeof sortField) {
         if (sortField === field) {
             setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
@@ -233,14 +190,32 @@ export function AccountsListContent() {
             setSortField(field)
             setSortOrder('asc')
         }
+        setPage(1) // 排序后重置到第一页
     }
 
-    // 获取唯一城市列表
-    const cities = Array.from(new Set(accounts.map(a => a.girls?.cities?.name?.zh).filter(Boolean))) as string[]
+    // 获取排序图标
+    function getSortIcon(field: typeof sortField) {
+        if (sortField !== field) {
+            return <ArrowUpDown className="size-3 ml-1 text-muted-foreground" />
+        }
+        return sortOrder === 'asc' 
+            ? <ArrowUp className="size-3 ml-1" />
+            : <ArrowDown className="size-3 ml-1" />
+    }
 
     // 应用筛选和排序
-    const filteredAndSortedAccounts = [...accounts]
+    const filteredAndSortedAccounts = allAccounts
         .filter(account => {
+            // 搜索筛选
+            if (search) {
+                const searchLower = search.toLowerCase()
+                const girlNumber = account.girls?.girl_number?.toString() || ''
+                const girlName = account.girls?.name?.toLowerCase() || ''
+                if (!girlNumber.includes(search) && !girlName.includes(searchLower)) {
+                    return false
+                }
+            }
+
             // 城市筛选
             if (cityFilter !== 'all' && account.girls?.cities?.name?.zh !== cityFilter) {
                 return false
@@ -307,6 +282,34 @@ export function AccountsListContent() {
             }
         })
 
+    // 分页处理（在筛选排序后）
+    const totalFiltered = filteredAndSortedAccounts.length
+    const totalPages = Math.ceil(totalFiltered / pageSize)
+    const paginatedAccounts = filteredAndSortedAccounts.slice(
+        (page - 1) * pageSize,
+        page * pageSize
+    )
+
+    // 计算统计数据（基于筛选后的数据）
+    const stats = {
+        total: filteredAndSortedAccounts.length,
+        normal: filteredAndSortedAccounts.filter(a => {
+            const status = getDebtStatus(Number(a.balance), Number(a.deposit_amount))
+            return status.type === 'normal'
+        }).length,
+        warning: filteredAndSortedAccounts.filter(a => {
+            const status = getDebtStatus(Number(a.balance), Number(a.deposit_amount))
+            return status.type === 'warning'
+        }).length,
+        exceeded: filteredAndSortedAccounts.filter(a => {
+            const status = getDebtStatus(Number(a.balance), Number(a.deposit_amount))
+            return status.type === 'exceeded'
+        }).length
+    }
+
+    // 获取唯一城市列表
+    const cities = Array.from(new Set(allAccounts.map(a => a.girls?.cities?.name?.zh).filter(Boolean))) as string[]
+
     return (
         <div className="flex flex-col gap-6">
             {/* 页面标题 */}
@@ -331,7 +334,7 @@ export function AccountsListContent() {
                         variant="outline"
                         size="sm"
                         onClick={handleExport}
-                        disabled={accounts.length === 0}
+                        disabled={filteredAndSortedAccounts.length === 0}
                     >
                         <Download className="size-4 mr-2" />
                         导出数据
@@ -347,9 +350,9 @@ export function AccountsListContent() {
                         <Users className="size-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{total}</div>
+                        <div className="text-2xl font-bold">{allAccounts.length}</div>
                         <p className="text-xs text-muted-foreground mt-1">
-                            当前页 {stats.total} 个
+                            筛选后 {totalFiltered} 个
                         </p>
                     </CardContent>
                 </Card>
@@ -396,25 +399,22 @@ export function AccountsListContent() {
 
             {/* 筛选区域 */}
             <Card>
-                <CardHeader>
-                    <CardTitle>筛选条件</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="lg:col-span-2">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="搜索技师名称或工号（至少2个字符）..."
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    className="pl-9"
-                                />
-                            </div>
+                <CardContent className="p-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/* 搜索框 */}
+                        <div className="relative flex-1 min-w-[220px] max-w-md">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                            <Input
+                                placeholder="搜索技师名称或工号..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="pl-10"
+                            />
                         </div>
+
                         <Select value={cityFilter} onValueChange={setCityFilter}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="选择城市" />
+                            <SelectTrigger className="w-[130px]">
+                                <SelectValue placeholder="城市" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">全部城市</SelectItem>
@@ -423,9 +423,10 @@ export function AccountsListContent() {
                                 ))}
                             </SelectContent>
                         </Select>
+
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="账户状态" />
+                            <SelectTrigger className="w-[130px]">
+                                <SelectValue placeholder="状态" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">全部状态</SelectItem>
@@ -435,9 +436,6 @@ export function AccountsListContent() {
                             </SelectContent>
                         </Select>
                     </div>
-                    <div className="mt-4 text-sm text-muted-foreground">
-                        显示 {filteredAndSortedAccounts.length} / {accounts.length} 条记录
-                    </div>
                 </CardContent>
             </Card>
 
@@ -445,12 +443,12 @@ export function AccountsListContent() {
             <Card>
                 <CardHeader>
                     <CardTitle>账户列表</CardTitle>
-                    <CardDescription>共 {total} 个技师账户</CardDescription>
+                    <CardDescription>共 {allAccounts.length} 个技师账户</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {loading ? (
                         <AccountsTableSkeleton />
-                    ) : accounts.length === 0 ? (
+                    ) : paginatedAccounts.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                             <p>暂无账户数据</p>
                         </div>
@@ -461,88 +459,88 @@ export function AccountsListContent() {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>头像</TableHead>
-                                            <TableHead
-                                                className="cursor-pointer hover:bg-muted/50"
-                                                onClick={() => toggleSort('girl_number')}
-                                            >
-                                                <div className="flex items-center gap-1">
+                                            <TableHead>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto p-0 font-medium hover:bg-transparent"
+                                                    onClick={() => toggleSort('girl_number')}
+                                                >
                                                     工号
-                                                    {sortField === 'girl_number' && (
-                                                        <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
-                                                </div>
+                                                    {getSortIcon('girl_number')}
+                                                </Button>
                                             </TableHead>
-                                            <TableHead
-                                                className="cursor-pointer hover:bg-muted/50"
-                                                onClick={() => toggleSort('name')}
-                                            >
-                                                <div className="flex items-center gap-1">
+                                            <TableHead>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto p-0 font-medium hover:bg-transparent"
+                                                    onClick={() => toggleSort('name')}
+                                                >
                                                     技师名称
-                                                    {sortField === 'name' && (
-                                                        <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
-                                                </div>
+                                                    {getSortIcon('name')}
+                                                </Button>
                                             </TableHead>
-                                            <TableHead
-                                                className="cursor-pointer hover:bg-muted/50"
-                                                onClick={() => toggleSort('city')}
-                                            >
-                                                <div className="flex items-center gap-1">
+                                            <TableHead>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto p-0 font-medium hover:bg-transparent"
+                                                    onClick={() => toggleSort('city')}
+                                                >
                                                     城市
-                                                    {sortField === 'city' && (
-                                                        <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
-                                                </div>
+                                                    {getSortIcon('city')}
+                                                </Button>
                                             </TableHead>
-                                            <TableHead
-                                                className="text-right cursor-pointer hover:bg-muted/50"
-                                                onClick={() => toggleSort('deposit_amount')}
-                                            >
-                                                <div className="flex items-center justify-end gap-1">
+                                            <TableHead className="text-right">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto p-0 font-medium hover:bg-transparent ml-auto"
+                                                    onClick={() => toggleSort('deposit_amount')}
+                                                >
                                                     押金 (THB)
-                                                    {sortField === 'deposit_amount' && (
-                                                        <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
-                                                </div>
+                                                    {getSortIcon('deposit_amount')}
+                                                </Button>
                                             </TableHead>
-                                            <TableHead
-                                                className="text-right cursor-pointer hover:bg-muted/50"
-                                                onClick={() => toggleSort('balance')}
-                                            >
-                                                <div className="flex items-center justify-end gap-1">
+                                            <TableHead className="text-right">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto p-0 font-medium hover:bg-transparent ml-auto"
+                                                    onClick={() => toggleSort('balance')}
+                                                >
                                                     欠款 (THB)
-                                                    {sortField === 'balance' && (
-                                                        <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
-                                                </div>
+                                                    {getSortIcon('balance')}
+                                                </Button>
                                             </TableHead>
-                                            <TableHead
-                                                className="text-right cursor-pointer hover:bg-muted/50"
-                                                onClick={() => toggleSort('platform_collected_rmb_balance')}
-                                            >
-                                                <div className="flex items-center justify-end gap-1">
+                                            <TableHead className="text-right">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto p-0 font-medium hover:bg-transparent ml-auto"
+                                                    onClick={() => toggleSort('platform_collected_rmb_balance')}
+                                                >
                                                     代收 (RMB)
-                                                    {sortField === 'platform_collected_rmb_balance' && (
-                                                        <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
-                                                </div>
+                                                    {getSortIcon('platform_collected_rmb_balance')}
+                                                </Button>
                                             </TableHead>
-                                            <TableHead
-                                                className="cursor-pointer hover:bg-muted/50"
-                                                onClick={() => toggleSort('status')}
-                                            >
-                                                <div className="flex items-center gap-1">
+                                            <TableHead>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto p-0 font-medium hover:bg-transparent"
+                                                    onClick={() => toggleSort('status')}
+                                                >
                                                     状态
-                                                    {sortField === 'status' && (
-                                                        <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
-                                                </div>
+                                                    {getSortIcon('status')}
+                                                </Button>
                                             </TableHead>
                                             <TableHead className="text-right">操作</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {filteredAndSortedAccounts.map((account) => {
+                                        {paginatedAccounts.map((account) => {
                                             const status = getDebtStatus(
                                                 Number(account.balance),
                                                 Number(account.deposit_amount)
@@ -639,10 +637,10 @@ export function AccountsListContent() {
                             </div>
 
                             {/* 分页 */}
-                            {total > 0 && (
+                            {totalFiltered > 0 && (
                                 <div className="flex items-center justify-between mt-4 pt-4 border-t">
                                     <div className="text-sm text-muted-foreground">
-                                        显示 {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, total)} 条，共 {total} 条
+                                        显示 {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, totalFiltered)} 条，共 {totalFiltered} 条
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Button
@@ -654,7 +652,7 @@ export function AccountsListContent() {
                                             上一页
                                         </Button>
                                         <span className="text-sm text-muted-foreground px-2">
-                                            第 {page} 页
+                                            第 {page} / {totalPages} 页
                                         </span>
                                         <Button
                                             variant="outline"
@@ -709,12 +707,58 @@ export function AccountsListContent() {
 
 function AccountsTableSkeleton() {
     return (
-        <div className="space-y-3">
-            {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center gap-4">
-                    <Skeleton className="h-12 flex-1" />
-                </div>
-            ))}
+        <div className="rounded-md border overflow-hidden">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>头像</TableHead>
+                        <TableHead>工号</TableHead>
+                        <TableHead>技师名称</TableHead>
+                        <TableHead>城市</TableHead>
+                        <TableHead className="text-right">押金 (THB)</TableHead>
+                        <TableHead className="text-right">欠款 (THB)</TableHead>
+                        <TableHead className="text-right">代收 (RMB)</TableHead>
+                        <TableHead>状态</TableHead>
+                        <TableHead className="text-right">操作</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {[...Array(5)].map((_, i) => (
+                        <TableRow key={i}>
+                            <TableCell>
+                                <Skeleton className="h-10 w-10 rounded-full" />
+                            </TableCell>
+                            <TableCell>
+                                <Skeleton className="h-4 w-12" />
+                            </TableCell>
+                            <TableCell>
+                                <Skeleton className="h-4 w-20" />
+                            </TableCell>
+                            <TableCell>
+                                <Skeleton className="h-4 w-16" />
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <Skeleton className="h-4 w-20 ml-auto" />
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <div className="space-y-1">
+                                    <Skeleton className="h-4 w-20 ml-auto" />
+                                    <Skeleton className="h-1 w-full" />
+                                </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <Skeleton className="h-4 w-20 ml-auto" />
+                            </TableCell>
+                            <TableCell>
+                                <Skeleton className="h-6 w-16" />
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <Skeleton className="h-8 w-20 ml-auto" />
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
         </div>
     )
 }

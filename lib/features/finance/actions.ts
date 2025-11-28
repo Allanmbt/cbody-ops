@@ -24,6 +24,94 @@ import { updateDepositSchema, approveTransactionSchema, rejectTransactionSchema,
 // ==================== 统计数据 ====================
 
 /**
+ * 获取财务日统计数据
+ * 包含：核验订单数、待核验数、已核验数、平台应得总额、代收总额
+ * 注：使用 order_settlements.created_at 而非 orders.completed_at，以兼容取消订单
+ */
+export async function getFinanceDayStats(
+    completedAtFrom: string,
+    completedAtTo: string
+): Promise<ApiResponse<{
+    settlement_total_count: number  // 核验订单总数
+    pending_count: number           // 待核验
+    settled_count: number           // 已核验
+    platform_should_get_total: number  // 平台应得总额
+    actual_paid_total: number          // 代收总额(RMB)
+}>> {
+    try {
+        await requireAdmin(['superadmin', 'admin', 'finance'])
+
+        const supabase = getSupabaseAdminClient()
+
+        // 并行查询
+        const [
+            settlementTotalResult,
+            pendingResult,
+            settledResult,
+            sumResult,
+        ] = await Promise.all([
+            // 核验订单总数
+            supabase
+                .from('order_settlements')
+                .select('id', { count: 'exact', head: true })
+                .gte('created_at', completedAtFrom)
+                .lt('created_at', completedAtTo),
+
+            // 待核验数
+            supabase
+                .from('order_settlements')
+                .select('id', { count: 'exact', head: true })
+                .eq('settlement_status', 'pending')
+                .gte('created_at', completedAtFrom)
+                .lt('created_at', completedAtTo),
+
+            // 已核验数
+            supabase
+                .from('order_settlements')
+                .select('id', { count: 'exact', head: true })
+                .eq('settlement_status', 'settled')
+                .gte('created_at', completedAtFrom)
+                .lt('created_at', completedAtTo),
+
+            // 金额统计
+            supabase
+                .from('order_settlements')
+                .select('platform_should_get, actual_paid_amount')
+                .gte('created_at', completedAtFrom)
+                .lt('created_at', completedAtTo),
+        ])
+
+        // 计算总额
+        let platformShouldGetTotal = 0
+        let actualPaidTotal = 0
+
+        if (sumResult.data) {
+            for (const row of sumResult.data as any[]) {
+                platformShouldGetTotal += Number(row.platform_should_get) || 0
+                actualPaidTotal += Number(row.actual_paid_amount) || 0
+            }
+        }
+
+        return {
+            ok: true,
+            data: {
+                settlement_total_count: settlementTotalResult.count || 0,
+                pending_count: pendingResult.count || 0,
+                settled_count: settledResult.count || 0,
+                platform_should_get_total: platformShouldGetTotal,
+                actual_paid_total: actualPaidTotal,
+            }
+        }
+    } catch (error) {
+        console.error('[getFinanceDayStats] 获取财务日统计失败:', error)
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : '获取财务日统计失败'
+        }
+    }
+}
+
+/**
  * 获取财务统计数据
  */
 export async function getFinanceStats(): Promise<ApiResponse<FinanceStats>> {
@@ -300,6 +388,8 @@ export async function getSettlementAccountDetail(
 
 /**
  * 获取技师的订单结算流水（或所有记录）
+ * 支持按财务日（结算记录创建时间）筛选
+ * 注：使用 order_settlements.created_at 而非 orders.completed_at，以兼容取消订单
  */
 export async function getGirlOrderSettlements(
     girlId?: string,
@@ -345,16 +435,99 @@ export async function getGirlOrderSettlements(
             query = query.eq('settlement_status', filters.status)
         }
 
-        if (filters.date_from) {
-            query = query.gte('created_at', filters.date_from)
+        // 平台代收筛选
+        if (filters.platform_collected && filters.platform_collected !== 'all') {
+            if (filters.platform_collected === 'collected') {
+                // 平台代收：payment_content_type 不为空
+                query = query.not('payment_content_type', 'is', null)
+            } else if (filters.platform_collected === 'not_collected') {
+                // 技师收款：payment_content_type 为空
+                query = query.is('payment_content_type', null)
+            }
         }
 
-        if (filters.date_to) {
-            query = query.lte('created_at', filters.date_to)
+        // 按结算记录创建时间筛选（财务日筛选）
+        // 使用 order_settlements.created_at 而非 orders.completed_at
+        // 原因：取消订单的 completed_at 为 NULL，但仍需在财务日显示
+        if (filters.completed_at_from) {
+            query = query.gte('created_at', filters.completed_at_from)
+        }
+        if (filters.completed_at_to) {
+            query = query.lt('created_at', filters.completed_at_to)
         }
 
-        // 排序：最新的在前
-        query = query.order('created_at', { ascending: false })
+        // 搜索：订单号、技师工号、技师姓名
+        if (filters.search && filters.search.trim()) {
+            const searchTerm = filters.search.trim()
+
+            // 尝试解析为数字（工号）
+            const searchNumber = parseInt(searchTerm)
+
+            if (!isNaN(searchNumber)) {
+                // 搜索技师工号
+                const { data: girlsWithNumber } = await supabase
+                    .from('girls')
+                    .select('id')
+                    .eq('girl_number', searchNumber)
+
+                if (girlsWithNumber && girlsWithNumber.length > 0) {
+                    query = query.in('girl_id', girlsWithNumber.map((g: any) => g.id))
+                } else {
+                    // 没找到匹配的工号，返回空结果
+                    query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+                }
+            } else {
+                // 搜索技师姓名或订单号
+                // 先查询匹配的技师
+                const { data: girlsWithName } = await supabase
+                    .from('girls')
+                    .select('id')
+                    .ilike('name', `%${searchTerm}%`)
+
+                // 查询匹配的订单
+                const { data: ordersWithNumber } = await supabase
+                    .from('orders')
+                    .select('id')
+                    .ilike('order_number', `%${searchTerm}%`)
+
+                const girlIds = girlsWithName?.map((g: any) => g.id) || []
+                const orderIds = ordersWithNumber?.map((o: any) => o.id) || []
+
+                if (girlIds.length > 0 || orderIds.length > 0) {
+                    // 使用 or 查询
+                    const conditions: string[] = []
+                    if (girlIds.length > 0) {
+                        conditions.push(`girl_id.in.(${girlIds.join(',')})`)
+                    }
+                    if (orderIds.length > 0) {
+                        conditions.push(`order_id.in.(${orderIds.join(',')})`)
+                    }
+                    query = query.or(conditions.join(','))
+                } else {
+                    // 没找到匹配结果
+                    query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+                }
+            }
+        }
+
+        // 排序
+        if (filters.sort_by && filters.sort_order) {
+            const ascending = filters.sort_order === 'asc'
+            if (filters.sort_by === 'girl_name') {
+                query = query.order('girls(name)', { ascending })
+            } else if (filters.sort_by === 'created_at') {
+                query = query.order('created_at', { ascending })
+            } else if (filters.sort_by === 'service_fee') {
+                query = query.order('service_fee', { ascending })
+            } else if (filters.sort_by === 'platform_should_get') {
+                query = query.order('platform_should_get', { ascending })
+            } else {
+                query = query.order('created_at', { ascending: false })
+            }
+        } else {
+            // 默认排序：最新的在前
+            query = query.order('created_at', { ascending: false })
+        }
 
         // 分页
         query = query.range(from, to)
@@ -835,6 +1008,8 @@ export async function updateOrderSettlementPayment(
             payment_content_type?: string | null
             payment_method?: string | null
             payment_notes?: string | null
+            platform_should_get?: number
+            notes?: string | null
             updated_at: string
         }
 
@@ -856,6 +1031,12 @@ export async function updateOrderSettlementPayment(
         }
         if (validated.payment_notes !== undefined) {
             updateData.payment_notes = validated.payment_notes
+        }
+        if (validated.platform_should_get !== undefined) {
+            (updateData as any).platform_should_get = validated.platform_should_get
+        }
+        if (validated.notes !== undefined) {
+            (updateData as any).notes = validated.notes
         }
 
         const { error: updateError } = await supabase
@@ -933,6 +1114,101 @@ export async function markSettlementAsSettled(
         return {
             ok: false,
             error: error instanceof Error ? error.message : '标记已结算失败'
+        }
+    }
+}
+
+/**
+ * 获取订单收款页面数据（包含收款记录、汇率等）
+ */
+export async function getOrderPaymentData(
+    orderId: string
+): Promise<ApiResponse<import('./types').OrderPaymentPageData>> {
+    try {
+        await requireAdmin(['superadmin', 'admin', 'finance'])
+        const supabase = getSupabaseAdminClient()
+
+        // 调用 RPC 函数获取完整数据
+        const { data, error } = await (supabase as any).rpc('get_order_payment_page_data', {
+            p_order_id: orderId
+        })
+
+        if (error) throw error
+        if (!data) {
+            return { ok: false, error: '获取订单收款数据失败' }
+        }
+
+        // RPC 返回的是 JSONB，需要解析
+        const result = typeof data === 'string' ? JSON.parse(data) : data
+
+        if (!result.ok) {
+            return { ok: false, error: result.error || '获取订单收款数据失败' }
+        }
+
+        return { ok: true, data: result as import('./types').OrderPaymentPageData }
+    } catch (error) {
+        console.error('[getOrderPaymentData] 获取订单收款数据失败:', error)
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : '获取订单收款数据失败'
+        }
+    }
+}
+
+/**
+ * 拒绝订单结算
+ */
+export async function rejectOrderSettlement(data: {
+    settlement_id: string
+    reject_reason: string
+}): Promise<ApiResponse<{ success: boolean }>> {
+    try {
+        const admin = await requireAdmin(['superadmin', 'admin', 'finance'])
+        const supabase = getSupabaseAdminClient()
+
+        // 1. 检查结算记录是否存在
+        const { data: settlement, error: fetchError } = await supabase
+            .from('order_settlements')
+            .select('id, settlement_status')
+            .eq('id', data.settlement_id)
+            .single()
+
+        if (fetchError || !settlement) {
+            return { ok: false, error: '订单结算记录不存在' }
+        }
+
+        const settlementData = settlement as any
+
+        // 2. 检查是否已经处理过
+        if (settlementData.settlement_status !== 'pending') {
+            return { ok: false, error: '该订单已经被处理过了' }
+        }
+
+        // 3. 更新为拒绝状态
+        type RejectionUpdate = {
+            settlement_status: string
+            reject_reason: string
+            updated_at: string
+        }
+        const updateData: RejectionUpdate = {
+            settlement_status: 'rejected',
+            reject_reason: data.reject_reason,
+            updated_at: new Date().toISOString()
+        }
+
+        const { error: updateError } = await supabase
+            .from('order_settlements')
+            .update(updateData as never)
+            .eq('id', data.settlement_id)
+
+        if (updateError) throw updateError
+
+        return { ok: true, data: { success: true } }
+    } catch (error) {
+        console.error('[rejectOrderSettlement] 拒绝订单结算失败:', error)
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : '拒绝订单结算失败'
         }
     }
 }

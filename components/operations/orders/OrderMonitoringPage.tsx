@@ -226,7 +226,6 @@ export function OrderMonitoringPage({ initialStats, initialOrders, initialTotal 
                   <SelectItem value="yesterday">昨日</SelectItem>
                   <SelectItem value="3days">近3天</SelectItem>
                   <SelectItem value="7days">近7天</SelectItem>
-                  <SelectItem value="all">全部</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -13,16 +13,13 @@ import type {
 } from "@/lib/features/orders"
 
 /**
- * 订单管理统计数据
+ * 订单管理统计数据（轻量级）
  */
 export interface AdminOrderStats {
   total: number              // 总订单数
-  pending: number            // 待确认
-  active: number             // 进行中
-  today_completed: number    // 今日完成（泰国时区6点起）
-  today_cancelled: number    // 今日取消（泰国时区6点起）
-  yesterday_completed: number // 昨日完成
-  yesterday_cancelled: number // 昨日取消
+  active: number             // 进行中（confirmed, en_route, arrived, in_service）
+  completed: number          // 已完成
+  cancelled: number          // 已取消
 }
 
 /**
@@ -45,45 +42,33 @@ export async function getAdminOrderStats(): Promise<ApiResponse<AdminOrderStats>
 
     // 回退方案：如果 RPC 不可用
     console.warn('[订单统计] RPC 不可用，使用回退方案')
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
 
     const { count: totalCount } = await supabase
       .from('orders')
       .select('*', { count: 'exact', head: true })
-
-    const { count: pendingCount } = await supabase
-      .from('orders')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending')
 
     const { count: activeCount } = await supabase
       .from('orders')
       .select('*', { count: 'exact', head: true })
       .in('status', ['confirmed', 'en_route', 'arrived', 'in_service'])
 
-    const { count: todayCompletedCount } = await supabase
+    const { count: completedCount } = await supabase
       .from('orders')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'completed')
-      .gte('completed_at', todayStart.toISOString())
 
-    const { count: todayCancelledCount } = await supabase
+    const { count: cancelledCount } = await supabase
       .from('orders')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'cancelled')
-      .gte('updated_at', todayStart.toISOString())
 
     return {
       ok: true as const,
       data: {
         total: totalCount || 0,
-        pending: pendingCount || 0,
         active: activeCount || 0,
-        today_completed: todayCompletedCount || 0,
-        today_cancelled: todayCancelledCount || 0,
-        yesterday_completed: 0,
-        yesterday_cancelled: 0
+        completed: completedCount || 0,
+        cancelled: cancelledCount || 0
       } as AdminOrderStats
     }
   } catch (error) {

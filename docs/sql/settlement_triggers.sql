@@ -153,17 +153,11 @@ BEGIN
       NOW()
     )
     ON CONFLICT (order_id) DO NOTHING;
-    
-    -- 7. 更新技师结算账户余额
-    -- 新逻辑：balance 为技师欠平台的金额（正数），settlement_amount 正数表示技师需付平台
-    -- 所以要累加到 balance
-    UPDATE public.girl_settlement_accounts
-    SET 
-      balance = balance + v_settlement_amount,
-      updated_at = NOW()
-    WHERE girl_id = NEW.girl_id;
-    
-    -- 8. 检查是否超过欠款阈值，如果超过则记录日志（可扩展为自动禁止上线）
+
+    -- 注意：不在此处更新 balance，等待管理员核验通过后由 sync_settlement_balance 触发器更新
+    -- 这样支持"核验拒绝"的情况（拒绝时不更新余额）
+
+    -- 7. 检查是否即将超过欠款阈值（用于预警）
     DECLARE
       v_balance DECIMAL(10,2);
       v_deposit_amount DECIMAL(10,2);
@@ -213,25 +207,30 @@ AS $$
 BEGIN
   -- 仅在 settlement_status 从 pending 变为 settled 时触发
   IF OLD.settlement_status = 'pending' AND NEW.settlement_status = 'settled' THEN
-    
+
     -- 1. 订单抽成记账：将 platform_should_get 累加到 balance（THB 欠款）
     UPDATE public.girl_settlement_accounts
-    SET 
+    SET
       balance = balance + NEW.platform_should_get,
       updated_at = NOW()
     WHERE girl_id = NEW.girl_id;
-    
-    -- 2. 平台代收记账：若使用平台收款码代收且有金额，累加到 platform_collected_rmb_balance
-    IF NEW.payment_method IN ('wechat', 'alipay') AND COALESCE(NEW.actual_paid_amount, 0) > 0 THEN
+
+    -- 2. 平台代收记账：若有代收金额，累加到 platform_collected_rmb_balance
+    -- 注意：actual_paid_amount 字段本身就代表平台代收的人民币金额
+    IF COALESCE(NEW.actual_paid_amount, 0) > 0 THEN
       UPDATE public.girl_settlement_accounts
-      SET 
+      SET
         platform_collected_rmb_balance = platform_collected_rmb_balance + NEW.actual_paid_amount,
         updated_at = NOW()
       WHERE girl_id = NEW.girl_id;
     END IF;
-    
+
+  -- 如果从 pending 变为 rejected，不更新余额，只记录日志
+  ELSIF OLD.settlement_status = 'pending' AND NEW.settlement_status = 'rejected' THEN
+    RAISE NOTICE '结算 % 被拒绝，不更新余额。原因：%', NEW.id, NEW.reject_reason;
+
   END IF;
-  
+
   RETURN NEW;
 END;
 $$;

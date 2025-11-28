@@ -80,6 +80,8 @@ export const updateSettlementPaymentSchema = z.object({
     payment_content_type: z.enum(['deposit', 'full_amount', 'tip', 'other']).nullable().optional(),
     payment_method: z.enum(['wechat', 'alipay', 'thb_bank_transfer', 'credit_card', 'cash', 'other']).nullable().optional(),
     payment_notes: z.string().nullable().optional(),
+    platform_should_get: z.number().min(0).optional(),
+    notes: z.string().nullable().optional(),
 })
 
 export const markSettlementAsSettledSchema = z.object({

@@ -23,7 +23,11 @@ BEGIN
     'active', COUNT(*) FILTER (WHERE status IN ('confirmed', 'en_route', 'arrived', 'in_service')),
     'active_abnormal', 0,  -- TODO: 后续实现异常检测逻辑
     'today_completed', COUNT(*) FILTER (WHERE status = 'completed' AND completed_at >= p_today_start),
-    'today_cancelled', COUNT(*) FILTER (WHERE status = 'cancelled' AND updated_at >= p_today_start)
+    'today_cancelled', (
+      SELECT COUNT(*) 
+      FROM order_cancellations 
+      WHERE cancelled_at >= p_today_start
+    )
   )
   INTO v_result
   FROM orders;

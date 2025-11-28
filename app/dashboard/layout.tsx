@@ -221,14 +221,14 @@ const sidebarGroups: {
         },
         {
           key: "finance-accounts",
-          title: "技师账户",
+          title: "结算账户",
           icon: Users,
           href: "/dashboard/finance/accounts",
           requiredRole: ['superadmin', 'admin', 'finance'],
         },
         {
           key: "finance-transactions",
-          title: "交易记录",
+          title: "交易管理",
           icon: ArrowUpDown,
           href: "/dashboard/finance/transactions",
           requiredRole: ['superadmin', 'admin', 'finance'],
@@ -301,14 +301,14 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
   } else if (segments[1] === 'finance') {
     breadcrumbs.push({ label: "财务管理", href: "/dashboard/finance" })
     if (segments[2] === 'accounts') {
-      breadcrumbs.push({ label: "技师账户", href: "/dashboard/finance/accounts" })
+      breadcrumbs.push({ label: "结算账户", href: "/dashboard/finance/accounts" })
       if (segments[3]) {
         breadcrumbs.push({ label: "账户详情" })
       }
     } else if (segments[2] === 'settlements') {
       breadcrumbs.push({ label: "订单核验" })
     } else if (segments[2] === 'transactions') {
-      breadcrumbs.push({ label: "交易记录" })
+      breadcrumbs.push({ label: "交易管理" })
     }
   } else if (segments[1] === 'configs') {
     breadcrumbs.push({ label: "配置管理" })

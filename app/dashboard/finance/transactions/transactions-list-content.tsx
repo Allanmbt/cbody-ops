@@ -1,10 +1,5 @@
 "use client"
 
-/**
- * 交易记录列表页面
- * 展示待审核和已处理的交易申请
- */
-
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
     Table,
     TableBody,
@@ -23,57 +20,88 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Search, Filter, ArrowUpDown, CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react"
-import { getGirlTransactions, approveTransaction, rejectTransaction } from "@/lib/features/finance/actions"
-import type { SettlementTransactionWithDetails } from "@/lib/features/finance"
+import { Search, CheckCircle, XCircle, Clock, AlertCircle, DollarSign, TrendingUp, TrendingDown, Image as ImageIcon, ExternalLink } from "lucide-react"
+import { getTransactionStats, getTransactions, approveTransaction, rejectTransaction } from "./actions"
+import type { Transaction, TransactionStats, TransactionType } from "@/lib/features/transactions"
 import { toast } from "sonner"
-import { formatCurrency } from "@/lib/utils"
 import { format } from "date-fns"
 import { zhCN } from "date-fns/locale"
 
 export function TransactionsListContent() {
-    const [transactions, setTransactions] = useState<SettlementTransactionWithDetails[]>([])
+    const [stats, setStats] = useState<TransactionStats | null>(null)
+    const [transactions, setTransactions] = useState<Transaction[]>([])
     const [loading, setLoading] = useState(true)
+    const [statsLoading, setStatsLoading] = useState(true)
+
+    // 状态管理
+    const [activeTab, setActiveTab] = useState<TransactionType>('settlement')
+    const [statusFilter, setStatusFilter] = useState<'pending' | 'confirmed' | 'cancelled' | undefined>('pending')
+    const [cityFilter, setCityFilter] = useState<string>('')
     const [searchTerm, setSearchTerm] = useState("")
-    const [typeFilter, setTypeFilter] = useState<"all" | "deposit" | "payment" | "withdrawal" | "adjustment">("all")
-    const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all")
+
+    // 分页
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
+    const [total, setTotal] = useState(0)
     const pageSize = 20
 
     // 审核对话框状态
     const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
-    const [selectedTransaction, setSelectedTransaction] = useState<SettlementTransactionWithDetails | null>(null)
+    const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
     const [reviewAction, setReviewAction] = useState<"approve" | "reject">("approve")
-    const [rejectReason, setRejectReason] = useState("")
+    const [reviewNotes, setReviewNotes] = useState("")
     const [reviewing, setReviewing] = useState(false)
+
+    // 图片预览状态
+    const [previewImage, setPreviewImage] = useState<string | null>(null)
+
+    useEffect(() => {
+        loadStats()
+    }, [])
 
     useEffect(() => {
         loadTransactions()
-    }, [page, typeFilter, statusFilter])
+    }, [page, activeTab, statusFilter, cityFilter])
+
+    async function loadStats() {
+        try {
+            setStatsLoading(true)
+            const result = await getTransactionStats()
+            if (result.ok && result.data) {
+                setStats(result.data)
+            }
+        } catch (error) {
+            console.error('[TransactionsList] 加载统计失败:', error)
+        } finally {
+            setStatsLoading(false)
+        }
+    }
 
     async function loadTransactions() {
         try {
             setLoading(true)
-            const result = await getGirlTransactions(
-                "", // 不限定技师
-                {
-                    transaction_type: typeFilter === "all" ? undefined : typeFilter,
-                    approval_status: statusFilter === "all" ? undefined : statusFilter,
-                },
-                { page, pageSize }
-            )
+            const result = await getTransactions({
+                type: activeTab,
+                status: statusFilter,
+                city: cityFilter || undefined,
+                search: searchTerm || undefined,
+                page,
+                limit: pageSize
+            })
 
             if (!result.ok) {
-                toast.error(result.error || "获取交易记录失败")
+                toast.error(result.error || "获取申请列表失败")
                 return
             }
 
-            setTransactions(result.data!.data)
-            setTotalPages(result.data!.totalPages)
+            if (result.data) {
+                setTransactions(result.data.data)
+                setTotalPages(result.data.totalPages)
+                setTotal(result.data.total)
+            }
         } catch (error) {
             console.error('[TransactionsList] 加载失败:', error)
-            toast.error("加载交易记录失败")
+            toast.error("加载申请列表失败")
         } finally {
             setLoading(false)
         }
@@ -84,17 +112,17 @@ export function TransactionsListContent() {
         loadTransactions()
     }
 
-    function openReviewDialog(transaction: SettlementTransactionWithDetails, action: "approve" | "reject") {
+    function openReviewDialog(transaction: Transaction, action: "approve" | "reject") {
         setSelectedTransaction(transaction)
         setReviewAction(action)
-        setRejectReason("")
+        setReviewNotes("")
         setReviewDialogOpen(true)
     }
 
     async function handleReview() {
         if (!selectedTransaction) return
 
-        if (reviewAction === "reject" && !rejectReason.trim()) {
+        if (reviewAction === "reject" && !reviewNotes.trim()) {
             toast.error("请输入拒绝原因")
             return
         }
@@ -104,11 +132,14 @@ export function TransactionsListContent() {
 
             let result
             if (reviewAction === "approve") {
-                result = await approveTransaction({ transaction_id: selectedTransaction.id })
+                result = await approveTransaction({
+                    transaction_id: selectedTransaction.id,
+                    notes: reviewNotes || undefined
+                })
             } else {
                 result = await rejectTransaction({
                     transaction_id: selectedTransaction.id,
-                    reject_reason: rejectReason
+                    reason: reviewNotes
                 })
             }
 
@@ -119,7 +150,7 @@ export function TransactionsListContent() {
 
             toast.success(reviewAction === "approve" ? "申请已批准" : "申请已拒绝")
             setReviewDialogOpen(false)
-            await loadTransactions()
+            await Promise.all([loadStats(), loadTransactions()])
         } catch (error) {
             console.error('[TransactionsList] 审核失败:', error)
             toast.error("审核操作失败")
@@ -128,199 +159,269 @@ export function TransactionsListContent() {
         }
     }
 
-    const filteredTransactions = transactions.filter(tx => {
-        if (!searchTerm) return true
-        const girlName = tx.girls?.name?.toLowerCase() || ""
-        const girlNumber = tx.girls?.girl_number?.toString() || ""
-        const search = searchTerm.toLowerCase()
-        return girlName.includes(search) || girlNumber.includes(search)
-    })
+    function formatCurrency(amount: number, currency: 'THB' | 'RMB') {
+        return new Intl.NumberFormat('zh-CN', {
+            style: 'currency',
+            currency: currency === 'THB' ? 'THB' : 'CNY',
+            minimumFractionDigits: 2
+        }).format(amount)
+    }
 
     return (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 p-4 md:px-8 md:py-6">
             {/* 标题 */}
             <div>
-                <h1 className="text-3xl font-bold">交易记录</h1>
+                <h1 className="text-2xl font-bold">结账/提现申请管理</h1>
                 <p className="text-muted-foreground mt-1">
-                    管理技师提现和结账申请
+                    技师结账和提现申请审核管理
                 </p>
             </div>
 
-            {/* 筛选区域 */}
-            <Card>
-                <CardContent className="p-4">
-                    <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 flex gap-2">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="搜索技师名称或工号..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                    className="pl-9"
-                                />
-                            </div>
-                            <Button onClick={handleSearch}>
-                                搜索
-                            </Button>
+            {/* 统计卡片 */}
+            <div className="grid gap-4 md:grid-cols-4">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">待审核</CardTitle>
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {statsLoading ? "-" : stats?.pending_count || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">笔</span>
                         </div>
+                        <p className="text-xs text-muted-foreground mt-1">等待处理</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">今日已审</CardTitle>
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {statsLoading ? "-" : stats?.today_approved_count || 0}
+                            <span className="text-base font-normal text-muted-foreground ml-1">笔</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">今日审核通过</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">今日结账</CardTitle>
+                        <TrendingUp className="h-4 w-4 text-blue-600" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {statsLoading ? "-" : formatCurrency(stats?.today_settlement_amount || 0, 'THB')}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">技师结账给平台</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                        <CardTitle className="text-sm font-medium">今日提现</CardTitle>
+                        <TrendingDown className="h-4 w-4 text-orange-600" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {statsLoading ? "-" : formatCurrency(stats?.today_withdrawal_amount || 0, 'RMB')}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">平台代收提现</p>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* 主要内容区域 */}
+            <Tabs value={activeTab} onValueChange={(v) => {
+                setActiveTab(v as TransactionType)
+                setPage(1)
+            }} className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <TabsList>
+                        <TabsTrigger value="settlement" className="gap-2">
+                            <TrendingUp className="size-4" />
+                            结账申请 (THB)
+                        </TabsTrigger>
+                        <TabsTrigger value="withdrawal" className="gap-2">
+                            <TrendingDown className="size-4" />
+                            提现申请 (RMB)
+                        </TabsTrigger>
+                    </TabsList>
+
+                    <div className="flex items-center gap-2">
+                        {/* 搜索 */}
+                        <div className="relative w-64">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                            <Input
+                                placeholder="搜索技师姓名或工号..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                className="pl-8 h-9"
+                            />
+                        </div>
+
+                        {/* 状态筛选 */}
                         <Select
-                            value={typeFilter}
-                            onValueChange={(value: any) => {
-                                setTypeFilter(value)
+                            value={statusFilter || 'all'}
+                            onValueChange={(value) => {
+                                setStatusFilter(value === 'all' ? undefined : value as 'pending' | 'confirmed' | 'cancelled')
                                 setPage(1)
                             }}
                         >
-                            <SelectTrigger className="w-full md:w-[180px]">
-                                <Filter className="mr-2 size-4" />
-                                <SelectValue placeholder="交易类型" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">全部类型</SelectItem>
-                                <SelectItem value="deposit">付定金</SelectItem>
-                                <SelectItem value="payment">申请结账</SelectItem>
-                                <SelectItem value="withdrawal">申请提现</SelectItem>
-                                <SelectItem value="adjustment">人工调整</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            value={statusFilter}
-                            onValueChange={(value: any) => {
-                                setStatusFilter(value)
-                                setPage(1)
-                            }}
-                        >
-                            <SelectTrigger className="w-full md:w-[180px]">
-                                <Filter className="mr-2 size-4" />
-                                <SelectValue placeholder="审核状态" />
+                            <SelectTrigger className="w-[120px] h-9">
+                                <SelectValue placeholder="状态" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">全部状态</SelectItem>
                                 <SelectItem value="pending">待审核</SelectItem>
-                                <SelectItem value="approved">已批准</SelectItem>
-                                <SelectItem value="rejected">已拒绝</SelectItem>
+                                <SelectItem value="confirmed">已确认</SelectItem>
+                                <SelectItem value="cancelled">已取消</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
-                </CardContent>
-            </Card>
+                </div>
 
-            {/* 列表 */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <ArrowUpDown className="size-5" />
-                        交易记录列表
-                        {!loading && (
-                            <Badge variant="secondary">
-                                共 {filteredTransactions.length} 条
-                            </Badge>
-                        )}
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {loading ? (
-                        <TransactionsTableSkeleton />
-                    ) : filteredTransactions.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12">
-                            <ArrowUpDown className="size-12 text-muted-foreground mb-4" />
-                            <p className="text-muted-foreground">暂无交易记录</p>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="rounded-md border">
+                <Card>
+                    <CardContent className="p-0">
+                        {loading ? (
+                            <div className="p-6">
+                                <TransactionsTableSkeleton />
+                            </div>
+                        ) : transactions.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12">
+                                <DollarSign className="size-12 text-muted-foreground mb-4" />
+                                <p className="text-muted-foreground">暂无申请记录</p>
+                            </div>
+                        ) : (
+                            <div className="rounded-md">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>技师</TableHead>
-                                            <TableHead>交易类型</TableHead>
+                                            <TableHead>技师信息</TableHead>
                                             <TableHead className="text-right">金额</TableHead>
-                                            <TableHead>资金流向</TableHead>
-                                            <TableHead>支付方式</TableHead>
-                                            <TableHead>审核状态</TableHead>
-                                            <TableHead>创建时间</TableHead>
+                                            {activeTab === 'settlement' ? (
+                                                <>
+                                                    <TableHead>支付方式</TableHead>
+                                                    <TableHead>支付凭证</TableHead>
+                                                </>
+                                            ) : (
+                                                <TableHead>收款信息</TableHead>
+                                            )}
+                                            <TableHead>申请时间</TableHead>
+                                            <TableHead>状态</TableHead>
                                             <TableHead className="text-right">操作</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {filteredTransactions.map((tx) => (
+                                        {transactions.map((tx) => (
                                             <TableRow key={tx.id}>
                                                 <TableCell>
-                                                    <div className="flex flex-col">
-                                                        <span className="font-medium">{tx.girls?.name}</span>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            #{tx.girls?.girl_number}
-                                                        </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar className="h-8 w-8">
+                                                            <AvatarImage src={tx.girl?.avatar_url || undefined} />
+                                                            <AvatarFallback>{tx.girl?.name?.[0] || '?'}</AvatarFallback>
+                                                        </Avatar>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-medium">{tx.girl?.name || '-'}</span>
+                                                            <span className="text-xs text-muted-foreground">
+                                                                #{tx.girl?.girl_number || '-'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <Badge variant="outline">
-                                                        {tx.transaction_type === 'deposit' && '付定金'}
-                                                        {tx.transaction_type === 'payment' && '申请结账'}
-                                                        {tx.transaction_type === 'withdrawal' && '申请提现'}
-                                                        {tx.transaction_type === 'adjustment' && '人工调整'}
-                                                    </Badge>
+                                                <TableCell className="text-right">
+                                                    <div className="font-bold text-lg">
+                                                        {activeTab === 'settlement'
+                                                            ? formatCurrency(tx.amount, 'THB')
+                                                            : formatCurrency(tx.amount, 'RMB')
+                                                        }
+                                                    </div>
                                                 </TableCell>
-                                                <TableCell className="text-right font-semibold">
-                                                    {formatCurrency(tx.amount)}
+
+                                                {activeTab === 'settlement' ? (
+                                                    <>
+                                                        <TableCell>
+                                                            <Badge variant="outline">{tx.payment_method || '未知'}</Badge>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {tx.payment_proof_url ? (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="h-8 gap-1 text-blue-600"
+                                                                    onClick={() => setPreviewImage(tx.payment_proof_url)}
+                                                                >
+                                                                    <ImageIcon className="size-4" />
+                                                                    查看凭证
+                                                                </Button>
+                                                            ) : (
+                                                                <span className="text-muted-foreground text-sm">-</span>
+                                                            )}
+                                                        </TableCell>
+                                                    </>
+                                                ) : (
+                                                    <TableCell>
+                                                        <div className="flex flex-col text-sm">
+                                                            <span className="font-medium">{tx.payment_method || '银行转账'}</span>
+                                                            <span className="text-muted-foreground text-xs truncate max-w-[200px]" title={tx.notes || ''}>
+                                                                {tx.notes || '-'}
+                                                            </span>
+                                                        </div>
+                                                    </TableCell>
+                                                )}
+
+                                                <TableCell className="text-sm text-muted-foreground">
+                                                    {format(new Date(tx.created_at), 'MM-dd HH:mm', { locale: zhCN })}
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Badge variant={tx.direction === 'to_platform' ? 'destructive' : 'default'}>
-                                                        {tx.direction === 'to_platform' ? '→ 平台' : '→ 技师'}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell>
-                                                    {tx.payment_method || '-'}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {tx.approval_status === 'pending' && (
-                                                        <Badge variant="outline" className="gap-1">
+                                                    {tx.status === 'pending' && (
+                                                        <Badge variant="outline" className="gap-1 bg-yellow-50 text-yellow-700 border-yellow-200">
                                                             <Clock className="size-3" />
                                                             待审核
                                                         </Badge>
                                                     )}
-                                                    {tx.approval_status === 'approved' && (
-                                                        <Badge variant="default" className="gap-1">
+                                                    {tx.status === 'confirmed' && (
+                                                        <Badge variant="default" className="gap-1 bg-green-600 hover:bg-green-700">
                                                             <CheckCircle className="size-3" />
-                                                            已批准
+                                                            已确认
                                                         </Badge>
                                                     )}
-                                                    {tx.approval_status === 'rejected' && (
+                                                    {tx.status === 'cancelled' && (
                                                         <Badge variant="destructive" className="gap-1">
                                                             <XCircle className="size-3" />
-                                                            已拒绝
+                                                            已取消
                                                         </Badge>
                                                     )}
                                                 </TableCell>
-                                                <TableCell className="text-sm text-muted-foreground">
-                                                    {format(new Date(tx.created_at), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
-                                                </TableCell>
                                                 <TableCell className="text-right">
-                                                    {tx.approval_status === 'pending' && (
+                                                    {tx.status === 'pending' && (
                                                         <div className="flex gap-2 justify-end">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                onClick={() => openReviewDialog(tx, 'reject')}
+                                                            >
+                                                                驳回
+                                                            </Button>
                                                             <Button
                                                                 variant="default"
                                                                 size="sm"
+                                                                className="bg-green-600 hover:bg-green-700"
                                                                 onClick={() => openReviewDialog(tx, 'approve')}
                                                             >
-                                                                <CheckCircle className="mr-1 size-4" />
-                                                                批准
-                                                            </Button>
-                                                            <Button
-                                                                variant="destructive"
-                                                                size="sm"
-                                                                onClick={() => openReviewDialog(tx, 'reject')}
-                                                            >
-                                                                <XCircle className="mr-1 size-4" />
-                                                                拒绝
+                                                                {activeTab === 'settlement' ? '确认收款' : '确认打款'}
                                                             </Button>
                                                         </div>
                                                     )}
-                                                    {tx.approval_status === 'rejected' && tx.reject_reason && (
-                                                        <p className="text-xs text-muted-foreground">
-                                                            拒绝原因：{tx.reject_reason}
-                                                        </p>
+                                                    {tx.status === 'cancelled' && tx.notes && (
+                                                        <div className="text-xs text-red-500 text-right max-w-[150px] ml-auto truncate" title={tx.notes}>
+                                                            驳回: {tx.notes}
+                                                        </div>
                                                     )}
                                                 </TableCell>
                                             </TableRow>
@@ -328,76 +429,107 @@ export function TransactionsListContent() {
                                     </TableBody>
                                 </Table>
                             </div>
+                        )}
+                    </CardContent>
 
-                            {/* 分页 */}
-                            {totalPages > 1 && (
-                                <div className="flex items-center justify-between mt-4">
-                                    <p className="text-sm text-muted-foreground">
-                                        第 {page} 页，共 {totalPages} 页
-                                    </p>
-                                    <div className="flex gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setPage(p => Math.max(1, p - 1))}
-                                            disabled={page === 1}
-                                        >
-                                            上一页
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                            disabled={page === totalPages}
-                                        >
-                                            下一页
-                                        </Button>
-                                    </div>
-                                </div>
-                            )}
-                        </>
+                    {/* 分页 */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between p-4 border-t">
+                            <p className="text-sm text-muted-foreground">
+                                第 {page} 页，共 {totalPages} 页
+                            </p>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                >
+                                    上一页
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={page === totalPages}
+                                >
+                                    下一页
+                                </Button>
+                            </div>
+                        </div>
                     )}
-                </CardContent>
-            </Card>
+                </Card>
+            </Tabs>
 
             {/* 审核对话框 */}
             <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>
-                            {reviewAction === 'approve' ? '批准申请' : '拒绝申请'}
+                            {reviewAction === 'approve'
+                                ? (selectedTransaction?.transaction_type === 'settlement' ? '确认收款' : '确认打款')
+                                : '驳回申请'
+                            }
                         </DialogTitle>
                         <DialogDescription>
                             {selectedTransaction && (
-                                <>
-                                    技师：{selectedTransaction.girls?.name} (#{selectedTransaction.girls?.girl_number})<br />
-                                    金额：{formatCurrency(selectedTransaction.amount)}
-                                </>
+                                <div className="space-y-3 mt-4 p-4 bg-muted/50 rounded-lg">
+                                    <div className="flex justify-between">
+                                        <span className="text-muted-foreground">技师</span>
+                                        <span className="font-medium">{selectedTransaction.girl?.name} (#{selectedTransaction.girl?.girl_number})</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-muted-foreground">金额</span>
+                                        <span className="font-bold text-lg">
+                                            {selectedTransaction.transaction_type === 'withdrawal'
+                                                ? formatCurrency(selectedTransaction.amount, 'RMB')
+                                                : formatCurrency(selectedTransaction.amount, 'THB')
+                                            }
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-muted-foreground">方式</span>
+                                        <span>{selectedTransaction.payment_method || '-'}</span>
+                                    </div>
+                                    {selectedTransaction.transaction_type === 'withdrawal' && (
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">收款信息</span>
+                                            <span className="text-right max-w-[200px]">{selectedTransaction.notes || '-'}</span>
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </DialogDescription>
                     </DialogHeader>
-                    {reviewAction === 'reject' && (
-                        <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="reject-reason">拒绝原因</Label>
-                                <Textarea
-                                    id="reject-reason"
-                                    value={rejectReason}
-                                    onChange={(e) => setRejectReason(e.target.value)}
-                                    placeholder="请输入拒绝原因..."
-                                    rows={4}
-                                />
+
+                    <div className="space-y-4 py-2">
+                        {reviewAction === 'approve' && (
+                            <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-md text-sm text-blue-900 dark:text-blue-100">
+                                <AlertCircle className="size-4 mt-0.5 shrink-0" />
+                                <div>
+                                    {selectedTransaction?.transaction_type === 'settlement' ? (
+                                        <p>请确认您已收到技师转账的款项。确认后将扣除技师的欠款余额。</p>
+                                    ) : (
+                                        <p>请确认您已向技师完成打款。确认后将扣除技师的代收余额。</p>
+                                    )}
+                                </div>
                             </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <Label htmlFor="review-notes">
+                                {reviewAction === 'approve' ? '备注（可选）' : '驳回原因（必填）'}
+                            </Label>
+                            <Textarea
+                                id="review-notes"
+                                value={reviewNotes}
+                                onChange={(e) => setReviewNotes(e.target.value)}
+                                placeholder={reviewAction === 'approve' ? '输入备注信息...' : '请输入驳回原因...'}
+                                rows={3}
+                            />
                         </div>
-                    )}
-                    {reviewAction === 'approve' && (
-                        <div className="py-4">
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <AlertCircle className="size-4" />
-                                <span>确认批准此申请？批准后将更新技师账户余额。</span>
-                            </div>
-                        </div>
-                    )}
+                    </div>
+
                     <DialogFooter>
                         <Button
                             variant="outline"
@@ -406,14 +538,48 @@ export function TransactionsListContent() {
                         >
                             取消
                         </Button>
-                        <Button
-                            variant={reviewAction === 'approve' ? 'default' : 'destructive'}
-                            onClick={handleReview}
-                            disabled={reviewing}
-                        >
-                            {reviewing ? '处理中...' : reviewAction === 'approve' ? '确认批准' : '确认拒绝'}
-                        </Button>
+                        {reviewAction === 'approve' ? (
+                            <Button
+                                onClick={handleReview}
+                                disabled={reviewing}
+                                className="bg-green-600 hover:bg-green-700"
+                            >
+                                {reviewing ? '处理中...' : '确认通过'}
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="destructive"
+                                onClick={handleReview}
+                                disabled={reviewing}
+                            >
+                                {reviewing ? '处理中...' : '确认驳回'}
+                            </Button>
+                        )}
                     </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* 图片预览对话框 */}
+            <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
+                <DialogContent className="max-w-3xl p-0 overflow-hidden bg-black/90 border-none">
+                    <div className="relative w-full h-[80vh] flex items-center justify-center">
+                        {previewImage && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                                src={previewImage}
+                                alt="支付凭证"
+                                className="max-w-full max-h-full object-contain"
+                            />
+                        )}
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-2 right-2 text-white hover:bg-white/20"
+                            onClick={() => setPreviewImage(null)}
+                        >
+                            <XCircle className="size-6" />
+                        </Button>
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>

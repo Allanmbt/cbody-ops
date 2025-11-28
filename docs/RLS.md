@@ -1422,6 +1422,190 @@ GRANT SELECT, INSERT ON public.settlement_transactions TO authenticated;
 
 ---
 
+## order_platform_payments 订单平台收款明细表策略
+
+**用途说明**：记录技师通过平台收款码代收的每一笔款项，支持订单完成前后添加收款记录。
+
+**关键特性**：
+- 支持通过 `order_id`（订单ID）或 `order_settlement_id`（结算ID）关联
+- 允许订单完成前（pending/confirmed/en_route/arrived/in_service）添加收款记录
+- 允许订单完成后 30 分钟内编辑收款记录
+
+```sql
+ALTER TABLE public.order_platform_payments ENABLE ROW LEVEL SECURITY;
+
+-- 策略1：技师查看自己订单的平台收款记录（支持 order_id 或 order_settlement_id）
+CREATE POLICY "order_platform_payments.self.select"
+  ON public.order_platform_payments
+  FOR SELECT
+  USING (
+    -- 通过 order_id 检查权限
+    EXISTS (
+      SELECT 1
+      FROM public.orders o
+      JOIN public.girls g ON g.id = o.girl_id
+      WHERE o.id = order_platform_payments.order_id
+        AND g.user_id = auth.uid()
+    )
+    OR
+    -- 通过 order_settlement_id 检查权限
+    EXISTS (
+      SELECT 1
+      FROM public.order_settlements os
+      JOIN public.girls g ON g.id = os.girl_id
+      WHERE os.id = order_platform_payments.order_settlement_id
+        AND g.user_id = auth.uid()
+    )
+  );
+
+-- 策略2：技师可以为自己的订单创建平台收款记录（支持 order_id 或 order_settlement_id）
+CREATE POLICY "order_platform_payments.self.insert"
+  ON public.order_platform_payments
+  FOR INSERT
+  WITH CHECK (
+    -- 必须是自己创建
+    created_by = auth.uid()
+    AND
+    (
+      -- 情况1：如果提供了 order_id，检查订单是否属于自己
+      (
+        order_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM public.orders o
+          JOIN public.girls g ON g.id = o.girl_id
+          WHERE o.id = order_platform_payments.order_id
+            AND g.user_id = auth.uid()
+        )
+      )
+      OR
+      -- 情况2：如果提供了 order_settlement_id，检查结算记录是否属于自己
+      (
+        order_settlement_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM public.order_settlements os
+          JOIN public.girls g ON g.id = os.girl_id
+          WHERE os.id = order_platform_payments.order_settlement_id
+            AND g.user_id = auth.uid()
+        )
+      )
+    )
+  );
+
+-- 策略3：技师可以编辑自己创建的收款记录（30分钟内）
+CREATE POLICY "order_platform_payments.self.update"
+  ON public.order_platform_payments
+  FOR UPDATE
+  USING (
+    created_by = auth.uid()
+    AND EXTRACT(EPOCH FROM (NOW() - created_at)) < 1800
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM public.orders o
+        JOIN public.girls g ON g.id = o.girl_id
+        WHERE o.id = order_platform_payments.order_id
+          AND g.user_id = auth.uid()
+      )
+      OR
+      EXISTS (
+        SELECT 1
+        FROM public.order_settlements os
+        JOIN public.girls g ON g.id = os.girl_id
+        WHERE os.id = order_platform_payments.order_settlement_id
+          AND g.user_id = auth.uid()
+      )
+    )
+  )
+  WITH CHECK (
+    created_by = auth.uid()
+    AND EXTRACT(EPOCH FROM (NOW() - created_at)) < 1800
+  );
+
+-- 策略4：管理员查看所有平台收款记录
+CREATE POLICY "order_platform_payments.admin.select"
+  ON public.order_platform_payments
+  FOR SELECT
+  USING (public.is_admin());
+
+-- 策略5：管理员可以管理所有平台收款记录
+CREATE POLICY "order_platform_payments.admin.all"
+  ON public.order_platform_payments
+  FOR ALL
+  USING (public.is_admin());
+
+GRANT SELECT, INSERT, UPDATE ON public.order_platform_payments TO authenticated;
+```
+
+**说明**：
+- ✅ 支持订单完成前后添加收款记录（通过 `order_id` 或 `order_settlement_id`）
+- ✅ 技师只能查看和操作自己订单的平台收款记录
+- ✅ 技师可以在创建后 30 分钟内编辑收款记录
+- ✅ 订单核验通过后，由业务逻辑控制是否可编辑（RLS 不强制限制）
+- ✅ 管理员拥有完全访问权限
+
+### Storage Policies for upload/payments 存储桶策略
+
+```sql
+-- 策略1：技师可以上传收款截图到自己的 payments/ 文件夹
+CREATE POLICY "payments_uploads.girl.insert"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'payments'
+  AND EXISTS (
+    SELECT 1 FROM public.girls g
+    WHERE g.id::text = (storage.foldername(name))[2]
+      AND g.user_id = auth.uid()
+  )
+);
+
+-- 策略2：技师可以读取自己的收款截图
+CREATE POLICY "payments_uploads.girl.select"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'payments'
+  AND EXISTS (
+    SELECT 1 FROM public.girls g
+    WHERE g.id::text = (storage.foldername(name))[2]
+      AND g.user_id = auth.uid()
+  )
+);
+
+-- 策略3：管理员可以读取所有收款截图
+CREATE POLICY "payments_uploads.admin.select"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'payments'
+  AND public.is_admin()
+);
+
+-- 策略4：管理员可以删除收款截图
+CREATE POLICY "payments_uploads.admin.delete"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'payments'
+  AND public.is_admin()
+);
+```
+
+**说明**：
+- 存储桶：`upload`
+- 路径格式：`payments/{girl_id}/*`（基于技师 ID，不依赖订单 ID）
+- 技师只能上传和读取自己的收款截图
+- 管理员可以读取和删除所有收款截图
+- **简化版本**：无需关联 orders 或 order_settlements 表，性能更好
+
+---
+
 ## reports（举报表）策略
 
 ```sql
@@ -1494,7 +1678,7 @@ GRANT UPDATE, DELETE ON public.reports TO authenticated;
 - 用户不能更新或删除自己的举报
 - 管理员拥有完全访问权限
 
-### Storage Policies for uploads/reports 存储桶策略
+### Storage Policies for upload/reports 存储桶策略
 
 ```sql
 -- 策略1：举报人可以上传截图到自己的举报目录
@@ -1502,7 +1686,7 @@ CREATE POLICY "reports_uploads.reporter.insert"
 ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK (
-  bucket_id = 'uploads'
+  bucket_id = 'upload'
   AND (storage.foldername(name))[1] = 'reports'
   AND EXISTS (
     SELECT 1 FROM public.reports r
@@ -1516,7 +1700,7 @@ CREATE POLICY "reports_uploads.reporter.select"
 ON storage.objects FOR SELECT
 TO authenticated
 USING (
-  bucket_id = 'uploads'
+  bucket_id = 'upload'
   AND (storage.foldername(name))[1] = 'reports'
   AND EXISTS (
     SELECT 1 FROM public.reports r
@@ -1530,7 +1714,7 @@ CREATE POLICY "reports_uploads.admin.select"
 ON storage.objects FOR SELECT
 TO authenticated
 USING (
-  bucket_id = 'uploads'
+  bucket_id = 'upload'
   AND (storage.foldername(name))[1] = 'reports'
   AND public.is_admin()
 );
@@ -1540,11 +1724,134 @@ CREATE POLICY "reports_uploads.admin.delete"
 ON storage.objects FOR DELETE
 TO authenticated
 USING (
-  bucket_id = 'uploads'
+  bucket_id = 'upload'
   AND (storage.foldername(name))[1] = 'reports'
   AND public.is_admin()
 );
 ```
+
+### Storage Policies for upload/bank_accounts 存储桶策略
+
+```sql
+-- 策略1：技师可以上传二维码到自己的银行账户目录
+CREATE POLICY "bank_accounts_uploads.girl.insert"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'bank_accounts'
+  AND (storage.foldername(name))[2] IN (
+    SELECT id::text FROM public.girls WHERE user_id = auth.uid()
+  )
+);
+
+-- 策略2：技师可以读取自己的银行账户二维码
+CREATE POLICY "bank_accounts_uploads.girl.select"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'bank_accounts'
+  AND (storage.foldername(name))[2] IN (
+    SELECT id::text FROM public.girls WHERE user_id = auth.uid()
+  )
+);
+
+-- 策略3：技师可以更新/替换自己的银行账户二维码
+CREATE POLICY "bank_accounts_uploads.girl.update"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'bank_accounts'
+  AND (storage.foldername(name))[2] IN (
+    SELECT id::text FROM public.girls WHERE user_id = auth.uid()
+  )
+);
+
+-- 策略4：技师可以删除自己的银行账户二维码
+CREATE POLICY "bank_accounts_uploads.girl.delete"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'bank_accounts'
+  AND (storage.foldername(name))[2] IN (
+    SELECT id::text FROM public.girls WHERE user_id = auth.uid()
+  )
+);
+
+-- 策略5：管理员可以读取所有银行账户二维码
+CREATE POLICY "bank_accounts_uploads.admin.select"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'bank_accounts'
+  AND public.is_admin()
+);
+```
+
+---
+
+### Storage Policies for upload/settlements 存储桶策略
+
+```sql
+-- 策略1：技师可以上传结账支付凭证到自己的 settlements/ 文件夹
+CREATE POLICY "settlements_uploads.girl.insert"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'settlements'
+  AND EXISTS (
+    SELECT 1 FROM public.girls g
+    WHERE g.id::text = (storage.foldername(name))[2]
+      AND g.user_id = auth.uid()
+  )
+);
+
+-- 策略2：技师可以读取自己的结账支付凭证
+CREATE POLICY "settlements_uploads.girl.select"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'settlements'
+  AND EXISTS (
+    SELECT 1 FROM public.girls g
+    WHERE g.id::text = (storage.foldername(name))[2]
+      AND g.user_id = auth.uid()
+  )
+);
+
+-- 策略3：管理员可以读取所有结账支付凭证
+CREATE POLICY "settlements_uploads.admin.select"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'settlements'
+  AND public.is_admin()
+);
+
+-- 策略4：管理员可以删除结账支付凭证
+CREATE POLICY "settlements_uploads.admin.delete"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'upload'
+  AND (storage.foldername(name))[1] = 'settlements'
+  AND public.is_admin()
+);
+```
+
+**说明**：
+- 存储桶：`upload`
+- 路径格式：`settlements/{girl_id}/*.jpg`（基于技师 ID）
+- 技师只能上传和读取自己的结账支付凭证
+- 管理员可以读取和删除所有结账支付凭证
+- 自动压缩：最大尺寸 1600px，质量 0.6，JPEG 格式（与银行账户上传一致）
 
 ---
 

@@ -22,7 +22,7 @@ export interface OrderStats {
 export interface MonitoringOrderFilters {
   search?: string
   status?: OrderStatus[]
-  time_range?: 'today' | 'yesterday' | '3days' | '7days' | 'custom' | 'all'
+  time_range?: 'today' | 'yesterday' | '3days' | '7days' | 'custom'
   start_date?: string
   end_date?: string
   only_abnormal?: boolean
@@ -113,10 +113,9 @@ async function getOrderStatsLegacy(supabase: any, todayStart: string, tenMinutes
     .gte('completed_at', todayStart)
 
   const { count: todayCancelledCount } = await supabase
-    .from('orders')
+    .from('order_cancellations')
     .select('*', { count: 'exact', head: true })
-    .eq('status', 'cancelled')
-    .gte('updated_at', todayStart)
+    .gte('cancelled_at', todayStart)
 
   return {
     ok: true as const,
@@ -160,49 +159,51 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
       `, { count: 'exact' })
 
     // 🔧 时间范围筛选（泰国时区 UTC+7，以凌晨6点为分界点）
-    let timeStart: string
-    let timeEnd: string | undefined
+    // 注意：当有搜索条件时，不限制时间范围，允许搜索全部订单
+    if (!search) {
+      let timeStart: string
+      let timeEnd: string | undefined
 
-    // 获取泰国当前时间（UTC+7）
-    const nowUTC = new Date()
-    const thailandOffset = 7 * 60 // 泰国时区偏移（分钟）
-    const thailandNow = new Date(nowUTC.getTime() + thailandOffset * 60 * 1000)
+      // 获取泰国当前时间（UTC+7）
+      const nowUTC = new Date()
+      const thailandOffset = 7 * 60 // 泰国时区偏移（分钟）
+      const thailandNow = new Date(nowUTC.getTime() + thailandOffset * 60 * 1000)
 
-    // 计算今天6点的时间戳（泰国时区）
-    const todayThailand = new Date(thailandNow)
-    todayThailand.setHours(6, 0, 0, 0)
+      // 计算今天6点的时间戳（泰国时区）
+      const todayThailand = new Date(thailandNow)
+      todayThailand.setHours(6, 0, 0, 0)
 
-    // 如果当前时间小于今天6点，说明还在"昨天"
-    if (thailandNow.getHours() < 6) {
-      todayThailand.setDate(todayThailand.getDate() - 1)
-    }
+      // 如果当前时间小于今天6点，说明还在"昨天"
+      if (thailandNow.getHours() < 6) {
+        todayThailand.setDate(todayThailand.getDate() - 1)
+      }
 
-    // 转换回 UTC 时间
-    const todayStartUTC = new Date(todayThailand.getTime() - thailandOffset * 60 * 1000)
-    const yesterdayStartUTC = new Date(todayStartUTC.getTime() - 24 * 60 * 60 * 1000)
+      // 转换回 UTC 时间
+      const todayStartUTC = new Date(todayThailand.getTime() - thailandOffset * 60 * 1000)
+      const yesterdayStartUTC = new Date(todayStartUTC.getTime() - 24 * 60 * 60 * 1000)
 
-    if (time_range === 'today') {
-      // 今日：从今天6点开始
-      timeStart = todayStartUTC.toISOString()
-      query = query.gte('created_at', timeStart)
-    } else if (time_range === 'yesterday') {
-      // 昨日：昨天6点到今天6点
-      timeStart = yesterdayStartUTC.toISOString()
-      timeEnd = todayStartUTC.toISOString()
-      query = query.gte('created_at', timeStart).lt('created_at', timeEnd)
-    } else if (time_range === '3days') {
-      timeStart = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
-      query = query.gte('created_at', timeStart)
-    } else if (time_range === '7days') {
-      timeStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-      query = query.gte('created_at', timeStart)
-    } else if (time_range === 'custom' && start_date) {
-      query = query.gte('created_at', start_date)
-      if (end_date) {
-        query = query.lte('created_at', end_date)
+      if (time_range === 'today') {
+        // 今日：从今天6点开始
+        timeStart = todayStartUTC.toISOString()
+        query = query.gte('created_at', timeStart)
+      } else if (time_range === 'yesterday') {
+        // 昨日：昨天6点到今天6点
+        timeStart = yesterdayStartUTC.toISOString()
+        timeEnd = todayStartUTC.toISOString()
+        query = query.gte('created_at', timeStart).lt('created_at', timeEnd)
+      } else if (time_range === '3days') {
+        timeStart = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+        query = query.gte('created_at', timeStart)
+      } else if (time_range === '7days') {
+        timeStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        query = query.gte('created_at', timeStart)
+      } else if (time_range === 'custom' && start_date) {
+        query = query.gte('created_at', start_date)
+        if (end_date) {
+          query = query.lte('created_at', end_date)
+        }
       }
     }
-    // 注意：time_range === 'all' 时不限制时间
 
     // 状态筛选
     if (status && status.length > 0) {

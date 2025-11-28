@@ -32,8 +32,10 @@ export interface OrderSettlement {
     payment_content_type: 'deposit' | 'full_amount' | 'tip' | 'other' | null
     payment_method: 'wechat' | 'alipay' | 'thb_bank_transfer' | 'credit_card' | 'cash' | 'other' | null
     payment_notes: string | null
-    settlement_status: 'pending' | 'settled'
+    notes: string | null
+    settlement_status: 'pending' | 'settled' | 'rejected'
     settled_at: string | null
+    reject_reason: string | null
     created_at: string
     updated_at: string
 }
@@ -164,6 +166,16 @@ export interface SettlementListFilters {
     status?: 'pending' | 'settled' | 'all'
     date_from?: string
     date_to?: string
+    // 按订单完成时间筛选（财务日）
+    completed_at_from?: string
+    completed_at_to?: string
+    // 搜索
+    search?: string
+    // 平台代收筛选
+    platform_collected?: 'all' | 'collected' | 'not_collected'
+    // 排序
+    sort_by?: 'girl_name' | 'created_at' | 'service_fee' | 'platform_should_get'
+    sort_order?: 'asc' | 'desc'
     amount_min?: number
     amount_max?: number
 }
@@ -190,4 +202,44 @@ export interface PaginatedResponse<T> {
     page: number
     pageSize: number
     totalPages: number
+}
+
+// ==================== 平台代收款记录 ====================
+
+export interface OrderPlatformPayment {
+    id: string
+    order_id: string
+    order_settlement_id: string | null
+    girl_id: string
+    amount_rmb: number
+    payment_method: 'wechat' | 'alipay'
+    payment_content_type: 'deposit' | 'full_amount' | 'tip' | 'other'
+    proof_url: string
+    notes: string | null
+    created_at: string
+    updated_at: string
+}
+
+export interface ExchangeRateInfo {
+    rate: number
+    display: string
+    example_rmb_to_thb: string
+    example_thb_to_rmb: string
+}
+
+export interface OrderPaymentPageData {
+    ok: boolean
+    order_id: string
+    order_number: string
+    order_status: string
+    order_settlement_id: string | null
+    settlement_status: 'pending' | 'settled' | 'rejected' | null
+    can_edit: boolean
+    summary: {
+        total_amount: number
+        payment_count: number
+    }
+    payments: OrderPlatformPayment[]
+    qr_configs: Record<string, any>
+    exchange_rate: ExchangeRateInfo | null
 }

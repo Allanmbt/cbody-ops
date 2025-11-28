@@ -5,7 +5,7 @@
 -- 性能提升：10-30 倍
 -- ========================================
 
--- 1. 创建订单管理统计 RPC 函数（泰国时区，6点为起点）
+-- 1. 创建订单管理统计 RPC 函数（轻量级）
 CREATE OR REPLACE FUNCTION get_admin_order_stats()
 RETURNS JSON
 LANGUAGE plpgsql
@@ -14,54 +14,24 @@ AS $$
 DECLARE
   result JSON;
   total_count INT;
-  pending_count INT;
   active_count INT;
-  today_completed_count INT;
-  today_cancelled_count INT;
-  yesterday_completed_count INT;
-  yesterday_cancelled_count INT;
-  today_start TIMESTAMPTZ;
-  yesterday_start TIMESTAMPTZ;
-  thailand_now TIMESTAMPTZ;
+  completed_count INT;
+  cancelled_count INT;
 BEGIN
-  -- 🔧 使用泰国时区（UTC+7），以凌晨6点为分界点
-  thailand_now := NOW() AT TIME ZONE 'Asia/Bangkok';
-  
-  -- 计算今天6点的时间戳（泰国时区）
-  today_start := DATE_TRUNC('day', thailand_now) + INTERVAL '6 hours';
-  
-  -- 如果当前时间小于今天6点，说明还在"昨天"
-  IF EXTRACT(HOUR FROM thailand_now) < 6 THEN
-    today_start := today_start - INTERVAL '1 day';
-  END IF;
-  
-  -- 昨天6点
-  yesterday_start := today_start - INTERVAL '1 day';
-  
-  -- 转换回 UTC 时间
-  today_start := today_start AT TIME ZONE 'Asia/Bangkok';
-  yesterday_start := yesterday_start AT TIME ZONE 'Asia/Bangkok';
-  
-  -- 一次性获取所有统计
+  -- 一次性获取基础统计（4个查询合并为1个）
   SELECT 
     COUNT(*) AS total,
-    COUNT(*) FILTER (WHERE status = 'pending') AS pending,
     COUNT(*) FILTER (WHERE status IN ('confirmed', 'en_route', 'arrived', 'in_service')) AS active,
-    COUNT(*) FILTER (WHERE status = 'completed' AND completed_at >= today_start) AS today_completed,
-    COUNT(*) FILTER (WHERE status = 'cancelled' AND updated_at >= today_start) AS today_cancelled,
-    COUNT(*) FILTER (WHERE status = 'completed' AND completed_at >= yesterday_start AND completed_at < today_start) AS yesterday_completed,
-    COUNT(*) FILTER (WHERE status = 'cancelled' AND updated_at >= yesterday_start AND updated_at < today_start) AS yesterday_cancelled
-  INTO total_count, pending_count, active_count, today_completed_count, today_cancelled_count, yesterday_completed_count, yesterday_cancelled_count
+    COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+    COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled
+  INTO total_count, active_count, completed_count, cancelled_count
   FROM orders;
   
   result := json_build_object(
     'total', COALESCE(total_count, 0),
-    'pending', COALESCE(pending_count, 0),
     'active', COALESCE(active_count, 0),
-    'today_completed', COALESCE(today_completed_count, 0),
-    'today_cancelled', COALESCE(today_cancelled_count, 0),
-    'yesterday_completed', COALESCE(yesterday_completed_count, 0),
-    'yesterday_cancelled', COALESCE(yesterday_cancelled_count, 0)
+    'completed', COALESCE(completed_count, 0),
+    'cancelled', COALESCE(cancelled_count, 0)
   );
   
   RETURN result;
@@ -168,5 +138,5 @@ CREATE INDEX IF NOT EXISTS idx_orders_created_at
   ON orders(created_at DESC);
 
 -- 4. 注释
-COMMENT ON FUNCTION get_admin_order_stats() IS '获取订单管理统计（总数/待确认/进行中/今日完成/今日取消），合并多次查询为1次';
+COMMENT ON FUNCTION get_admin_order_stats() IS '获取订单管理基础统计（总数/进行中/已完成/已取消），轻量级设计';
 COMMENT ON VIEW v_admin_orders_list IS '订单管理列表视图，预关联技师、服务、时长、用户信息，解决N+1查询';
