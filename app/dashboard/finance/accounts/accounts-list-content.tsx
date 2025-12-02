@@ -45,8 +45,8 @@ import {
     ArrowUp,
     ArrowDown
 } from "lucide-react"
-import { getSettlementAccounts } from "@/lib/features/finance/actions"
-import type { GirlSettlementAccountWithGirl, AccountListFilters } from "@/lib/features/finance"
+import { getSettlementAccounts, updateGirlDeposit } from "@/lib/features/finance/actions"
+import type { GirlSettlementAccountWithGirl } from "@/lib/features/finance"
 import { toast } from "sonner"
 import { formatCurrency, cn } from "@/lib/utils"
 import { AccountDetailDialog } from "./account-detail-dialog"
@@ -63,7 +63,6 @@ export function AccountsListContent() {
 
     // 筛选条件
     const [search, setSearch] = useState(searchParams.get('search') || '')
-    const [debtStatus, setDebtStatus] = useState(searchParams.get('debt_status') || 'all')
     const [cityFilter, setCityFilter] = useState<string>('all')
     const [statusFilter, setStatusFilter] = useState<string>('all')
     const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null)
@@ -75,6 +74,11 @@ export function AccountsListContent() {
     // 详情侧边栏
     const [detailGirlId, setDetailGirlId] = useState<string | null>(null)
     const [detailOpen, setDetailOpen] = useState(false)
+
+    // 押金编辑状态
+    const [editingDepositId, setEditingDepositId] = useState<string | null>(null)
+    const [editingDepositValue, setEditingDepositValue] = useState<string>('')
+    const [updatingDeposit, setUpdatingDeposit] = useState(false)
 
     useEffect(() => {
         loadAccounts()
@@ -310,6 +314,59 @@ export function AccountsListContent() {
     // 获取唯一城市列表
     const cities = Array.from(new Set(allAccounts.map(a => a.girls?.cities?.name?.zh).filter(Boolean))) as string[]
 
+    // 开始编辑押金
+    function startEditDeposit(accountId: string, currentDeposit: number) {
+        setEditingDepositId(accountId)
+        setEditingDepositValue(currentDeposit.toString())
+    }
+
+    // 取消编辑押金
+    function cancelEditDeposit() {
+        setEditingDepositId(null)
+        setEditingDepositValue('')
+    }
+
+    // 保存押金修改
+    async function saveDeposit(girlId: string) {
+        try {
+            setUpdatingDeposit(true)
+
+            const depositAmount = parseFloat(editingDepositValue)
+
+            // 验证输入
+            if (isNaN(depositAmount) || depositAmount < 0) {
+                toast.error('请输入有效的押金金额')
+                return
+            }
+
+            const result = await updateGirlDeposit({
+                girl_id: girlId,
+                deposit_amount: depositAmount
+            })
+
+            if (!result.ok) {
+                toast.error(result.error || '更新押金失败')
+                return
+            }
+
+            toast.success('押金已更新')
+
+            // 更新本地数据
+            setAllAccounts(prev => prev.map(acc =>
+                acc.girl_id === girlId
+                    ? { ...acc, deposit_amount: depositAmount as any }
+                    : acc
+            ))
+
+            cancelEditDeposit()
+        } catch (error) {
+            console.error('[SaveDeposit] 保存失败:', error)
+            toast.error('保存押金失败')
+        } finally {
+            setUpdatingDeposit(false)
+        }
+    }
+
     return (
         <div className="flex flex-col gap-6">
             {/* 页面标题 */}
@@ -498,6 +555,7 @@ export function AccountsListContent() {
                                                     size="sm"
                                                     className="h-auto p-0 font-medium hover:bg-transparent ml-auto"
                                                     onClick={() => toggleSort('deposit_amount')}
+                                                    title="点击排序，单击金额可编辑"
                                                 >
                                                     押金 (THB)
                                                     {getSortIcon('deposit_amount')}
@@ -580,9 +638,53 @@ export function AccountsListContent() {
                                                         {account.girls?.cities?.name?.zh || '-'}
                                                     </TableCell>
                                                     <TableCell className="text-right">
-                                                        <div className="font-mono">
-                                                            {formatCurrency(account.deposit_amount)}
-                                                        </div>
+                                                        {editingDepositId === account.id ? (
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <Input
+                                                                    type="number"
+                                                                    value={editingDepositValue}
+                                                                    onChange={(e) => setEditingDepositValue(e.target.value)}
+                                                                    className="h-8 w-28 text-right"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    disabled={updatingDeposit}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            saveDeposit(account.girl_id)
+                                                                        } else if (e.key === 'Escape') {
+                                                                            cancelEditDeposit()
+                                                                        }
+                                                                    }}
+                                                                    autoFocus
+                                                                />
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="h-8 w-8 p-0"
+                                                                    onClick={() => saveDeposit(account.girl_id)}
+                                                                    disabled={updatingDeposit}
+                                                                >
+                                                                    <CheckCircle2 className="size-4 text-green-600" />
+                                                                </Button>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="h-8 w-8 p-0"
+                                                                    onClick={cancelEditDeposit}
+                                                                    disabled={updatingDeposit}
+                                                                >
+                                                                    <X className="size-4 text-red-600" />
+                                                                </Button>
+                                                            </div>
+                                                        ) : (
+                                                            <div
+                                                                className="font-mono cursor-pointer hover:bg-muted/50 rounded px-2 py-1 transition-colors"
+                                                                onClick={() => startEditDeposit(account.id, Number(account.deposit_amount))}
+                                                                title="点击编辑押金"
+                                                            >
+                                                                {formatCurrency(account.deposit_amount)}
+                                                            </div>
+                                                        )}
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="space-y-1">
