@@ -54,7 +54,7 @@ export async function getChiangMaiGirls(
         avatar_url,
         girls_status!inner(status, next_available_time)
       `, { count: 'exact' })
-      .eq('city_id', city.id)
+      .eq('city_id', (city as { id: string }).id)
       .eq('is_blocked', false)
       .in('girls_status.status', ['available', 'busy'])
 
