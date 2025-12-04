@@ -382,7 +382,7 @@ export async function getUserDetail(userId: string): Promise<{
         return {
             success: true,
             data: {
-                ...profile,
+                ...(profile as any),
                 email: authUser?.user?.email || null
             }
         }
