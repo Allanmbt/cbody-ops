@@ -18,7 +18,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, MapPin, Image as ImageIcon } from "lucide-react"
+import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, Image as ImageIcon } from "lucide-react"
 import type { GirlWithStatus } from "@/lib/features/girls"
 
 interface GirlTableProps {
@@ -27,8 +27,6 @@ interface GirlTableProps {
     onEdit: (girl: GirlWithStatus) => void
     onToggleBlocked: (girl: GirlWithStatus) => void
     onToggleVerified: (girl: GirlWithStatus) => void
-    onManageStatus: (girl: GirlWithStatus) => void
-    onManageMedia: (girl: GirlWithStatus) => void
 }
 
 export function GirlTable({
@@ -36,9 +34,7 @@ export function GirlTable({
     loading,
     onEdit,
     onToggleBlocked,
-    onToggleVerified,
-    onManageStatus,
-    onManageMedia
+    onToggleVerified
 }: GirlTableProps) {
     const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
     const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -282,13 +278,6 @@ export function GirlTable({
                                                 <EyeOff className="mr-2 h-4 w-4" />
                                             )}
                                             {girl.is_blocked ? "恢复展示" : "暂停展示"}
-                                        </DropdownMenuItem>
-
-                                        <DropdownMenuSeparator />
-
-                                        <DropdownMenuItem onClick={() => onManageStatus(girl)}>
-                                            <MapPin className="mr-2 h-4 w-4" />
-                                            管理运营状态
                                         </DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>

@@ -11,7 +11,6 @@ import { LoadingSpinner } from "@/components/ui/loading"
 import { Plus, Search, ChevronLeft, ChevronRight } from "lucide-react"
 import { GirlTable } from "@/components/girls/GirlTable"
 import { GirlFormDialog } from "@/components/girls/GirlFormDialog"
-import { GirlStatusDrawer } from "@/components/girls/GirlStatusDrawer"
 import { GirlStatsCards } from "@/components/girls/GirlStatsCards"
 import {
     getGirlsProfileList,
@@ -58,9 +57,8 @@ export default function GirlsPage() {
     const [showFormDialog, setShowFormDialog] = useState(false)
     const [editingGirl, setEditingGirl] = useState<GirlWithStatus | null>(null)
 
-    // 状态抽屉
-    const [showStatusDrawer, setShowStatusDrawer] = useState(false)
-    const [statusGirl, setStatusGirl] = useState<GirlWithStatus | null>(null)
+    // 搜索输入框的临时值（用于输入但未提交）
+    const [searchInput, setSearchInput] = useState('')
 
     // 加载城市和分类
     useEffect(() => {
@@ -119,11 +117,18 @@ export default function GirlsPage() {
         loadGirls()
     }, [])
 
-    // 处理搜索
-    const handleSearch = (search: string) => {
-        setFilters(prev => ({ ...prev, search }))
+    // 执行搜索（由搜索按钮触发）
+    const handleSearch = () => {
+        setFilters(prev => ({ ...prev, search: searchInput.trim() }))
         setPagination(prev => ({ ...prev, page: 1 }))
-        loadGirls({ search, page: 1 })
+        loadGirls({ search: searchInput.trim(), page: 1 })
+    }
+
+    // 处理搜索输入框回车键
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            handleSearch()
+        }
     }
 
     // 处理筛选
@@ -153,6 +158,7 @@ export default function GirlsPage() {
             sort_order: 'asc' as const
         }
         setFilters(resetFilters)
+        setSearchInput('')  // 重置搜索输入框
         setPagination(prev => ({ ...prev, page: 1 }))
         loadGirls({ ...resetFilters, page: 1 })
     }
@@ -206,20 +212,9 @@ export default function GirlsPage() {
         }
     }
 
-    // 管理状态
-    const handleManageStatus = (girl: GirlWithStatus) => {
-        setStatusGirl(girl)
-        setShowStatusDrawer(true)
-    }
-
     // 管理媒体（暂时占位）
     const handleManageMedia = (girl: GirlWithStatus) => {
         toast.info("媒体管理功能即将开放")
-    }
-
-    // 状态成功回调
-    const handleStatusSuccess = () => {
-        loadGirls()
     }
 
     return (
@@ -228,7 +223,7 @@ export default function GirlsPage() {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h1 className="text-2xl font-semibold">技师管理</h1>
-                    <p className="text-muted-foreground">管理技师信息、状态和位置</p>
+                    <p className="text-muted-foreground">管理技师信息和认证状态</p>
                 </div>
                 <Button onClick={handleAdd} className="gap-2">
                     <Plus className="size-4" />
@@ -249,14 +244,21 @@ export default function GirlsPage() {
                             {/* 搜索 + 审核状态导航 + 基础筛选（自适应换行，移动端友好） */}
                             <div className="flex flex-wrap items-center gap-3 mb-4">
                                 {/* 搜索框 */}
-                                <div className="relative flex-1 min-w-[220px] max-w-md">
-                                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
-                                    <Input
-                                        placeholder="搜索工号、用户名..."
-                                        value={filters.search}
-                                        onChange={(e) => handleSearch(e.target.value)}
-                                        className="pl-10"
-                                    />
+                                <div className="flex gap-2 flex-1 min-w-[220px] max-w-md">
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+                                        <Input
+                                            placeholder="搜索工号、用户名..."
+                                            value={searchInput}
+                                            onChange={(e) => setSearchInput(e.target.value)}
+                                            onKeyDown={handleSearchKeyDown}
+                                            className="pl-10"
+                                        />
+                                    </div>
+                                    <Button onClick={handleSearch} size="default">
+                                        <Search className="mr-2 h-4 w-4" />
+                                        搜索
+                                    </Button>
                                 </div>
 
                                 {/* 刷新按钮 */}
@@ -336,8 +338,6 @@ export default function GirlsPage() {
                                         onEdit={handleEdit}
                                         onToggleBlocked={handleToggleBlocked}
                                         onToggleVerified={handleToggleVerified}
-                                        onManageStatus={handleManageStatus}
-                                        onManageMedia={handleManageMedia}
                                     />
                                 </div>
                             </div>
@@ -385,14 +385,6 @@ export default function GirlsPage() {
                 onOpenChange={setShowFormDialog}
                 girl={editingGirl}
                 onSuccess={handleFormSuccess}
-            />
-
-            {/* 状态管理抽屉 */}
-            <GirlStatusDrawer
-                open={showStatusDrawer}
-                onOpenChange={setShowStatusDrawer}
-                girl={statusGirl}
-                onSuccess={handleStatusSuccess}
             />
         </>
     )

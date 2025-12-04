@@ -275,6 +275,24 @@ export async function approveTransaction(
       return { ok: false as const, error: "审核失败" }
     }
 
+    // 如果是提现申请且审核通过,发送系统通知给技师
+    if (txData.transaction_type === 'withdrawal' && txData.actual_amount_thb) {
+      try {
+        const { error: rpcError } = await (supabase as any).rpc('send_system_notification_to_girl', {
+          p_girl_id: txData.girl_id,
+          p_content: `Your withdrawal has been processed. We have transferred ฿${txData.actual_amount_thb.toFixed(2)} THB to your account. Please check your bank account.`
+        })
+
+        if (rpcError) {
+          console.error('[发送通知] RPC 调用失败:', rpcError)
+          // 不阻断审核流程，只记录错误
+        }
+      } catch (notifyError) {
+        console.error('[发送通知] 异常:', notifyError)
+        // 不阻断审核流程
+      }
+    }
+
     // TODO: 记录审计日志
 
     return { ok: true as const, data: undefined }

@@ -49,6 +49,9 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
     limit: 50
   })
 
+  // 搜索输入框的临时值（用于输入但未提交）
+  const [searchInput, setSearchInput] = useState('')
+
   // 加载统计数据
   const loadStats = async () => {
     setLoadingStats(true)
@@ -89,7 +92,16 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
     }
     loadTherapists()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.search, filters.status, filters.city, filters.only_abnormal, filters.page])
+  }, [filters.status, filters.city, filters.only_abnormal, filters.page])
+
+  // 当 filters.search 变化时重新加载（由搜索按钮触发）
+  useEffect(() => {
+    if (isInitialMount.current) {
+      return
+    }
+    loadTherapists()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search])
 
   // 刷新数据
   const handleRefresh = () => {
@@ -100,6 +112,7 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
 
   // 重置筛选
   const handleReset = () => {
+    setSearchInput('')
     setFilters({
       search: '',
       status: ['available', 'busy'],
@@ -108,6 +121,18 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
       page: 1,
       limit: 50
     })
+  }
+
+  // 执行搜索
+  const handleSearch = () => {
+    setFilters({ ...filters, search: searchInput.trim(), page: 1 })
+  }
+
+  // 处理搜索输入框回车键
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch()
+    }
   }
 
   // 状态筛选切换
@@ -197,18 +222,23 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
           <div className="flex flex-col gap-4">
             {/* 第一行：搜索 */}
             <div className="flex flex-col gap-4 sm:flex-row">
-              <div className="flex-1">
+              <div className="flex-1 flex gap-2">
                 <Label htmlFor="search" className="sr-only">搜索</Label>
-                <div className="relative">
+                <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="search"
                     placeholder="搜索工号/姓名"
-                    value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
                     className="pl-9"
                   />
                 </div>
+                <Button onClick={handleSearch} size="default">
+                  <Search className="mr-2 h-4 w-4" />
+                  搜索
+                </Button>
               </div>
               <Select
                 value={filters.city}

@@ -35,6 +35,7 @@ import {
   getTherapistWorkStats,
   setTherapistCooldown,
   cancelTherapistCooldown,
+  updateTherapistStatus,
   type TherapistWorkStats
 } from "@/app/dashboard/operations/therapists/actions"
 import { GoogleMapsLocation } from "./GoogleMapsLocation"
@@ -57,6 +58,7 @@ export function TherapistMonitoringDrawer({
   const [cooldownDialogOpen, setCooldownDialogOpen] = useState(false)
   const [selectedCooldownHours, setSelectedCooldownHours] = useState<number>(24)
   const [settingCooldown, setSettingCooldown] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
 
   useEffect(() => {
     if (open && therapist) {
@@ -103,6 +105,20 @@ export function TherapistMonitoringDrawer({
     } else {
       toast.error(result.error || "取消冷却失败")
     }
+  }
+
+  const handleUpdateStatus = async (newStatus: 'available' | 'busy' | 'offline') => {
+    if (!therapist) return
+
+    setUpdatingStatus(true)
+    const result = await updateTherapistStatus(therapist.id, newStatus)
+    if (result.ok) {
+      toast.success(`状态已更新为${newStatus === 'available' ? '在线' : newStatus === 'busy' ? '忙碌' : '离线'}`)
+      onRefresh()
+    } else {
+      toast.error(result.error || "更新状态失败")
+    }
+    setUpdatingStatus(false)
   }
 
   if (!therapist) return null
@@ -196,6 +212,40 @@ export function TherapistMonitoringDrawer({
             <div>
               <h3 className="text-sm font-semibold mb-3">状态信息</h3>
               <dl className="space-y-2.5 text-sm">
+                <div className="flex justify-between items-center">
+                  <dt className="text-muted-foreground">当前状态</dt>
+                  <dd>
+                    <Select
+                      value={therapist.status}
+                      onValueChange={handleUpdateStatus}
+                      disabled={updatingStatus}
+                    >
+                      <SelectTrigger className="w-[140px] h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="available">
+                          <div className="flex items-center gap-2">
+                            <Circle className="h-3 w-3 fill-green-500 text-green-500" />
+                            在线
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="busy">
+                          <div className="flex items-center gap-2">
+                            <Circle className="h-3 w-3 fill-orange-500 text-orange-500" />
+                            忙碌
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="offline">
+                          <div className="flex items-center gap-2">
+                            <Circle className="h-3 w-3 fill-gray-400 text-gray-400" />
+                            离线
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </dd>
+                </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">城市</dt>
                   <dd className="font-medium">{getCityName(therapist.city)}</dd>
@@ -308,6 +358,8 @@ export function TherapistMonitoringDrawer({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="2">2 小时</SelectItem>
+                <SelectItem value="12">12 小时</SelectItem>
                 <SelectItem value="24">24 小时</SelectItem>
                 <SelectItem value="48">48 小时（2天）</SelectItem>
                 <SelectItem value="72">72 小时（3天）</SelectItem>

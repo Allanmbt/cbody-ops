@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -20,7 +20,7 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Search, CheckCircle, XCircle, Clock, AlertCircle, DollarSign, TrendingUp, TrendingDown, Image as ImageIcon, ExternalLink } from "lucide-react"
+import { Search, CheckCircle, XCircle, Clock, AlertCircle, DollarSign, TrendingUp, TrendingDown, Image as ImageIcon, ExternalLink, Info } from "lucide-react"
 import { getTransactionStats, getTransactions, approveTransaction, rejectTransaction } from "./actions"
 import type { Transaction, TransactionStats, TransactionType } from "@/lib/features/transactions"
 import { toast } from "sonner"
@@ -54,6 +54,10 @@ export function TransactionsListContent() {
 
     // 图片预览状态
     const [previewImage, setPreviewImage] = useState<string | null>(null)
+
+    // 备注查看对话框状态
+    const [notesDialogOpen, setNotesDialogOpen] = useState(false)
+    const [selectedNotes, setSelectedNotes] = useState<string | null>(null)
 
     useEffect(() => {
         loadStats()
@@ -309,7 +313,11 @@ export function TransactionsListContent() {
                                                     <TableHead>支付凭证</TableHead>
                                                 </>
                                             ) : (
-                                                <TableHead>收款信息</TableHead>
+                                                <>
+                                                    <TableHead className="text-right">汇率 & 手续费</TableHead>
+                                                    <TableHead className="text-right">实际打款 (THB)</TableHead>
+                                                    <TableHead>备注</TableHead>
+                                                </>
                                             )}
                                             <TableHead>申请时间</TableHead>
                                             <TableHead>状态</TableHead>
@@ -364,14 +372,48 @@ export function TransactionsListContent() {
                                                         </TableCell>
                                                     </>
                                                 ) : (
-                                                    <TableCell>
-                                                        <div className="flex flex-col text-sm">
-                                                            <span className="font-medium">{tx.payment_method || '银行转账'}</span>
-                                                            <span className="text-muted-foreground text-xs truncate max-w-[200px]" title={tx.notes || ''}>
-                                                                {tx.notes || '-'}
-                                                            </span>
-                                                        </div>
-                                                    </TableCell>
+                                                    <>
+                                                        {/* 汇率 & 手续费 */}
+                                                        <TableCell className="text-right">
+                                                            <div className="flex flex-col text-sm">
+                                                                <span className="text-muted-foreground text-xs">
+                                                                    汇率: {tx.exchange_rate?.toFixed(4) || '-'}
+                                                                </span>
+                                                                <span className="text-muted-foreground text-xs">
+                                                                    费率: {tx.service_fee_rate ? `${(tx.service_fee_rate * 100).toFixed(2)}%` : '-'}
+                                                                </span>
+                                                            </div>
+                                                        </TableCell>
+                                                        {/* 实际打款 (THB) */}
+                                                        <TableCell className="text-right">
+                                                            {tx.actual_amount_thb ? (
+                                                                <div className="font-bold text-green-600">
+                                                                    ฿{tx.actual_amount_thb.toFixed(2)}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-muted-foreground text-sm">-</span>
+                                                            )}
+                                                        </TableCell>
+                                                        {/* 备注 */}
+                                                        <TableCell>
+                                                            {tx.notes ? (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="h-8 gap-1 text-blue-600"
+                                                                    onClick={() => {
+                                                                        setSelectedNotes(tx.notes)
+                                                                        setNotesDialogOpen(true)
+                                                                    }}
+                                                                >
+                                                                    <Info className="size-4" />
+                                                                    查看
+                                                                </Button>
+                                                            ) : (
+                                                                <span className="text-muted-foreground text-sm">-</span>
+                                                            )}
+                                                        </TableCell>
+                                                    </>
                                                 )}
 
                                                 <TableCell className="text-sm text-muted-foreground">
@@ -471,36 +513,67 @@ export function TransactionsListContent() {
                                 : '驳回申请'
                             }
                         </DialogTitle>
-                        <DialogDescription>
-                            {selectedTransaction && (
-                                <div className="space-y-3 mt-4 p-4 bg-muted/50 rounded-lg">
+                    </DialogHeader>
+
+                    {selectedTransaction && (
+                        <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">技师</span>
+                                <span className="font-medium">{selectedTransaction.girl?.name} (#{selectedTransaction.girl?.girl_number})</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">
+                                    {selectedTransaction.transaction_type === 'withdrawal' ? '申请金额 (RMB)' : '金额 (THB)'}
+                                </span>
+                                <span className="font-bold text-lg">
+                                    {selectedTransaction.transaction_type === 'withdrawal'
+                                        ? formatCurrency(selectedTransaction.amount, 'RMB')
+                                        : formatCurrency(selectedTransaction.amount, 'THB')
+                                    }
+                                </span>
+                            </div>
+
+                            {/* 提现申请的额外信息 */}
+                            {selectedTransaction.transaction_type === 'withdrawal' && (
+                                <>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">技师</span>
-                                        <span className="font-medium">{selectedTransaction.girl?.name} (#{selectedTransaction.girl?.girl_number})</span>
+                                        <span className="text-muted-foreground">汇率 (CNY to THB)</span>
+                                        <span className="font-medium">{selectedTransaction.exchange_rate?.toFixed(4) || '-'}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">金额</span>
-                                        <span className="font-bold text-lg">
-                                            {selectedTransaction.transaction_type === 'withdrawal'
-                                                ? formatCurrency(selectedTransaction.amount, 'RMB')
-                                                : formatCurrency(selectedTransaction.amount, 'THB')
-                                            }
+                                        <span className="text-muted-foreground">服务费率</span>
+                                        <span className="font-medium">
+                                            {selectedTransaction.service_fee_rate
+                                                ? `${(selectedTransaction.service_fee_rate * 100).toFixed(2)}%`
+                                                : '-'}
                                         </span>
                                     </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">方式</span>
-                                        <span>{selectedTransaction.payment_method || '-'}</span>
+                                    <div className="flex justify-between items-center pt-2 border-t">
+                                        <span className="text-muted-foreground font-semibold">实际打款 (THB)</span>
+                                        <span className="font-bold text-xl text-green-600">
+                                            {selectedTransaction.actual_amount_thb
+                                                ? `฿${selectedTransaction.actual_amount_thb.toFixed(2)}`
+                                                : '-'}
+                                        </span>
                                     </div>
-                                    {selectedTransaction.transaction_type === 'withdrawal' && (
-                                        <div className="flex justify-between">
-                                            <span className="text-muted-foreground">收款信息</span>
-                                            <span className="text-right max-w-[200px]">{selectedTransaction.notes || '-'}</span>
-                                        </div>
-                                    )}
+                                </>
+                            )}
+
+                            {selectedTransaction.transaction_type === 'settlement' && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">方式</span>
+                                    <span>{selectedTransaction.payment_method || '-'}</span>
                                 </div>
                             )}
-                        </DialogDescription>
-                    </DialogHeader>
+
+                            {selectedTransaction.notes && (
+                                <div className="flex flex-col gap-1 pt-2 border-t">
+                                    <span className="text-muted-foreground text-sm">收款信息/备注</span>
+                                    <span className="text-sm">{selectedTransaction.notes}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <div className="space-y-4 py-2">
                         {reviewAction === 'approve' && (
@@ -580,6 +653,23 @@ export function TransactionsListContent() {
                             <XCircle className="size-6" />
                         </Button>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* 备注查看对话框 */}
+            <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>备注信息</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <p className="text-sm whitespace-pre-wrap">{selectedNotes}</p>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setNotesDialogOpen(false)}>
+                            关闭
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

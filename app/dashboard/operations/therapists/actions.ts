@@ -144,12 +144,14 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
       }
     }
 
-    // 搜索（工号、姓名、用户名）
+    // 搜索（工号、姓名、用户名）- 不区分大小写
     if (search) {
       const girlNumber = parseInt(search)
       if (!isNaN(girlNumber)) {
+        // 纯数字：按工号精确匹配
         query = query.or(`girl_number.eq.${girlNumber},name.ilike.%${search}%,username.ilike.%${search}%`)
       } else {
+        // 文本：按姓名或用户名模糊匹配（ilike 不区分大小写）
         query = query.or(`name.ilike.%${search}%,username.ilike.%${search}%`)
       }
     }
@@ -341,5 +343,39 @@ export async function cancelTherapistCooldown(
   } catch (error) {
     console.error('[取消冷却] 操作异常:', error)
     return { ok: false, error: "取消冷却异常" }
+  }
+}
+
+/**
+ * 更新技师状态（available/busy/offline）
+ */
+export async function updateTherapistStatus(
+  therapistId: string,
+  newStatus: 'available' | 'busy' | 'offline'
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const admin = await requireAdmin(['superadmin', 'admin'])
+    const supabase = getSupabaseAdminClient()
+
+    // 更新 girls_status 表的 status 字段
+    const { error: updateError } = await (supabase as any)
+      .from('girls_status')
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('girl_id', therapistId)
+
+    if (updateError) {
+      console.error('[更新技师状态] 更新失败:', updateError)
+      return { ok: false, error: "更新状态失败" }
+    }
+
+    console.log(`[更新技师状态] 技师 ${therapistId} 状态更新为 ${newStatus}, 操作人: ${admin.display_name}`)
+
+    return { ok: true }
+  } catch (error) {
+    console.error('[更新技师状态] 操作异常:', error)
+    return { ok: false, error: "更新状态异常" }
   }
 }

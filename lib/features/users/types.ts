@@ -5,6 +5,8 @@ export interface UserProfile {
     username: string | null
     display_name: string | null
     avatar_url: string | null
+    phone_country_code: string | null
+    phone_number: string | null
     country_code: string | null
     language_code: string
     timezone: string | null
@@ -14,6 +16,10 @@ export interface UserProfile {
     credit_score: number
     notification_settings: Record<string, boolean>
     preferences: Record<string, unknown>
+    last_device_id: string | null
+    last_ip_address: string | null
+    last_login_at: string | null
+    is_whitelisted: boolean
     is_banned: boolean
     created_at: string
     updated_at: string
@@ -56,9 +62,9 @@ export interface UserListParams {
     cursor?: string // keyset pagination cursor
 }
 
-// 用户列表项（包含最后登录时间）
+// 用户列表项（包含邮箱）
 export interface UserListItem extends UserProfile {
-    last_login_at?: string
+    email?: string | null
 }
 
 // 用户详情（包含相关数据）

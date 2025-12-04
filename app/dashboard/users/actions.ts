@@ -36,12 +36,12 @@ export async function getUserList(
     try {
         // 验证管理员权限（只有管理员和超级管理员可以查看用户列表）
         const admin = await requireAdmin(['superadmin', 'admin'])
-        console.log('Admin accessing user list:', admin.id, admin.role)
+        console.log('[用户管理] 管理员访问用户列表:', admin.id, admin.role)
 
         // 使用统一的 Admin 客户端
         const supabase = getSupabaseAdminClient()
 
-        // 构建查询
+        // 构建查询 - 包含所有必要字段
         let query = supabase
             .from('user_profiles')
             .select(`
@@ -49,18 +49,52 @@ export async function getUserList(
                 username,
                 display_name,
                 avatar_url,
+                phone_country_code,
+                phone_number,
                 country_code,
                 language_code,
                 level,
+                experience,
                 credit_score,
+                is_whitelisted,
                 is_banned,
+                last_login_at,
                 created_at,
                 updated_at
             `, { count: 'exact' })
 
-        // 搜索过滤
+        // 搜索过滤（支持 ID、邮箱、昵称、用户名、手机号）
         if (params.search) {
-            query = query.or(`display_name.ilike.%${params.search}%,username.ilike.%${params.search}%`)
+            const searchTerm = params.search.trim()
+            // 尝试匹配 UUID 格式
+            const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(searchTerm)
+
+            if (isUUID) {
+                // 精确匹配 ID
+                query = query.eq('id', searchTerm)
+            } else {
+                // 检查是否为邮箱格式（包含 @）
+                const isEmail = searchTerm.includes('@')
+
+                if (isEmail) {
+                    // 邮箱搜索：先从 auth.users 查询匹配的用户 ID
+                    const { data: authUsers } = await supabase.auth.admin.listUsers()
+                    const matchedUserIds = authUsers?.users
+                        ?.filter(u => u.email?.toLowerCase().includes(searchTerm.toLowerCase()))
+                        ?.map(u => u.id) || []
+
+                    if (matchedUserIds.length > 0) {
+                        // 使用匹配到的用户 ID 进行查询
+                        query = query.in('id', matchedUserIds)
+                    } else {
+                        // 没有匹配的邮箱，返回空结果
+                        query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+                    }
+                } else {
+                    // 模糊匹配其他字段（不区分大小写）
+                    query = query.or(`display_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,phone_number.ilike.%${searchTerm}%`)
+                }
+            }
         }
 
         // 其他过滤条件
@@ -102,43 +136,37 @@ export async function getUserList(
         const { data: users, error, count } = await query
 
         if (error) {
-            console.error('Error fetching users:', error)
+            console.error('[用户管理] 查询失败:', error)
             return { success: false, error: '获取用户列表失败' }
         }
 
-        // 获取每个用户的最后登录时间
+        // 获取用户邮箱（从 auth.users 表）
         const userIds = users?.map((u: { id: string }) => u.id) || []
-        let lastLoginTimes: Record<string, string> = {}
+        const userEmails: Record<string, string | null> = {}
 
         if (userIds.length > 0) {
-            const { data: loginEvents } = await supabase
-                .from('user_login_events')
-                .select('user_id, logged_at')
-                .in('user_id', userIds)
-                .order('logged_at', { ascending: false })
+            // 使用 admin API 批量获取用户信息（包括邮箱）
+            const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers()
 
-            // 为每个用户找到最新的登录时间
-            if (loginEvents) {
-                const userLastLogins: Record<string, string> = {}
-                loginEvents.forEach((event: { user_id: string; logged_at: string }) => {
-                    if (!userLastLogins[event.user_id]) {
-                        userLastLogins[event.user_id] = event.logged_at
+            if (!authError && authUsers?.users) {
+                authUsers.users.forEach((authUser) => {
+                    if (userIds.includes(authUser.id)) {
+                        userEmails[authUser.id] = authUser.email || null
                     }
                 })
-                lastLoginTimes = userLastLogins
             }
         }
 
-        // 合并登录时间到用户数据
-        const usersWithLastLogin: UserListItem[] = (users || []).map((user: any) => ({
+        // 合并邮箱到用户数据
+        const usersWithEmail: UserListItem[] = (users || []).map((user: any) => ({
             ...user,
-            last_login_at: lastLoginTimes[user.id]
+            email: userEmails[user.id] || null
         }))
 
         return {
             success: true,
             data: {
-                users: usersWithLastLogin,
+                users: usersWithEmail,
                 total: count || 0,
                 page: params.page || 1,
                 limit: limit,
@@ -147,7 +175,7 @@ export async function getUserList(
             }
         }
     } catch (error) {
-        console.error('Get user list error:', error)
+        console.error('[用户管理] 查询异常:', error)
         return { success: false, error: '获取用户列表失败，请稍后重试' }
     }
 }
@@ -317,5 +345,87 @@ export async function resetUserPassword(
     } catch (error) {
         console.error('Reset user password error:', error)
         return { success: false, error: '重置密码失败，请稍后重试' }
+    }
+}
+
+/**
+ * 获取用户详细信息（包含 auth.users 邮箱）
+ */
+export async function getUserDetail(userId: string): Promise<{
+    success: boolean
+    data?: any
+    error?: string
+}> {
+    try {
+        const admin = await requireAdmin(['superadmin', 'admin'])
+        const supabase = getSupabaseAdminClient()
+
+        // 获取用户资料
+        const { data: profile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', userId)
+            .single()
+
+        if (profileError || !profile) {
+            console.error('[用户详情] 查询失败:', profileError)
+            return { success: false, error: '用户不存在' }
+        }
+
+        // 获取邮箱（从 auth.users）
+        const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(userId)
+
+        if (authError) {
+            console.error('[用户详情] 获取邮箱失败:', authError)
+        }
+
+        return {
+            success: true,
+            data: {
+                ...profile,
+                email: authUser?.user?.email || null
+            }
+        }
+    } catch (error) {
+        console.error('[用户详情] 查询异常:', error)
+        return { success: false, error: '获取用户详情失败' }
+    }
+}
+
+/**
+ * 切换用户白名单状态
+ */
+export async function toggleUserWhitelist(
+    data: {
+        user_id: string
+        is_whitelisted: boolean
+    }
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const admin = await requireAdmin(['superadmin', 'admin'])
+        const supabase = getSupabaseAdminClient()
+
+        const { error } = await (supabase as any)
+            .from('user_profiles')
+            .update({
+                is_whitelisted: data.is_whitelisted,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', data.user_id)
+
+        if (error) {
+            console.error('[白名单切换] 更新失败:', error)
+            return { success: false, error: '操作失败' }
+        }
+
+        console.log(`[白名单切换] 用户 ${data.user_id} 白名单状态更新为 ${data.is_whitelisted}, 操作人: ${admin.display_name}`)
+
+        revalidatePath('/dashboard/users')
+        revalidatePath(`/dashboard/users/${data.user_id}`)
+
+        return { success: true }
+    } catch (error) {
+        console.error('[白名单切换] 操作异常:', error)
+        return { success: false, error: '操作失败，请稍后重试' }
     }
 }
