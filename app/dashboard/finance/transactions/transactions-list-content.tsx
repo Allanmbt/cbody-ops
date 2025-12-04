@@ -710,65 +710,67 @@ export function TransactionsListContent() {
 
             {/* 收款账号查看对话框 */}
             <Dialog open={bankAccountDialogOpen} onOpenChange={setBankAccountDialogOpen}>
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader>
+                <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+                    <DialogHeader className="flex-shrink-0">
                         <DialogTitle>技师收款账号</DialogTitle>
                     </DialogHeader>
 
-                    {loadingBankAccount ? (
-                        <div className="flex items-center justify-center py-12">
-                            <div className="text-center space-y-2">
-                                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]" />
-                                <p className="text-sm text-muted-foreground">加载中...</p>
+                    <div className="flex-1 overflow-y-auto min-h-0 px-1">
+                        {loadingBankAccount ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="text-center space-y-2">
+                                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]" />
+                                    <p className="text-sm text-muted-foreground">加载中...</p>
+                                </div>
                             </div>
-                        </div>
-                    ) : !selectedBankAccount ? (
-                        <div className="flex flex-col items-center justify-center py-12">
-                            <AlertCircle className="size-12 text-muted-foreground mb-4" />
-                            <p className="text-muted-foreground">未找到收款账号信息</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-6 py-4">
-                            {/* 银行账号信息 */}
-                            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm text-muted-foreground">账户名</span>
-                                    <span className="font-medium">{selectedBankAccount.bank_account_name || '-'}</span>
+                        ) : !selectedBankAccount ? (
+                            <div className="flex flex-col items-center justify-center py-12">
+                                <AlertCircle className="size-12 text-muted-foreground mb-4" />
+                                <p className="text-muted-foreground">未找到收款账号信息</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-6 py-4">
+                                {/* 银行账号信息 */}
+                                <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                                    <div className="flex justify-between items-center gap-4">
+                                        <span className="text-sm text-muted-foreground flex-shrink-0">账户名</span>
+                                        <span className="font-medium text-right break-all">{selectedBankAccount.bank_account_name || '-'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center gap-4">
+                                        <span className="text-sm text-muted-foreground flex-shrink-0">账号</span>
+                                        <span className="font-mono font-medium text-right break-all">{selectedBankAccount.bank_account_number || '-'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center gap-4">
+                                        <span className="text-sm text-muted-foreground flex-shrink-0">银行</span>
+                                        <span className="font-medium text-right break-all">{selectedBankAccount.bank_name || '-'}</span>
+                                    </div>
+                                    {selectedBankAccount.bank_branch && (
+                                        <div className="flex justify-between items-center gap-4">
+                                            <span className="text-sm text-muted-foreground flex-shrink-0">支行</span>
+                                            <span className="font-medium text-right break-all">{selectedBankAccount.bank_branch}</span>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm text-muted-foreground">账号</span>
-                                    <span className="font-mono font-medium">{selectedBankAccount.bank_account_number || '-'}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm text-muted-foreground">银行</span>
-                                    <span className="font-medium">{selectedBankAccount.bank_name || '-'}</span>
-                                </div>
-                                {selectedBankAccount.bank_branch && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-sm text-muted-foreground">支行</span>
-                                        <span className="font-medium">{selectedBankAccount.bank_branch}</span>
+
+                                {/* 二维码图片 */}
+                                {selectedBankAccount.bank_meta?.qr_code_url && (
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-medium">收款二维码</Label>
+                                        <div className="border rounded-lg p-4 bg-white flex items-center justify-center">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={selectedBankAccount.bank_meta.qr_code_url}
+                                                alt="收款二维码"
+                                                className="max-w-full h-auto object-contain"
+                                            />
+                                        </div>
                                     </div>
                                 )}
                             </div>
+                        )}
+                    </div>
 
-                            {/* 二维码图片 */}
-                            {selectedBankAccount.bank_meta?.qr_code_url && (
-                                <div className="space-y-2">
-                                    <Label className="text-sm font-medium">收款二维码</Label>
-                                    <div className="border rounded-lg p-4 bg-white flex items-center justify-center">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={selectedBankAccount.bank_meta.qr_code_url}
-                                            alt="收款二维码"
-                                            className="max-w-full max-h-96 object-contain"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <DialogFooter>
+                    <DialogFooter className="flex-shrink-0">
                         <Button variant="outline" onClick={() => setBankAccountDialogOpen(false)}>
                             关闭
                         </Button>
