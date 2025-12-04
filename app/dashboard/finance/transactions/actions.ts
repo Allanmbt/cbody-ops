@@ -367,3 +367,40 @@ export async function rejectTransaction(
     return { ok: false as const, error: "拒绝申请异常" }
   }
 }
+
+/**
+ * 获取技师收款账号信息
+ */
+export async function getGirlBankAccount(
+  girlId: string
+): Promise<ApiResponse<{
+  bank_account_name: string | null
+  bank_account_number: string | null
+  bank_name: string | null
+  bank_branch: string | null
+  bank_meta: Record<string, any> | null
+}>> {
+  try {
+    await requireAdmin(['superadmin', 'admin', 'finance'])
+    const supabase = getSupabaseAdminClient()
+
+    const { data, error } = await supabase
+      .from('girl_settlement_accounts')
+      .select('bank_account_name, bank_account_number, bank_name, bank_branch, bank_meta')
+      .eq('girl_id', girlId)
+      .single()
+
+    if (error) {
+      console.error('[收款账号] 查询失败:', error)
+      return { ok: false as const, error: "查询收款账号失败" }
+    }
+
+    return {
+      ok: true as const,
+      data: data as any
+    }
+  } catch (error) {
+    console.error('[收款账号] 查询异常:', error)
+    return { ok: false as const, error: "查询收款账号异常" }
+  }
+}

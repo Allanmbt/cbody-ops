@@ -20,8 +20,8 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Search, CheckCircle, XCircle, Clock, AlertCircle, DollarSign, TrendingUp, TrendingDown, Image as ImageIcon, ExternalLink, Info } from "lucide-react"
-import { getTransactionStats, getTransactions, approveTransaction, rejectTransaction } from "./actions"
+import { Search, CheckCircle, XCircle, Clock, AlertCircle, DollarSign, TrendingUp, TrendingDown, Image as ImageIcon, ExternalLink, Info, CreditCard } from "lucide-react"
+import { getTransactionStats, getTransactions, approveTransaction, rejectTransaction, getGirlBankAccount } from "./actions"
 import type { Transaction, TransactionStats, TransactionType } from "@/lib/features/transactions"
 import { toast } from "sonner"
 import { format } from "date-fns"
@@ -58,6 +58,11 @@ export function TransactionsListContent() {
     // 备注查看对话框状态
     const [notesDialogOpen, setNotesDialogOpen] = useState(false)
     const [selectedNotes, setSelectedNotes] = useState<string | null>(null)
+
+    // 收款账号查看对话框状态
+    const [bankAccountDialogOpen, setBankAccountDialogOpen] = useState(false)
+    const [selectedBankAccount, setSelectedBankAccount] = useState<any>(null)
+    const [loadingBankAccount, setLoadingBankAccount] = useState(false)
 
     useEffect(() => {
         loadStats()
@@ -161,6 +166,23 @@ export function TransactionsListContent() {
         } finally {
             setReviewing(false)
         }
+    }
+
+    // 查看收款账号
+    async function handleViewBankAccount(girlId: string) {
+        setLoadingBankAccount(true)
+        setBankAccountDialogOpen(true)
+        setSelectedBankAccount(null)
+
+        const result = await getGirlBankAccount(girlId)
+        setLoadingBankAccount(false)
+
+        if (!result.ok) {
+            toast.error(result.error || "查询收款账号失败")
+            return
+        }
+
+        setSelectedBankAccount(result.data)
     }
 
     function formatCurrency(amount: number, currency: 'THB' | 'RMB') {
@@ -316,6 +338,7 @@ export function TransactionsListContent() {
                                                 <>
                                                     <TableHead className="text-right">汇率 & 手续费</TableHead>
                                                     <TableHead className="text-right">实际打款 (THB)</TableHead>
+                                                    <TableHead>收款账号</TableHead>
                                                     <TableHead>备注</TableHead>
                                                 </>
                                             )}
@@ -393,6 +416,18 @@ export function TransactionsListContent() {
                                                             ) : (
                                                                 <span className="text-muted-foreground text-sm">-</span>
                                                             )}
+                                                        </TableCell>
+                                                        {/* 收款账号 */}
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-8 gap-1 text-blue-600"
+                                                                onClick={() => handleViewBankAccount(tx.girl_id)}
+                                                            >
+                                                                <CreditCard className="size-4" />
+                                                                查看
+                                                            </Button>
                                                         </TableCell>
                                                         {/* 备注 */}
                                                         <TableCell>
@@ -667,6 +702,74 @@ export function TransactionsListContent() {
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setNotesDialogOpen(false)}>
+                            关闭
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* 收款账号查看对话框 */}
+            <Dialog open={bankAccountDialogOpen} onOpenChange={setBankAccountDialogOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>技师收款账号</DialogTitle>
+                    </DialogHeader>
+
+                    {loadingBankAccount ? (
+                        <div className="flex items-center justify-center py-12">
+                            <div className="text-center space-y-2">
+                                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]" />
+                                <p className="text-sm text-muted-foreground">加载中...</p>
+                            </div>
+                        </div>
+                    ) : !selectedBankAccount ? (
+                        <div className="flex flex-col items-center justify-center py-12">
+                            <AlertCircle className="size-12 text-muted-foreground mb-4" />
+                            <p className="text-muted-foreground">未找到收款账号信息</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-6 py-4">
+                            {/* 银行账号信息 */}
+                            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-muted-foreground">账户名</span>
+                                    <span className="font-medium">{selectedBankAccount.bank_account_name || '-'}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-muted-foreground">账号</span>
+                                    <span className="font-mono font-medium">{selectedBankAccount.bank_account_number || '-'}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-muted-foreground">银行</span>
+                                    <span className="font-medium">{selectedBankAccount.bank_name || '-'}</span>
+                                </div>
+                                {selectedBankAccount.bank_branch && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm text-muted-foreground">支行</span>
+                                        <span className="font-medium">{selectedBankAccount.bank_branch}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 二维码图片 */}
+                            {selectedBankAccount.bank_meta?.qr_code_url && (
+                                <div className="space-y-2">
+                                    <Label className="text-sm font-medium">收款二维码</Label>
+                                    <div className="border rounded-lg p-4 bg-white flex items-center justify-center">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                            src={selectedBankAccount.bank_meta.qr_code_url}
+                                            alt="收款二维码"
+                                            className="max-w-full max-h-96 object-contain"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setBankAccountDialogOpen(false)}>
                             关闭
                         </Button>
                     </DialogFooter>
