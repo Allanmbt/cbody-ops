@@ -125,39 +125,44 @@ export async function updateGirlStatus(
       return { ok: false, error: "女孩不存在" }
     }
 
-    const currentStatus = statusData.status
+    const currentStatus = (statusData as { status: string; girl_id: string }).status
 
     // 如果是 offline 状态，不允许操作
     if (currentStatus === 'offline') {
       return { ok: false, error: "女孩处于离线状态，无法操作" }
     }
 
-    let updateData: any
-
     if (currentStatus === 'busy') {
       // busy -> available：清除 next_available_time
-      updateData = {
-        status: 'available',
-        next_available_time: null
+      const { error: updateError } = await (supabase as any)
+        .from('girls_status')
+        .update({
+          status: 'available',
+          next_available_time: null
+        })
+        .eq('girl_id', params.girl_id)
+
+      if (updateError) {
+        console.error('[Aloha] 更新状态失败:', updateError)
+        return { ok: false, error: "更新状态失败" }
       }
     } else {
       // available -> busy：设置 next_available_time
       const now = new Date()
       const nextAvailableTime = new Date(now.getTime() + params.minutes * 60 * 1000)
-      updateData = {
-        status: 'busy',
-        next_available_time: nextAvailableTime.toISOString()
+
+      const { error: updateError } = await (supabase as any)
+        .from('girls_status')
+        .update({
+          status: 'busy',
+          next_available_time: nextAvailableTime.toISOString()
+        })
+        .eq('girl_id', params.girl_id)
+
+      if (updateError) {
+        console.error('[Aloha] 更新状态失败:', updateError)
+        return { ok: false, error: "更新状态失败" }
       }
-    }
-
-    const { error: updateError } = await supabase
-      .from('girls_status')
-      .update(updateData)
-      .eq('girl_id', params.girl_id)
-
-    if (updateError) {
-      console.error('[Aloha] 更新状态失败:', updateError)
-      return { ok: false, error: "更新状态失败" }
     }
 
     return { ok: true, data: undefined }
