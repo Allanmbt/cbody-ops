@@ -130,6 +130,18 @@ const sidebarGroups: {
       ],
     },
     {
+      label: "Aloha 管理",
+      items: [
+        {
+          key: "aloha",
+          title: "Aloha 管理",
+          icon: Sparkle,
+          href: "/dashboard/aloha",
+          requiredRole: ['support'], // 实际通过 display_name 判断
+        },
+      ],
+    },
+    {
       label: "运营管理",
       items: [
         {
@@ -275,6 +287,8 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
 
   if (segments[1] === 'management') {
     breadcrumbs.push({ label: "管理员管理" })
+  } else if (segments[1] === 'aloha') {
+    breadcrumbs.push({ label: "Aloha 管理" })
   } else if (segments[1] === 'operations') {
     breadcrumbs.push({ label: "运营管理" })
     if (segments[2] === 'orders') {
@@ -429,12 +443,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const hasAccess = (requiredRoles?: AdminRole[]) => {
     if (!adminProfile || !requiredRoles) return true
+
+    // 特殊处理：display_name 为 AlohaAdmin 的 support 角色只能访问 aloha 菜单
+    if (adminProfile.display_name === 'AlohaAdmin' && adminProfile.role === 'support') {
+      return false
+    }
+
     return requiredRoles.includes(adminProfile.role)
   }
 
   const filteredSidebarGroups = sidebarGroups.map(group => ({
     ...group,
-    items: group.items.filter(item => hasAccess(item.requiredRole))
+    items: group.items.filter(item => {
+      // AlohaAdmin 特殊处理：只显示 aloha 菜单项
+      if (adminProfile?.display_name === 'AlohaAdmin' && adminProfile.role === 'support') {
+        return item.key === 'aloha'
+      }
+      // 其他管理员隐藏 aloha 菜单项
+      if (item.key === 'aloha') {
+        return false
+      }
+      return hasAccess(item.requiredRole)
+    })
   })).filter(group => group.items.length > 0)
 
   const initialExpanded = React.useMemo(() => {
@@ -520,6 +550,12 @@ function DashboardLayoutContent({
 
   const hasAccess = (requiredRoles?: AdminRole[]) => {
     if (!adminProfile || !requiredRoles) return true
+
+    // 特殊处理：display_name 为 AlohaAdmin 的 support 角色只能访问 aloha 菜单
+    if (adminProfile.display_name === 'AlohaAdmin' && adminProfile.role === 'support') {
+      return false
+    }
+
     return requiredRoles.includes(adminProfile.role)
   }
 
