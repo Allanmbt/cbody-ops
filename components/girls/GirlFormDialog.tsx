@@ -1062,7 +1062,7 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                                     <FormControl>
                                                         <Input
                                                             type="number"
-                                                            step="0.1"
+                                                            step="0.01"
                                                             min="0"
                                                             max="5"
                                                             {...field}

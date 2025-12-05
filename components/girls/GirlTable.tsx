@@ -115,7 +115,7 @@ export function GirlTable({
     }
 
     const formatRating = (rating: number): string => {
-        return rating > 0 ? rating.toFixed(1) : '-'
+        return rating > 0 ? rating.toFixed(2) : '-'
     }
 
     // 头像点击放大预览

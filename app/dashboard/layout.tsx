@@ -29,6 +29,7 @@ import {
   Receipt,
   CreditCard,
   ArrowUpDown,
+  Menu,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -137,6 +138,18 @@ const sidebarGroups: {
           title: "Aloha 管理",
           icon: Sparkle,
           href: "/dashboard/aloha",
+          requiredRole: ['support'], // 实际通过 display_name 判断
+        },
+      ],
+    },
+    {
+      label: "CBODY 管理",
+      items: [
+        {
+          key: "cbody",
+          title: "CBODY 管理",
+          icon: UserCog,
+          href: "/dashboard/cbody",
           requiredRole: ['support'], // 实际通过 display_name 判断
         },
       ],
@@ -289,6 +302,8 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
     breadcrumbs.push({ label: "管理员管理" })
   } else if (segments[1] === 'aloha') {
     breadcrumbs.push({ label: "Aloha 管理" })
+  } else if (segments[1] === 'cbody') {
+    breadcrumbs.push({ label: "CBODY 管理" })
   } else if (segments[1] === 'operations') {
     breadcrumbs.push({ label: "运营管理" })
     if (segments[2] === 'orders') {
@@ -449,6 +464,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       return false
     }
 
+    // 特殊处理：display_name 为 cbodyAdmin 的 support 角色只能访问 cbody 菜单
+    if (adminProfile.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
+      return false
+    }
+
     return requiredRoles.includes(adminProfile.role)
   }
 
@@ -459,8 +479,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       if (adminProfile?.display_name === 'AlohaAdmin' && adminProfile.role === 'support') {
         return item.key === 'aloha'
       }
-      // 其他管理员隐藏 aloha 菜单项
-      if (item.key === 'aloha') {
+      // cbodyAdmin 特殊处理：只显示 cbody 菜单项
+      if (adminProfile?.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
+        return item.key === 'cbody'
+      }
+      // 其他管理员隐藏 aloha 和 cbody 菜单项
+      if (item.key === 'aloha' || item.key === 'cbody') {
         return false
       }
       return hasAccess(item.requiredRole)
@@ -553,6 +577,11 @@ function DashboardLayoutContent({
 
     // 特殊处理：display_name 为 AlohaAdmin 的 support 角色只能访问 aloha 菜单
     if (adminProfile.display_name === 'AlohaAdmin' && adminProfile.role === 'support') {
+      return false
+    }
+
+    // 特殊处理：display_name 为 cbodyAdmin 的 support 角色只能访问 cbody 菜单
+    if (adminProfile.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
       return false
     }
 
@@ -660,7 +689,9 @@ function DashboardLayoutContent({
       <SidebarInset className="flex flex-col">
         <header className="border-border/60 bg-background/75 sticky top-0 left-0 right-0 z-20 flex h-16 shrink-0 items-center gap-4 border-b px-4 backdrop-blur-sm md:px-8 min-w-0">
           <div className="flex items-center gap-3">
-            <SidebarTrigger className="md:hidden" />
+            <SidebarTrigger className="md:hidden">
+              <Menu className="h-5 w-5" />
+            </SidebarTrigger>
             <Separator orientation="vertical" className="h-6" />
             <Breadcrumb>
               <BreadcrumbList>
