@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
     Table,
     TableBody,
@@ -13,9 +14,10 @@ import {
 } from "@/components/ui/table"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { Eye, Star, Copy, Check } from "lucide-react"
+import { Eye, Star, Copy, Check, CheckCheck } from "lucide-react"
 import { formatRelativeTime } from "@/lib/features/orders"
 import type { ReviewListItem, ReviewStatus } from "@/app/dashboard/operations/reviews/actions"
+import { batchApproveReviews } from "@/app/dashboard/operations/reviews/actions"
 import { ReviewDrawer } from "./ReviewDrawer"
 import { toast } from "sonner"
 
@@ -71,6 +73,14 @@ export function ReviewsTable({ reviews, loading = false, onRefresh }: ReviewsTab
     const [selectedReview, setSelectedReview] = useState<ReviewListItem | null>(null)
     const [drawerOpen, setDrawerOpen] = useState(false)
     const [copiedId, setCopiedId] = useState<string | null>(null)
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+    const [batchApproving, setBatchApproving] = useState(false)
+
+    // 只能选择待审核状态的评论
+    const pendingReviews = reviews.filter(r => r.status === 'pending')
+    const canSelectAll = pendingReviews.length > 0
+    const allSelected = canSelectAll && pendingReviews.every(r => selectedIds.has(r.id))
+    const someSelected = selectedIds.size > 0 && !allSelected
 
     const handleCopyOrder = async (orderNumber: string | undefined) => {
         if (!orderNumber) return
@@ -89,19 +99,89 @@ export function ReviewsTable({ reviews, loading = false, onRefresh }: ReviewsTab
         setDrawerOpen(true)
     }
 
+    const handleToggleSelect = (id: string) => {
+        const newSelected = new Set(selectedIds)
+        if (newSelected.has(id)) {
+            newSelected.delete(id)
+        } else {
+            newSelected.add(id)
+        }
+        setSelectedIds(newSelected)
+    }
+
+    const handleSelectAll = () => {
+        if (allSelected) {
+            setSelectedIds(new Set())
+        } else {
+            setSelectedIds(new Set(pendingReviews.map(r => r.id)))
+        }
+    }
+
+    const handleBatchApprove = async () => {
+        if (selectedIds.size === 0) {
+            toast.error("请先选择要审核的评论")
+            return
+        }
+
+        try {
+            setBatchApproving(true)
+            const result = await batchApproveReviews(Array.from(selectedIds))
+
+            if (!result.ok) {
+                toast.error(result.error || "批量审核失败")
+                return
+            }
+
+            toast.success(result.data?.message || "批量审核成功")
+            setSelectedIds(new Set())
+            onRefresh()
+        } catch (error) {
+            console.error('[批量审核] 异常:', error)
+            toast.error("批量审核失败，请稍后重试")
+        } finally {
+            setBatchApproving(false)
+        }
+    }
+
     return (
         <>
+            {/* 批量操作栏 */}
+            {selectedIds.size > 0 && (
+                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md mb-4 border">
+                    <span className="text-sm text-muted-foreground">
+                        已选择 <span className="font-medium text-foreground">{selectedIds.size}</span> 条待审核评论
+                    </span>
+                    <Button
+                        size="sm"
+                        onClick={handleBatchApprove}
+                        disabled={batchApproving}
+                        className="gap-2"
+                    >
+                        <CheckCheck className="h-4 w-4" />
+                        {batchApproving ? "批量审核中..." : "批量通过"}
+                    </Button>
+                </div>
+            )}
+
             <div className="rounded-md border">
                 <Table>
                     <TableHeader>
                         <TableRow>
+                            <TableHead className="w-[50px]">
+                                <Checkbox
+                                    checked={allSelected || someSelected}
+                                    onCheckedChange={handleSelectAll}
+                                    disabled={!canSelectAll}
+                                    aria-label="全选待审核评论"
+                                />
+                            </TableHead>
                             <TableHead className="w-[120px]">订单号</TableHead>
                             <TableHead className="w-[140px]">评论者</TableHead>
                             <TableHead className="w-[140px]">技师</TableHead>
                             <TableHead className="w-[80px] text-center">总分</TableHead>
                             <TableHead className="w-[80px] text-center">相似度</TableHead>
                             <TableHead className="w-[80px] text-center">可见等级</TableHead>
-                            <TableHead className="w-[250px]">评论内容</TableHead>
+                            <TableHead className="w-[300px]">评论内容</TableHead>
                             <TableHead className="w-[100px]">提交时间</TableHead>
                             <TableHead className="w-[100px] text-center">状态</TableHead>
                             <TableHead className="w-[100px] text-center">操作</TableHead>
@@ -110,13 +190,13 @@ export function ReviewsTable({ reviews, loading = false, onRefresh }: ReviewsTab
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={10} className="h-24 text-center">
+                                <TableCell colSpan={11} className="h-24 text-center">
                                     <LoadingSpinner />
                                 </TableCell>
                             </TableRow>
                         ) : reviews.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={10} className="h-24 text-center">
+                                <TableCell colSpan={11} className="h-24 text-center">
                                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                                         <div className="text-sm">暂无评论记录</div>
                                         <div className="text-xs">当前没有需要审核的评论</div>
@@ -126,6 +206,15 @@ export function ReviewsTable({ reviews, loading = false, onRefresh }: ReviewsTab
                         ) : (
                             reviews.map((review) => (
                                 <TableRow key={review.id}>
+                                    {/* 多选框 */}
+                                    <TableCell>
+                                        <Checkbox
+                                            checked={selectedIds.has(review.id)}
+                                            onCheckedChange={() => handleToggleSelect(review.id)}
+                                            disabled={review.status !== 'pending'}
+                                            aria-label={`选择评论 ${review.id}`}
+                                        />
+                                    </TableCell>
                                     {/* 订单号 */}
                                     <TableCell>
                                         {review.order ? (
@@ -198,13 +287,15 @@ export function ReviewsTable({ reviews, loading = false, onRefresh }: ReviewsTab
 
                                     {/* 评论内容 */}
                                     <TableCell>
-                                        {review.comment_text ? (
-                                            <span className="text-sm text-muted-foreground line-clamp-2">
-                                                {review.comment_text}
-                                            </span>
-                                        ) : (
-                                            <span className="text-xs text-muted-foreground">无文字评论</span>
-                                        )}
+                                        <div className="max-w-[300px]">
+                                            {review.comment_text ? (
+                                                <p className="text-sm text-muted-foreground line-clamp-2 overflow-hidden">
+                                                    {review.comment_text}
+                                                </p>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">无文字评论</span>
+                                            )}
+                                        </div>
                                     </TableCell>
 
                                     {/* 提交时间 */}

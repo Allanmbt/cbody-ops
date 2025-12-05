@@ -272,6 +272,77 @@ export async function approveReview(id: string) {
     }
 }
 
+/**
+ * 批量审核通过评论
+ */
+export async function batchApproveReviews(ids: string[]) {
+    try {
+        const admin = await requireAdmin(["superadmin", "admin", "support"])
+        const supabase = getSupabaseAdminClient() as any
+
+        if (!ids || ids.length === 0) {
+            return { ok: false as const, error: "请选择要审核的评论" }
+        }
+
+        // 1. 批量查询所有评论状态
+        const { data: reviews, error: fetchError } = await supabase
+            .from("order_reviews")
+            .select("id, status")
+            .in("id", ids)
+
+        if (fetchError) {
+            console.error("[批量审核] 查询失败:", fetchError)
+            return { ok: false as const, error: "查询评论失败" }
+        }
+
+        // 2. 过滤出可审核的评论（只有 pending 状态）
+        const pendingReviews = (reviews || []).filter((r: any) => r.status === "pending")
+
+        if (pendingReviews.length === 0) {
+            return { ok: false as const, error: "所选评论中没有待审核状态的评论" }
+        }
+
+        const pendingIds = pendingReviews.map((r: any) => r.id)
+        const skippedCount = ids.length - pendingIds.length
+
+        // 3. 批量更新状态（触发器会自动逐条更新技师评分）
+        const { error: updateError } = await (supabase as any)
+            .from("order_reviews")
+            .update({
+                status: "approved",
+                reviewed_by: admin.id,
+                reviewed_at: new Date().toISOString(),
+                reject_reason: null,
+            })
+            .in("id", pendingIds)
+
+        if (updateError) {
+            console.error("[批量审核] 更新失败:", updateError)
+            return { ok: false as const, error: `批量审核失败: ${updateError.message}` }
+        }
+
+        // 4. 返回成功信息
+        const message = skippedCount > 0
+            ? `成功审核 ${pendingIds.length} 条评论，跳过 ${skippedCount} 条（已审核或已驳回）`
+            : `成功审核 ${pendingIds.length} 条评论`
+
+        return {
+            ok: true as const,
+            data: {
+                approved: pendingIds.length,
+                skipped: skippedCount,
+                message
+            }
+        }
+    } catch (error) {
+        console.error("[批量审核] 异常:", error)
+        return {
+            ok: false as const,
+            error: error instanceof Error ? error.message : "批量审核异常",
+        }
+    }
+}
+
 export async function rejectReview(id: string, rejectReason: string) {
     try {
         const admin = await requireAdmin(["superadmin", "admin", "support"])
