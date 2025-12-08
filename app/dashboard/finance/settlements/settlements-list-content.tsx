@@ -1341,13 +1341,13 @@ export function SettlementsListContent() {
             <Dialog open={!!previewImageUrl} onOpenChange={() => setPreviewImageUrl(null)}>
                 <DialogContent className="max-w-3xl">
                     <DialogHeader>
-                        <DialogTitle>收款截图</DialogTitle>
+                        <DialogTitle>收款凭证截图</DialogTitle>
                     </DialogHeader>
                     {previewImageUrl && (
                         <div className="relative w-full h-[600px]">
                             <Image
                                 src={previewImageUrl}
-                                alt="收款截图"
+                                alt="收款凭证截图"
                                 fill
                                 className="object-contain"
                             />

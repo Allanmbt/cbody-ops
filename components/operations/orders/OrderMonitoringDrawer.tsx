@@ -19,7 +19,9 @@ import {
   getServiceTitle,
   formatCurrency
 } from "@/lib/features/orders"
-import { MapPin, Clock, User, Phone, Mail } from "lucide-react"
+import { MapPin, Clock, User, Phone, Copy, Check } from "lucide-react"
+import { toast } from "sonner"
+import { useState } from "react"
 
 interface OrderMonitoringDrawerProps {
   open: boolean
@@ -34,6 +36,8 @@ export function OrderMonitoringDrawer({
   order,
   onRefresh
 }: OrderMonitoringDrawerProps) {
+  const [copiedUserId, setCopiedUserId] = useState(false)
+
   if (!order) return null
 
   const formatDateTime = (dateStr: string | null) => {
@@ -45,6 +49,19 @@ export function OrderMonitoringDrawer({
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  const handleCopyUserId = async () => {
+    if (!order.user_id) return
+
+    try {
+      await navigator.clipboard.writeText(order.user_id)
+      setCopiedUserId(true)
+      toast.success("用户ID已复制")
+      setTimeout(() => setCopiedUserId(false), 2000)
+    } catch (error) {
+      toast.error("复制失败")
+    }
   }
 
   const contactName = (order.address_snapshot as any)?.contact?.n
@@ -92,6 +109,31 @@ export function OrderMonitoringDrawer({
           <div>
             <h3 className="text-sm font-semibold mb-3">客户信息</h3>
             <dl className="space-y-2.5 text-sm">
+              {order.user_id && (
+                <div className="flex items-start gap-2">
+                  <User className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <dt className="text-muted-foreground shrink-0">用户ID:</dt>
+                  <dd className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <code className="font-mono text-xs bg-muted px-2 py-1 rounded break-all">
+                        {order.user_id}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 shrink-0"
+                        onClick={handleCopyUserId}
+                      >
+                        {copiedUserId ? (
+                          <Check className="h-3.5 w-3.5 text-green-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
+                  </dd>
+                </div>
+              )}
               {contactName && (
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-muted-foreground" />
@@ -104,13 +146,6 @@ export function OrderMonitoringDrawer({
                   <Phone className="h-4 w-4 text-muted-foreground" />
                   <dt className="text-muted-foreground">联系电话:</dt>
                   <dd className="font-medium">{contactPhone}</dd>
-                </div>
-              )}
-              {order.user?.email && (
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <dt className="text-muted-foreground">邮箱:</dt>
-                  <dd className="font-medium break-all">{order.user.email}</dd>
                 </div>
               )}
             </dl>

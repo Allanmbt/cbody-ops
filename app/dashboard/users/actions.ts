@@ -260,8 +260,8 @@ export async function toggleUserBan(
     }
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        // 验证管理员权限（只有超级管理员可以封禁/解封用户）
-        const admin = await requireAdmin(['superadmin'])
+        // 验证管理员权限（超级管理员和管理员都可以封禁/解封用户）
+        const admin = await requireAdmin(['superadmin', 'admin'])
 
         // 验证输入数据
         const validatedData = toggleUserBanSchema.parse(data)

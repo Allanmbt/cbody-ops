@@ -40,7 +40,7 @@ export interface MonitoringTherapistFilters {
  */
 export async function getTherapistStats() {
   try {
-    await requireAdmin()
+    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
     // 在线技师（已授权：is_blocked=false + is_verified=true）
@@ -111,7 +111,7 @@ export async function getTherapistStats() {
  */
 export async function getMonitoringTherapists(filters: MonitoringTherapistFilters = {}) {
   try {
-    await requireAdmin()
+    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
     const {
@@ -213,7 +213,7 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
  */
 export async function getTherapistWorkStats(therapistId: string): Promise<{ ok: boolean; data?: TherapistWorkStats; error?: string }> {
   try {
-    await requireAdmin()
+    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
     const now = new Date()
@@ -284,7 +284,7 @@ export async function setTherapistCooldown(
   hours: number
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const admin = await requireAdmin(['superadmin', 'admin'])
+    const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
     const cooldownUntil = new Date(Date.now() + hours * 60 * 60 * 1000)
@@ -320,7 +320,7 @@ export async function cancelTherapistCooldown(
   therapistId: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const admin = await requireAdmin(['superadmin', 'admin'])
+    const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
     // 更新 girls_status 表（不是 girls 表！）
@@ -354,7 +354,7 @@ export async function updateTherapistStatus(
   newStatus: 'available' | 'busy' | 'offline'
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const admin = await requireAdmin(['superadmin', 'admin'])
+    const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
     // 更新 girls_status 表的 status 字段

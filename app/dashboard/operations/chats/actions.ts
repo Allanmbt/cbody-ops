@@ -29,7 +29,7 @@ export interface ChatThreadFilters {
  */
 export async function getChatStats() {
     try {
-        await requireAdmin()
+        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
         const supabase = getSupabaseAdminClient()
 
         // ✅ 优化：使用 RPC 函数一次性获取所有统计（3次查询 → 1次）
@@ -82,7 +82,7 @@ export async function getChatStats() {
  */
 export async function getChatThreads(filters: ChatThreadFilters = {}) {
     try {
-        await requireAdmin()
+        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
         const supabase = getSupabaseAdminClient()
 
         const {
@@ -220,7 +220,7 @@ export async function toggleThreadLock(
     isLocked: boolean
 ): Promise<{ ok: boolean; error?: string }> {
     try {
-        const admin = await requireAdmin(['superadmin', 'admin', 'support'])
+        const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
         const supabase = getSupabaseAdminClient()
 
         const { error: updateError } = await (supabase as any)
@@ -250,7 +250,7 @@ export async function toggleThreadLock(
  */
 export async function getChatMessages(threadId: string, page = 1, limit = 50) {
     try {
-        await requireAdmin()
+        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
         const supabase = getSupabaseAdminClient()
 
         const from = (page - 1) * limit
@@ -314,10 +314,36 @@ export async function getChatMessages(threadId: string, page = 1, limit = 50) {
             }
         }
 
-        const enrichedMessages = messagesData?.map((msg: any) => ({
-            ...msg,
-            sender: sendersMap.get(msg.sender_id) || null
-        }))
+        // ✅ 为图片消息生成签名 URL
+        const enrichedMessages = await Promise.all(
+            (messagesData || []).map(async (msg: any) => {
+                let signedImageUrl: string | null = null
+
+                // 如果是图片消息且有 attachment_url，生成签名 URL
+                if (msg.content_type === 'image' && msg.attachment_url) {
+                    try {
+                        const { data: signedData } = await supabase
+                            .storage
+                            .from('chat-images')
+                            .createSignedUrl(msg.attachment_url, 3600) // 1小时有效期
+
+                        if (signedData?.signedUrl) {
+                            signedImageUrl = signedData.signedUrl
+                        }
+                    } catch (error) {
+                        console.error('[会话消息] 生成图片签名URL失败:', error)
+                        // 失败不阻断，继续返回原路径
+                    }
+                }
+
+                return {
+                    ...msg,
+                    sender: sendersMap.get(msg.sender_id) || null,
+                    // 优先使用签名 URL，否则使用原路径
+                    attachment_url: signedImageUrl || msg.attachment_url
+                }
+            })
+        )
 
         return {
             ok: true,

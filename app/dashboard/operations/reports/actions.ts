@@ -283,7 +283,20 @@ export async function resolveReport(id: string, adminNotes?: string) {
         const admin = await requireAdmin(["superadmin", "admin", "support"])
         const supabase = getSupabaseAdminClient() as any
 
-        const { error } = await (supabase as any)
+        // 1. 获取举报详情（用于推送通知）
+        const { data: reportData, error: fetchError } = await supabase
+            .from("reports")
+            .select("reporter_id, reporter_role, target_user_id")
+            .eq("id", id)
+            .single()
+
+        if (fetchError) {
+            console.error("[举报处理] 查询举报详情失败:", fetchError)
+            return { ok: false as const, error: "查询举报详情失败" }
+        }
+
+        // 2. 更新举报状态
+        const { error } = await supabase
             .from("reports")
             .update({
                 status: "resolved",
@@ -296,6 +309,32 @@ export async function resolveReport(id: string, adminNotes?: string) {
         if (error) {
             console.error("[举报处理] 标记已处理失败:", error)
             return { ok: false as const, error: error instanceof Error ? error.message : "标记已处理失败" }
+        }
+
+        // 3. 如果举报人是顾客且被举报人是技师，推送系统通知给顾客
+        if (reportData.reporter_role === 'customer' && adminNotes) {
+            try {
+                console.log('[举报处理] 推送处理结果给顾客:', {
+                    customer_id: reportData.reporter_id,
+                    content: adminNotes
+                })
+
+                const { data: messageId, error: notifyError } = await supabase
+                    .rpc('send_system_notification_to_customer', {
+                        p_customer_id: reportData.reporter_id,
+                        p_content: `${adminNotes}`
+                    })
+
+                if (notifyError) {
+                    console.error('[举报处理] 推送通知失败:', notifyError)
+                    // 不阻断主流程，只记录错误
+                } else {
+                    console.log('[举报处理] 通知推送成功，消息ID:', messageId)
+                }
+            } catch (notifyError) {
+                console.error('[举报处理] 推送通知异常:', notifyError)
+                // 不阻断主流程
+            }
         }
 
         return { ok: true as const }

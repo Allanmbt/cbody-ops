@@ -99,23 +99,25 @@ export function isSuperAdmin(role: AdminRole): boolean {
 /**
  * 统一的权限验证函数 - 用于 Server Actions
  * 验证当前用户是否为活跃的管理员，并可选择性地验证角色
- * 
+ *
  * @param requiredRoles - 可选，需要的角色列表。如果不提供，则只需要是管理员即可
+ * @param options - 可选配置：allowMumuForOperations - 是否允许客服mumu访问运营管理功能
  * @returns AdminProfile - 管理员资料
  * @throws Error - 如果未登录、不是管理员或权限不足
- * 
+ *
  * @example
  * // 只需要是管理员
  * const admin = await requireAdmin()
- * 
+ *
  * // 需要是超级管理员或管理员
  * const admin = await requireAdmin(['superadmin', 'admin'])
- * 
- * // 只需要是超级管理员
- * const admin = await requireAdmin(['superadmin'])
+ *
+ * // 运营管理功能：允许客服mumu访问
+ * const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
  */
 export async function requireAdmin(
-  requiredRoles?: AdminRole[]
+  requiredRoles?: AdminRole[],
+  options?: { allowMumuForOperations?: boolean }
 ): Promise<AdminProfile> {
   const supabase = await getSupabaseServerClient()
 
@@ -139,6 +141,11 @@ export async function requireAdmin(
 
   if (!admin.is_active) {
     throw new Error('管理员账号已被禁用')
+  }
+
+  // 特殊权限：客服mumu可以访问运营管理功能
+  if (options?.allowMumuForOperations && admin.display_name === 'mumu' && admin.role === 'support') {
+    return admin
   }
 
   if (requiredRoles && requiredRoles.length > 0) {

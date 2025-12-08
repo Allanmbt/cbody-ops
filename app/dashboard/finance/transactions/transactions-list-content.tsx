@@ -670,6 +670,9 @@ export function TransactionsListContent() {
             {/* 图片预览对话框 */}
             <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
                 <DialogContent className="max-w-3xl p-0 overflow-hidden bg-black/90 border-none">
+                    <DialogHeader className="sr-only">
+                        <DialogTitle>支付凭证预览</DialogTitle>
+                    </DialogHeader>
                     <div className="relative w-full h-[80vh] flex items-center justify-center">
                         {previewImage && (
                             // eslint-disable-next-line @next/next/no-img-element

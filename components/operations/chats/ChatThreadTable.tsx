@@ -12,6 +12,16 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { Eye, Lock, Unlock, Copy, Check } from "lucide-react"
 import { formatRelativeTime } from "@/lib/features/orders"
@@ -103,24 +113,41 @@ export function ChatThreadTable({
     const [selectedThread, setSelectedThread] = useState<any | null>(null)
     const [drawerOpen, setDrawerOpen] = useState(false)
     const [lockingThreadId, setLockingThreadId] = useState<string | null>(null)
+    const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+    const [threadToToggle, setThreadToToggle] = useState<any | null>(null)
 
     const handleViewDetail = (thread: any) => {
         setSelectedThread(thread)
         setDrawerOpen(true)
     }
 
-    const handleToggleLock = async (thread: any) => {
-        setLockingThreadId(thread.id)
-        const result = await toggleThreadLock(thread.id, !thread.is_locked)
+    const handleToggleLockClick = (thread: any) => {
+        setThreadToToggle(thread)
+        setConfirmDialogOpen(true)
+    }
+
+    const handleConfirmToggleLock = async () => {
+        if (!threadToToggle) return
+
+        setLockingThreadId(threadToToggle.id)
+        setConfirmDialogOpen(false)
+
+        const result = await toggleThreadLock(threadToToggle.id, !threadToToggle.is_locked)
 
         if (result.ok) {
-            toast.success(thread.is_locked ? "会话已解锁" : "会话已锁定")
+            toast.success(threadToToggle.is_locked ? "会话已解锁" : "会话已锁定")
             onRefresh()
         } else {
             toast.error(result.error || "操作失败")
         }
 
         setLockingThreadId(null)
+        setThreadToToggle(null)
+    }
+
+    const handleCancelToggleLock = () => {
+        setConfirmDialogOpen(false)
+        setThreadToToggle(null)
     }
 
     return (
@@ -248,7 +275,7 @@ export function ChatThreadTable({
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                onClick={() => handleToggleLock(thread)}
+                                                onClick={() => handleToggleLockClick(thread)}
                                                 disabled={lockingThreadId === thread.id}
                                             >
                                                 {lockingThreadId === thread.id ? (
@@ -281,6 +308,44 @@ export function ChatThreadTable({
                 thread={selectedThread}
                 onRefresh={onRefresh}
             />
+
+            {/* 锁定/解锁确认对话框 */}
+            <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {threadToToggle?.is_locked ? "解锁会话" : "锁定会话"}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {threadToToggle?.is_locked ? (
+                                <>
+                                    确定要解锁该会话吗？解锁后用户可以继续发送消息。
+                                    <br />
+                                    <span className="text-sm text-muted-foreground mt-2 block">
+                                        参与者：{threadToToggle && getParticipants(threadToToggle)}
+                                    </span>
+                                </>
+                            ) : (
+                                <>
+                                    确定要锁定该会话吗？锁定后用户将无法发送新消息。
+                                    <br />
+                                    <span className="text-sm text-muted-foreground mt-2 block">
+                                        参与者：{threadToToggle && getParticipants(threadToToggle)}
+                                    </span>
+                                </>
+                            )}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={handleCancelToggleLock}>
+                            取消
+                        </AlertDialogCancel>
+                        <AlertDialogAction onClick={handleConfirmToggleLock}>
+                            确认{threadToToggle?.is_locked ? "解锁" : "锁定"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     )
 }

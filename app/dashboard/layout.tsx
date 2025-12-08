@@ -469,6 +469,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       return false
     }
 
+    // 特殊处理：客服mumu只能访问运营管理的三个功能
+    if (adminProfile.display_name === 'mumu' && adminProfile.role === 'support') {
+      return false
+    }
+
     return requiredRoles.includes(adminProfile.role)
   }
 
@@ -482,6 +487,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       // cbodyAdmin 特殊处理：只显示 cbody 菜单项
       if (adminProfile?.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
         return item.key === 'cbody'
+      }
+      // 客服mumu特殊处理：只显示运营管理的订单监控、技师状态、会话监管
+      if (adminProfile?.display_name === 'mumu' && adminProfile.role === 'support') {
+        return ['operations-orders', 'operations-therapists', 'operations-chats'].includes(item.key)
       }
       // 其他管理员隐藏 aloha 和 cbody 菜单项
       if (item.key === 'aloha' || item.key === 'cbody') {
@@ -582,6 +591,11 @@ function DashboardLayoutContent({
 
     // 特殊处理：display_name 为 cbodyAdmin 的 support 角色只能访问 cbody 菜单
     if (adminProfile.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
+      return false
+    }
+
+    // 特殊处理：客服mumu只能访问运营管理的三个功能
+    if (adminProfile.display_name === 'mumu' && adminProfile.role === 'support') {
       return false
     }
 
