@@ -254,6 +254,10 @@ export function TherapistMonitoringDrawer({
                   <dt className="text-muted-foreground">最后上线时间</dt>
                   <dd className="font-medium">{formatDateTime(therapist.last_online_at)}</dd>
                 </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">最后下线时间</dt>
+                  <dd className="font-medium">{formatDateTime(therapist.last_offline_at)}</dd>
+                </div>
                 {hasCooldown && (
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">冷却截止时间</dt>
