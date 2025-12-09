@@ -115,9 +115,10 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
             query = query.not('related_order', 'is', null)
         }
 
-        // ✅ 优化：搜索筛选（数据库层面）
+        // ✅ 优化：搜索筛选（支持参与者名称/用户名 + 订单号）
         if (search) {
-            query = query.or(`customer_display_name.ilike.%${search}%,customer_username.ilike.%${search}%,girl_name.ilike.%${search}%,girl_username.ilike.%${search}%,support_display_name.ilike.%${search}%,support_username.ilike.%${search}%`)
+            // 尝试搜索订单号（如果输入包含订单号特征）
+            query = query.or(`customer_display_name.ilike.%${search}%,customer_username.ilike.%${search}%,girl_name.ilike.%${search}%,girl_username.ilike.%${search}%,support_display_name.ilike.%${search}%,support_username.ilike.%${search}%,related_order->>order_number.ilike.%${search}%`)
         }
 
         // 排序：最后消息时间倒序
@@ -150,12 +151,18 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
 
         // ✅ 优化：视图已包含所有关联数据，直接格式化即可
         const enrichedThreads = threadsData.map((thread: any) => {
-            // 组装客户信息
+            // 组装客户信息（包含完整用户资料）
             const customer = thread.customer_user_id ? {
                 id: thread.customer_user_id,
                 username: thread.customer_username,
                 display_name: thread.customer_display_name,
-                avatar_url: thread.customer_avatar_url
+                avatar_url: thread.customer_avatar_url,
+                level: thread.customer_level,
+                phone_country_code: thread.customer_phone_country_code,
+                phone_number: thread.customer_phone_number,
+                country_code: thread.customer_country_code,
+                language_code: thread.customer_language_code,
+                credit_score: thread.customer_credit_score
             } : null
 
             // 组装技师信息
@@ -242,6 +249,84 @@ export async function toggleThreadLock(
     } catch (error) {
         console.error('[锁定会话] 操作异常:', error)
         return { ok: false, error: "锁定会话异常" }
+    }
+}
+
+/**
+ * 获取客户订单历史
+ */
+export async function getCustomerOrderHistory(
+    customerId: string,
+    page = 1,
+    limit = 20
+): Promise<{ ok: boolean; data?: { orders: any[]; total: number; page: number; limit: number; totalPages: number }; error?: string }> {
+    try {
+        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+        const supabase = getSupabaseAdminClient()
+
+        // 查询客户的订单历史（订单表使用 user_id 而不是 customer_id）
+        let query = supabase
+            .from('orders')
+            .select(`
+                id,
+                order_number,
+                status,
+                total_amount,
+                service_name,
+                created_at,
+                girl:girls!girl_id(id, girl_number, name, avatar_url)
+            `, { count: 'exact' })
+            .eq('user_id', customerId)
+            .order('created_at', { ascending: false })
+
+        // 分页
+        const from = (page - 1) * limit
+        const to = from + limit - 1
+        query = query.range(from, to)
+
+        const { data: ordersData, error, count } = await query
+
+        if (error) {
+            console.error('[客户订单历史] 查询失败:', error)
+            return { ok: false, error: "查询订单历史失败" }
+        }
+
+        const totalPages = Math.ceil((count || 0) / limit)
+
+        return {
+            ok: true,
+            data: {
+                orders: ordersData || [],
+                total: count || 0,
+                page,
+                limit,
+                totalPages
+            }
+        }
+    } catch (error) {
+        console.error('[客户订单历史] 查询异常:', error)
+        return { ok: false, error: "查询订单历史异常" }
+    }
+}
+
+/**
+ * 获取用户邮箱（从 auth.users）
+ */
+export async function getUserEmail(userId: string): Promise<{ ok: boolean; email?: string; error?: string }> {
+    try {
+        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+        const supabase = getSupabaseAdminClient()
+
+        const { data, error } = await supabase.auth.admin.getUserById(userId)
+
+        if (error || !data.user) {
+            return { ok: false, error: "获取用户邮箱失败" }
+        }
+
+        return { ok: true, email: data.user.email }
+    } catch (error) {
+        console.error('[获取用户邮箱] 异常:', error)
+        return { ok: false, error: "获取用户邮箱异常" }
     }
 }
 

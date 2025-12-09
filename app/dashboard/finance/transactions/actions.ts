@@ -46,44 +46,35 @@ export async function getTransactionStats(): Promise<ApiResponse<TransactionStat
     }
     const todayStartUTC = new Date(todayThailand.getTime() - thailandOffset * 60 * 1000).toISOString()
 
-    // 待审核数量
-    const { count: pendingCount } = await supabase
+    // ✅ 优化：一次查询获取所有数据，客户端聚合统计
+    const { data: transactions } = await supabase
       .from('settlement_transactions')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending')
+      .select('status, transaction_type, amount, confirmed_at')
 
-    // 今日已审核数量
-    const { count: todayApprovedCount } = await supabase
-      .from('settlement_transactions')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'confirmed')
-      .gte('confirmed_at', todayStartUTC)
+    // 统计各项数据
+    const pendingCount = transactions?.filter(t => t.status === 'pending').length || 0
 
-    // 今日结账金额 (THB)
-    const { data: todaySettlements } = await supabase
-      .from('settlement_transactions')
-      .select('amount')
-      .eq('status', 'confirmed')
-      .eq('transaction_type', 'settlement')
-      .gte('confirmed_at', todayStartUTC)
+    const todayConfirmed = transactions?.filter(t =>
+      t.status === 'confirmed' &&
+      t.confirmed_at &&
+      t.confirmed_at >= todayStartUTC
+    ) || []
 
-    const todaySettlementAmount = (todaySettlements as any[])?.reduce((sum: number, t: any) => sum + (t.amount || 0), 0) || 0
+    const todayApprovedCount = todayConfirmed.length
 
-    // 今日提现金额 (RMB)
-    const { data: todayWithdrawals } = await supabase
-      .from('settlement_transactions')
-      .select('amount')
-      .eq('status', 'confirmed')
-      .eq('transaction_type', 'withdrawal')
-      .gte('confirmed_at', todayStartUTC)
+    const todaySettlementAmount = todayConfirmed
+      .filter(t => t.transaction_type === 'settlement')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
 
-    const todayWithdrawalAmount = (todayWithdrawals as any[])?.reduce((sum: number, t: any) => sum + (t.amount || 0), 0) || 0
+    const todayWithdrawalAmount = todayConfirmed
+      .filter(t => t.transaction_type === 'withdrawal')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
 
     return {
       ok: true as const,
       data: {
-        pending_count: pendingCount || 0,
-        today_approved_count: todayApprovedCount || 0,
+        pending_count: pendingCount,
+        today_approved_count: todayApprovedCount,
         today_settlement_amount: todaySettlementAmount,
         today_withdrawal_amount: todayWithdrawalAmount
       }
@@ -113,18 +104,10 @@ export async function getTransactions(
       limit = 20
     } = params
 
-    let query = supabase
-      .from('settlement_transactions')
-      .select(`
-        *,
-        girl:girls!girl_id(
-          id,
-          girl_number,
-          name,
-          username,
-          avatar_url
-        )
-      `, { count: 'exact' })
+    // ✅ 优化：使用视图查询，数据已预关联
+    let query = (supabase as any)
+      .from('v_settlement_transactions')
+      .select('*', { count: 'exact' })
 
     // 类型筛选
     if (type) {
@@ -136,54 +119,18 @@ export async function getTransactions(
       query = query.eq('status', status)
     }
 
-    // 城市筛选 - 暂时移除，因为 girls 表没有 city 字段，且筛选逻辑需要重构
-    /*
+    // 城市筛选（使用视图字段）
     if (city) {
-      const { data: cityGirls } = await supabase
-        .from('girls')
-        .select('id')
-        .eq('city', city)
-
-      if (cityGirls && cityGirls.length > 0) {
-        const girlIds = (cityGirls as any[]).map((g: any) => g.id)
-        query = query.in('girl_id', girlIds)
-      } else {
-        return {
-          ok: true as const,
-          data: {
-            data: [],
-            total: 0,
-            page,
-            limit,
-            totalPages: 0
-          }
-        }
-      }
+      query = query.eq('city_id', city)
     }
-    */
 
-    // 搜索（技师姓名/工号）
+    // 搜索：工号、姓名、用户名（使用视图字段，避免额外查询）
     if (search) {
-      const { data: matchedGirls } = await supabase
-        .from('girls')
-        .select('id')
-        .or(`girl_number.eq.${parseInt(search) || 0},name.ilike.%${search}%,username.ilike.%${search}%`)
-
-      if (matchedGirls && matchedGirls.length > 0) {
-        const girlIds = (matchedGirls as any[]).map((g: any) => g.id)
-        query = query.in('girl_id', girlIds)
+      const searchNumber = parseInt(search)
+      if (!isNaN(searchNumber)) {
+        query = query.eq('girl_number', searchNumber)
       } else {
-        // 没有匹配的技师，返回空结果
-        return {
-          ok: true as const,
-          data: {
-            data: [],
-            total: 0,
-            page,
-            limit,
-            totalPages: 0
-          }
-        }
+        query = query.or(`girl_name.ilike.%${search}%,girl_username.ilike.%${search}%`)
       }
     }
 
@@ -204,12 +151,38 @@ export async function getTransactions(
       return { ok: false as const, error: "查询申请列表失败" }
     }
 
+    // ✅ 优化：将视图扁平结构转换为嵌套结构
+    const formattedData = (data || []).map((row: any) => ({
+      id: row.id,
+      girl_id: row.girl_id,
+      transaction_type: row.transaction_type,
+      direction: row.direction,
+      amount: row.amount,
+      exchange_rate: row.exchange_rate,
+      service_fee_rate: row.service_fee_rate,
+      actual_amount_thb: row.actual_amount_thb,
+      payment_method: row.payment_method,
+      payment_proof_url: row.payment_proof_url,
+      notes: row.notes,
+      status: row.status,
+      operator_id: row.operator_id,
+      confirmed_at: row.confirmed_at,
+      created_at: row.created_at,
+      girl: row.girl_number ? {
+        id: row.girl_full_id,
+        girl_number: row.girl_number,
+        name: row.girl_name,
+        username: row.girl_username,
+        avatar_url: row.girl_avatar_url,
+      } : null,
+    }))
+
     const totalPages = Math.ceil((count || 0) / limit)
 
     return {
       ok: true as const,
       data: {
-        data: data as Transaction[],
+        data: formattedData as Transaction[],
         total: count || 0,
         page,
         limit,

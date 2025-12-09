@@ -30,6 +30,7 @@ import {
   CreditCard,
   ArrowUpDown,
   Menu,
+  BarChart3,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -258,6 +259,13 @@ const sidebarGroups: {
           href: "/dashboard/finance/transactions",
           requiredRole: ['superadmin', 'admin', 'finance'],
         },
+        {
+          key: "finance-stats",
+          title: "财务统计",
+          icon: BarChart3,
+          href: "/dashboard/finance/stats",
+          requiredRole: ['superadmin', 'admin', 'finance'],
+        },
       ],
     },
     {
@@ -329,7 +337,9 @@ function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: 
     breadcrumbs.push({ label: "订单管理" })
   } else if (segments[1] === 'finance') {
     breadcrumbs.push({ label: "财务管理", href: "/dashboard/finance" })
-    if (segments[2] === 'accounts') {
+    if (segments[2] === 'stats') {
+      breadcrumbs.push({ label: "财务统计" })
+    } else if (segments[2] === 'accounts') {
       breadcrumbs.push({ label: "结算账户", href: "/dashboard/finance/accounts" })
       if (segments[3]) {
         breadcrumbs.push({ label: "账户详情" })

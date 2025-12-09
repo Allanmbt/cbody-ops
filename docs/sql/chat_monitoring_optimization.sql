@@ -41,8 +41,11 @@ END;
 $$;
 
 -- 2. 创建会话监控视图（预关联用户和技师信息）
-CREATE OR REPLACE VIEW v_chat_monitoring AS
-SELECT 
+-- 先删除旧视图，避免列名冲突
+DROP VIEW IF EXISTS v_chat_monitoring;
+
+CREATE VIEW v_chat_monitoring AS
+SELECT
   ct.id,
   ct.thread_type,
   ct.customer_id,
@@ -53,26 +56,32 @@ SELECT
   ct.last_message_text,
   ct.created_at,
   ct.updated_at,
-  
-  -- 客户信息
+
+  -- 客户信息（包含完整用户资料字段）
   customer.id AS customer_user_id,
   customer.username AS customer_username,
   customer.display_name AS customer_display_name,
   customer.avatar_url AS customer_avatar_url,
-  
+  customer.level AS customer_level,
+  customer.phone_country_code AS customer_phone_country_code,
+  customer.phone_number AS customer_phone_number,
+  customer.country_code AS customer_country_code,
+  customer.language_code AS customer_language_code,
+  customer.credit_score AS customer_credit_score,
+
   -- 技师信息
   girl.id AS girl_id_full,
   girl.girl_number,
   girl.name AS girl_name,
   girl.username AS girl_username,
   girl.avatar_url AS girl_avatar_url,
-  
+
   -- 客服信息
   support.id AS support_user_id,
   support.username AS support_username,
   support.display_name AS support_display_name,
   support.avatar_url AS support_avatar_url,
-  
+
   -- 关联订单（通过子查询获取第一个关联订单）
   (
     SELECT json_build_object(
@@ -84,7 +93,7 @@ SELECT
     WHERE cm.thread_id = ct.id AND cm.order_id IS NOT NULL
     LIMIT 1
   ) AS related_order
-  
+
 FROM chat_threads ct
 LEFT JOIN user_profiles customer ON ct.customer_id = customer.id
 LEFT JOIN girls girl ON ct.girl_id = girl.id
@@ -107,4 +116,4 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_order
 
 -- 4. 注释
 COMMENT ON FUNCTION get_chat_stats() IS '获取会话统计（活跃/今日新增/已锁定），合并3次查询为1次';
-COMMENT ON VIEW v_chat_monitoring IS '会话监控视图，预关联用户、技师、客服信息和关联订单';
+COMMENT ON VIEW v_chat_monitoring IS '会话监控视图，预关联用户、技师、客服信息（含用户完整资料）和关联订单';

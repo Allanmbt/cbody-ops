@@ -208,6 +208,7 @@ export async function getFinanceStats(): Promise<ApiResponse<FinanceStats>> {
 
 /**
  * 获取技师账户列表（分页）
+ * ✅ 优化：使用 v_settlement_accounts 视图，避免嵌套 JOIN
  */
 export async function getSettlementAccounts(
     filters: AccountListFilters = {},
@@ -221,74 +222,29 @@ export async function getSettlementAccounts(
         const from = (page - 1) * pageSize
         const to = from + pageSize - 1
 
-        // 构建查询
-        let query = supabase
-            .from('girl_settlement_accounts')
-            .select(`
-                *,
-                girls (
-                    id,
-                    girl_number,
-                    name,
-                    username,
-                    avatar_url,
-                    city_id,
-                    cities (
-                        id,
-                        name
-                    )
-                )
-            `, { count: 'exact' })
+        // ✅ 优化：使用视图查询，数据已预关联
+        let query = (supabase as any)
+            .from('v_settlement_accounts')
+            .select('*', { count: 'exact' })
 
-        // 应用筛选条件
+        // 搜索：工号或姓名（使用视图字段）
         if (filters.search && filters.search.trim()) {
             const searchTerm = filters.search.trim()
-            // 尝试解析为数字（工号搜索）
             const searchNumber = parseInt(searchTerm)
+
             if (!isNaN(searchNumber)) {
-                // 如果是数字，搜索工号
-                // 注意：在关联表上使用过滤需要特殊语法
-                const { data: girlsWithNumber } = await supabase
-                    .from('girls')
-                    .select('id')
-                    .eq('girl_number', searchNumber)
-
-                if (girlsWithNumber && girlsWithNumber.length > 0) {
-                    const girlIds = (girlsWithNumber as any[]).map(g => g.id)
-                    query = query.in('girl_id', girlIds)
-                } else {
-                    // 如果没找到，返回空结果
-                    query = query.eq('girl_id', '00000000-0000-0000-0000-000000000000')
-                }
+                query = query.eq('girl_number', searchNumber)
             } else {
-                // 如果不是数字，搜索姓名
-                const { data: girlsWithName } = await supabase
-                    .from('girls')
-                    .select('id')
-                    .ilike('name', `%${searchTerm}%`)
-
-                if (girlsWithName && girlsWithName.length > 0) {
-                    const girlIds = (girlsWithName as any[]).map(g => g.id)
-                    query = query.in('girl_id', girlIds)
-                } else {
-                    // 如果没找到，返回空结果
-                    query = query.eq('girl_id', '00000000-0000-0000-0000-000000000000')
-                }
+                query = query.ilike('girl_name', `%${searchTerm}%`)
             }
         }
 
+        // 城市筛选（使用视图字段）
         if (filters.city_id) {
-            const { data: girlsInCity } = await supabase
-                .from('girls')
-                .select('id')
-                .eq('city_id', filters.city_id)
-
-            if (girlsInCity && girlsInCity.length > 0) {
-                const girlIds = (girlsInCity as { id: string }[]).map(g => g.id)
-                query = query.in('girl_id', girlIds)
-            }
+            query = query.eq('city_id', filters.city_id)
         }
 
+        // 余额状态筛选
         if (filters.balance_status) {
             switch (filters.balance_status) {
                 case 'negative':
@@ -303,6 +259,7 @@ export async function getSettlementAccounts(
             }
         }
 
+        // 余额范围筛选
         if (filters.balance_min !== undefined) {
             query = query.gte('balance', filters.balance_min)
         }
@@ -321,12 +278,43 @@ export async function getSettlementAccounts(
 
         if (error) throw error
 
+        // ✅ 优化:将视图扁平结构转换为嵌套结构
+        const formattedData = (data || []).map((row: any) => ({
+            id: row.account_id,
+            girl_id: row.girl_id,
+            balance: row.balance,
+            deposit_amount: row.deposit_amount,
+            frozen_balance_thb: row.frozen_balance_thb,
+            platform_collected_rmb_balance: row.platform_collected_rmb_balance,
+            frozen_rmb_balance: row.frozen_rmb_balance,
+            currency: row.currency,
+            bank_account_name: row.bank_account_name,
+            bank_account_number: row.bank_account_number,
+            bank_name: row.bank_name,
+            bank_branch: row.bank_branch,
+            bank_meta: row.bank_meta,
+            created_at: row.account_created_at,
+            updated_at: row.account_updated_at,
+            girls: row.girl_number ? {
+                id: row.girl_full_id,
+                girl_number: row.girl_number,
+                name: row.girl_name,
+                username: row.girl_username,
+                avatar_url: row.girl_avatar_url,
+                city_id: row.city_id,
+                cities: row.city_name ? {
+                    id: row.city_full_id,
+                    name: row.city_name,
+                } : null,
+            } : null,
+        }))
+
         const totalPages = count ? Math.ceil(count / pageSize) : 0
 
         return {
             ok: true,
             data: {
-                data: data as GirlSettlementAccountWithGirl[],
+                data: formattedData as GirlSettlementAccountWithGirl[],
                 total: count || 0,
                 page,
                 pageSize,
@@ -390,6 +378,7 @@ export async function getSettlementAccountDetail(
  * 获取技师的订单结算流水（或所有记录）
  * 支持按财务日（结算记录创建时间）筛选
  * 注：使用 order_settlements.created_at 而非 orders.completed_at，以兼容取消订单
+ * ✅ 优化：使用 v_finance_settlements 视图，避免 N+1 查询
  */
 export async function getGirlOrderSettlements(
     girlId?: string,
@@ -404,26 +393,10 @@ export async function getGirlOrderSettlements(
         const from = (page - 1) * pageSize
         const to = from + pageSize - 1
 
-        let query = supabase
-            .from('order_settlements')
-            .select(`
-        *,
-        orders!inner (
-          id,
-          order_number,
-          service_name,
-          service_duration,
-          total_amount,
-          completed_at
-        ),
-        girls!inner (
-          id,
-          girl_number,
-          name,
-          username,
-          avatar_url
-        )
-      `, { count: 'exact' })
+        // ✅ 优化：使用视图查询，数据已预关联
+        let query = (supabase as any)
+            .from('v_finance_settlements')
+            .select('*', { count: 'exact' })
 
         // 如果指定了技师ID，则筛选
         if (girlId) {
@@ -456,65 +429,25 @@ export async function getGirlOrderSettlements(
             query = query.lt('created_at', filters.completed_at_to)
         }
 
-        // 搜索：订单号、技师工号、技师姓名
+        // 搜索：订单号、技师工号、技师姓名（使用视图字段）
         if (filters.search && filters.search.trim()) {
             const searchTerm = filters.search.trim()
-
-            // 尝试解析为数字（工号）
             const searchNumber = parseInt(searchTerm)
 
             if (!isNaN(searchNumber)) {
-                // 搜索技师工号
-                const { data: girlsWithNumber } = await supabase
-                    .from('girls')
-                    .select('id')
-                    .eq('girl_number', searchNumber)
-
-                if (girlsWithNumber && girlsWithNumber.length > 0) {
-                    query = query.in('girl_id', girlsWithNumber.map((g: any) => g.id))
-                } else {
-                    // 没找到匹配的工号，返回空结果
-                    query = query.eq('id', '00000000-0000-0000-0000-000000000000')
-                }
+                // 搜索技师工号（直接使用视图字段）
+                query = query.eq('girl_number', searchNumber)
             } else {
-                // 搜索技师姓名或订单号
-                // 先查询匹配的技师
-                const { data: girlsWithName } = await supabase
-                    .from('girls')
-                    .select('id')
-                    .ilike('name', `%${searchTerm}%`)
-
-                // 查询匹配的订单
-                const { data: ordersWithNumber } = await supabase
-                    .from('orders')
-                    .select('id')
-                    .ilike('order_number', `%${searchTerm}%`)
-
-                const girlIds = girlsWithName?.map((g: any) => g.id) || []
-                const orderIds = ordersWithNumber?.map((o: any) => o.id) || []
-
-                if (girlIds.length > 0 || orderIds.length > 0) {
-                    // 使用 or 查询
-                    const conditions: string[] = []
-                    if (girlIds.length > 0) {
-                        conditions.push(`girl_id.in.(${girlIds.join(',')})`)
-                    }
-                    if (orderIds.length > 0) {
-                        conditions.push(`order_id.in.(${orderIds.join(',')})`)
-                    }
-                    query = query.or(conditions.join(','))
-                } else {
-                    // 没找到匹配结果
-                    query = query.eq('id', '00000000-0000-0000-0000-000000000000')
-                }
+                // 搜索技师姓名或订单号（直接使用视图字段）
+                query = query.or(`girl_name.ilike.%${searchTerm}%,order_number.ilike.%${searchTerm}%`)
             }
         }
 
-        // 排序
+        // 排序（使用视图字段）
         if (filters.sort_by && filters.sort_order) {
             const ascending = filters.sort_order === 'asc'
             if (filters.sort_by === 'girl_name') {
-                query = query.order('girls(name)', { ascending })
+                query = query.order('girl_name', { ascending })
             } else if (filters.sort_by === 'created_at') {
                 query = query.order('created_at', { ascending })
             } else if (filters.sort_by === 'service_fee') {
@@ -525,7 +458,6 @@ export async function getGirlOrderSettlements(
                 query = query.order('created_at', { ascending: false })
             }
         } else {
-            // 默认排序：最新的在前
             query = query.order('created_at', { ascending: false })
         }
 
@@ -536,12 +468,50 @@ export async function getGirlOrderSettlements(
 
         if (error) throw error
 
+        // ✅ 优化：将视图的扁平结构转换为嵌套结构
+        const formattedData = (data || []).map((row: any) => ({
+            id: row.id,
+            order_id: row.order_id,
+            girl_id: row.girl_id,
+            service_fee: row.service_fee,
+            extra_fee: row.extra_fee,
+            service_commission_rate: row.service_commission_rate,
+            extra_commission_rate: row.extra_commission_rate,
+            platform_should_get: row.platform_should_get,
+            customer_paid_to_platform: row.customer_paid_to_platform,
+            settlement_amount: row.settlement_amount,
+            actual_paid_amount: row.actual_paid_amount,
+            payment_content_type: row.payment_content_type,
+            payment_method: row.payment_method,
+            payment_notes: row.payment_notes,
+            settlement_status: row.settlement_status,
+            notes: row.notes,
+            created_at: row.created_at,
+            settled_at: row.settled_at,
+            rejected_at: row.rejected_at,
+            reject_reason: row.reject_reason,
+            updated_at: row.updated_at,
+            orders: row.order_number ? {
+                id: row.order_id,
+                order_number: row.order_number,
+                status: row.order_status,
+                completed_at: row.order_completed_at,
+            } : null,
+            girls: row.girl_number ? {
+                id: row.girl_id,
+                girl_number: row.girl_number,
+                name: row.girl_name,
+                username: row.girl_username,
+                avatar_url: row.girl_avatar_url,
+            } : null,
+        }))
+
         const totalPages = count ? Math.ceil(count / pageSize) : 0
 
         return {
             ok: true,
             data: {
-                data: data as OrderSettlementWithDetails[],
+                data: formattedData as OrderSettlementWithDetails[],
                 total: count || 0,
                 page,
                 pageSize,

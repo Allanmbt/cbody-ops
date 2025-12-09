@@ -42,28 +42,34 @@ export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | 
     // 🔧 使用服务器本地时间，以早晨6点为分界点
     const now = new Date()
 
-    // 计算今天6点的时间戳
-    const today6am = new Date(now)
-    today6am.setHours(6, 0, 0, 0)
+    // 计算"今天"的时间范围：今天6:00 到 明天6:00
+    let todayStart = new Date(now)
+    todayStart.setHours(6, 0, 0, 0)
 
-    // 如果当前时间小于今天6点，说明还在"昨天"，今天的起点是昨天6点
+    let tomorrowStart = new Date(todayStart)
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+
+    // 如果当前时间小于今天6点，说明还在"昨天"
     if (now.getHours() < 6) {
-      today6am.setDate(today6am.getDate() - 1)
+      todayStart.setDate(todayStart.getDate() - 1)
+      tomorrowStart.setDate(tomorrowStart.getDate() - 1)
     }
 
-    const todayStart = today6am.toISOString()
+    const todayStartISO = todayStart.toISOString()
+    const tomorrowStartISO = tomorrowStart.toISOString()
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
 
     // ✅ 优化：使用 RPC 函数一次性获取所有统计数据
     const { data, error } = await (supabase as any).rpc('get_order_stats', {
-      p_today_start: todayStart,
+      p_today_start: todayStartISO,
+      p_tomorrow_start: tomorrowStartISO,
       p_ten_minutes_ago: tenMinutesAgo
     })
 
     if (error) {
       console.error('[订单统计] RPC调用失败，回退到多次查询:', error)
       // 回退方案：如果RPC不存在，使用原来的多次查询
-      return await getOrderStatsLegacy(supabase, todayStart, tenMinutesAgo)
+      return await getOrderStatsLegacy(supabase, todayStartISO, tomorrowStartISO, tenMinutesAgo)
     }
 
     return {
@@ -85,44 +91,53 @@ export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | 
 
 /**
  * 回退方案：传统多次查询（用于RPC函数不存在时）
- * ✅ 所有统计都限制为今日6:00后创建的订单
+ * ✅ 所有统计都限制为今日6:00到明天6:00的订单
  */
-async function getOrderStatsLegacy(supabase: any, todayStart: string, tenMinutesAgo: string): Promise<{ ok: true; data: OrderStats }> {
-  // 待确认（今日6:00后创建）
+async function getOrderStatsLegacy(
+  supabase: any,
+  todayStart: string,
+  tomorrowStart: string,
+  tenMinutesAgo: string
+): Promise<{ ok: true; data: OrderStats }> {
+  // 待确认（今日6:00到明天6:00）
   const { count: pendingCount } = await supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'pending')
     .gte('created_at', todayStart)
+    .lt('created_at', tomorrowStart)
 
-  // 待确认超时（今日6:00后创建且10分钟前）
+  // 待确认超时（今日6:00到明天6:00且10分钟前创建）
   const { count: pendingOvertimeCount } = await supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'pending')
     .gte('created_at', todayStart)
+    .lt('created_at', tomorrowStart)
     .lt('created_at', tenMinutesAgo)
 
-  // 进行中（今日6:00后创建）
+  // 进行中（今日6:00到明天6:00）
   const { count: activeCount } = await supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .in('status', ['confirmed', 'en_route', 'arrived', 'in_service'])
     .gte('created_at', todayStart)
+    .lt('created_at', tomorrowStart)
 
-  // 今日完成（今日6:00后创建且已完成）
+  // 今日完成（今日6:00到明天6:00且已完成）
   const { count: todayCompletedCount } = await supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'completed')
     .gte('created_at', todayStart)
+    .lt('created_at', tomorrowStart)
 
-  // 今日取消（今日6:00后取消且订单是今日创建的）
-  // 先获取今日创建的订单ID列表
+  // 今日取消（今日6:00到明天6:00创建的订单）
   const { data: todayOrderIds } = await supabase
     .from('orders')
     .select('id')
     .gte('created_at', todayStart)
+    .lt('created_at', tomorrowStart)
 
   const todayOrderIdList = (todayOrderIds || []).map((o: any) => o.id)
 
@@ -132,6 +147,7 @@ async function getOrderStatsLegacy(supabase: any, todayStart: string, tenMinutes
         .from('order_cancellations')
         .select('*', { count: 'exact', head: true })
         .gte('cancelled_at', todayStart)
+        .lt('cancelled_at', tomorrowStart)
         .in('order_id', todayOrderIdList)
     : { count: 0 }
 
@@ -179,46 +195,46 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
     // 🔧 时间范围筛选（服务器本地时间，以早晨6点为分界点）
     // 注意：当有搜索条件时，不限制时间范围，允许搜索全部订单
     if (!search) {
-      let timeStart: string
-      let timeEnd: string | undefined
-
       // 获取服务器本地当前时间
       const now = new Date()
 
-      // 计算今天6点的时间戳
-      const today6am = new Date(now)
-      today6am.setHours(6, 0, 0, 0)
+      // 计算"今天"的时间范围：今天6:00 到 明天6:00
+      let todayStart = new Date(now)
+      todayStart.setHours(6, 0, 0, 0)
 
-      // 如果当前时间小于今天6点，说明还在"昨天"，今天的起点是昨天6点
+      let tomorrowStart = new Date(todayStart)
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+
+      // 如果当前时间小于今天6点，说明还在"昨天"
       if (now.getHours() < 6) {
-        today6am.setDate(today6am.getDate() - 1)
+        todayStart.setDate(todayStart.getDate() - 1)
+        tomorrowStart.setDate(tomorrowStart.getDate() - 1)
       }
 
       // 计算昨天6点
-      const yesterday6am = new Date(today6am)
-      yesterday6am.setDate(yesterday6am.getDate() - 1)
+      const yesterdayStart = new Date(todayStart)
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1)
 
       if (time_range === 'today') {
-        // 今日：从今天6点开始
-        timeStart = today6am.toISOString()
-        query = query.gte('created_at', timeStart)
+        // 今日：今天6点到明天6点
+        query = query.gte('created_at', todayStart.toISOString())
+          .lt('created_at', tomorrowStart.toISOString())
       } else if (time_range === 'yesterday') {
         // 昨日：昨天6点到今天6点
-        timeStart = yesterday6am.toISOString()
-        timeEnd = today6am.toISOString()
-        query = query.gte('created_at', timeStart).lt('created_at', timeEnd)
+        query = query.gte('created_at', yesterdayStart.toISOString())
+          .lt('created_at', todayStart.toISOString())
       } else if (time_range === '3days') {
-        // 最近3天：从3天前的6点开始
-        const threeDaysAgo6am = new Date(today6am)
-        threeDaysAgo6am.setDate(threeDaysAgo6am.getDate() - 3)
-        timeStart = threeDaysAgo6am.toISOString()
-        query = query.gte('created_at', timeStart)
+        // 最近3天：从3天前的6点到明天6点
+        const threeDaysAgoStart = new Date(todayStart)
+        threeDaysAgoStart.setDate(threeDaysAgoStart.getDate() - 3)
+        query = query.gte('created_at', threeDaysAgoStart.toISOString())
+          .lt('created_at', tomorrowStart.toISOString())
       } else if (time_range === '7days') {
-        // 最近7天：从7天前的6点开始
-        const sevenDaysAgo6am = new Date(today6am)
-        sevenDaysAgo6am.setDate(sevenDaysAgo6am.getDate() - 7)
-        timeStart = sevenDaysAgo6am.toISOString()
-        query = query.gte('created_at', timeStart)
+        // 最近7天：从7天前的6点到明天6点
+        const sevenDaysAgoStart = new Date(todayStart)
+        sevenDaysAgoStart.setDate(sevenDaysAgoStart.getDate() - 7)
+        query = query.gte('created_at', sevenDaysAgoStart.toISOString())
+          .lt('created_at', tomorrowStart.toISOString())
       } else if (time_range === 'custom' && start_date) {
         query = query.gte('created_at', start_date)
         if (end_date) {

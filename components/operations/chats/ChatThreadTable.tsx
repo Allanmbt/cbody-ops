@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
     Table,
     TableBody,
@@ -27,12 +26,26 @@ import { Eye, Lock, Unlock, Copy, Check } from "lucide-react"
 import { formatRelativeTime } from "@/lib/features/orders"
 import { toast } from "sonner"
 import { ChatThreadDrawer } from "@/components/operations/chats/ChatThreadDrawer"
+import { CustomerDetailDialog } from "@/components/operations/chats/CustomerDetailDialog"
 import { toggleThreadLock } from "@/app/dashboard/operations/chats/actions"
 
 interface ChatThreadTableProps {
     threads: any[]
     loading?: boolean
     onRefresh: () => void
+}
+
+/**
+ * 从多语言对象或字符串中提取文本
+ */
+function getDisplayText(value: any): string {
+    if (!value) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'object') {
+        // 优先顺序：zh > en > th > 第一个可用的值
+        return value.zh || value.en || value.th || Object.values(value)[0] || ''
+    }
+    return String(value)
 }
 
 /**
@@ -58,15 +71,15 @@ function getParticipants(thread: any): string {
     const parts: string[] = []
 
     if (thread.customer) {
-        parts.push(thread.customer.display_name || thread.customer.username || '客户')
+        parts.push(getDisplayText(thread.customer.display_name) || getDisplayText(thread.customer.username) || '客户')
     }
 
     if (thread.girl) {
-        parts.push(thread.girl.name || `#${thread.girl.girl_number}`)
+        parts.push(getDisplayText(thread.girl.name) || `#${thread.girl.girl_number}`)
     }
 
     if (thread.support) {
-        parts.push(thread.support.display_name || thread.support.username || '客服')
+        parts.push(getDisplayText(thread.support.display_name) || getDisplayText(thread.support.username) || '客服')
     }
 
     return parts.join(' ↔ ')
@@ -115,10 +128,17 @@ export function ChatThreadTable({
     const [lockingThreadId, setLockingThreadId] = useState<string | null>(null)
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
     const [threadToToggle, setThreadToToggle] = useState<any | null>(null)
+    const [customerDetailOpen, setCustomerDetailOpen] = useState(false)
+    const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null)
 
     const handleViewDetail = (thread: any) => {
         setSelectedThread(thread)
         setDrawerOpen(true)
+    }
+
+    const handleViewCustomerDetail = (customer: any) => {
+        setSelectedCustomer(customer)
+        setCustomerDetailOpen(true)
     }
 
     const handleToggleLockClick = (thread: any) => {
@@ -192,7 +212,29 @@ export function ChatThreadTable({
 
                                     {/* 参与者 */}
                                     <TableCell>
-                                        <span className="text-sm">{getParticipants(thread)}</span>
+                                        <span className="text-sm">
+                                            {thread.customer && (
+                                                <>
+                                                    <button
+                                                        onClick={() => handleViewCustomerDetail(thread.customer)}
+                                                        className="underline hover:text-primary transition-colors"
+                                                        title="查看客户详情"
+                                                    >
+                                                        {getDisplayText(thread.customer.display_name) || getDisplayText(thread.customer.username) || '客户'}
+                                                    </button>
+                                                    {(thread.girl || thread.support) && ' ↔ '}
+                                                </>
+                                            )}
+                                            {thread.girl && (
+                                                <>
+                                                    {getDisplayText(thread.girl.name) || `#${thread.girl.girl_number}`}
+                                                    {thread.support && ' ↔ '}
+                                                </>
+                                            )}
+                                            {thread.support && (
+                                                getDisplayText(thread.support.display_name) || getDisplayText(thread.support.username) || '客服'
+                                            )}
+                                        </span>
                                     </TableCell>
 
                                     {/* 关联订单 */}
@@ -307,6 +349,13 @@ export function ChatThreadTable({
                 onOpenChange={setDrawerOpen}
                 thread={selectedThread}
                 onRefresh={onRefresh}
+            />
+
+            {/* 客户详情弹窗 */}
+            <CustomerDetailDialog
+                open={customerDetailOpen}
+                onOpenChange={setCustomerDetailOpen}
+                customer={selectedCustomer}
             />
 
             {/* 锁定/解锁确认对话框 */}
