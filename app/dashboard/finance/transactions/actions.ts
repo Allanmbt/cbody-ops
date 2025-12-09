@@ -49,7 +49,14 @@ export async function getTransactionStats(): Promise<ApiResponse<TransactionStat
     // ✅ 优化：一次查询获取所有数据，客户端聚合统计
     const { data: transactions } = await supabase
       .from('settlement_transactions')
-      .select('status, transaction_type, amount, confirmed_at')
+      .select('status, transaction_type, amount, confirmed_at') as {
+        data: Array<{
+          status: string
+          transaction_type: string
+          amount: number
+          confirmed_at: string | null
+        }> | null
+      }
 
     // 统计各项数据
     const pendingCount = transactions?.filter(t => t.status === 'pending').length || 0
