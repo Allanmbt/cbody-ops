@@ -100,33 +100,31 @@ export default function OrdersPage() {
     let start_date: string | undefined
     let end_date: string | undefined
 
-    // 🔧 使用泰国时区（UTC+7），以凌晨6点为分界点
-    const nowUTC = new Date()
-    const thailandOffset = 7 * 60 // 泰国时区偏移（分钟）
-    const thailandNow = new Date(nowUTC.getTime() + thailandOffset * 60 * 1000)
+    // 🔧 使用泰国时区(Asia/Bangkok, UTC+7),以早晨6点为分界点
+    const nowBKK = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
 
-    // 计算今天6点的时间戳（泰国时区）
-    const todayThailand = new Date(thailandNow)
-    todayThailand.setHours(6, 0, 0, 0)
+    // 计算"今天"的时间范围:今天6:00 到 明天6:00(泰国时区)
+    const todayStart = new Date(nowBKK)
+    todayStart.setHours(6, 0, 0, 0)
 
-    // 如果当前时间小于今天6点，说明还在"昨天"
-    if (thailandNow.getHours() < 6) {
-      todayThailand.setDate(todayThailand.getDate() - 1)
+    const yesterdayStart = new Date(todayStart)
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+
+    // 如果当前时间小于今天6点,说明还在"昨天"
+    if (nowBKK.getHours() < 6) {
+      todayStart.setDate(todayStart.getDate() - 1)
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1)
     }
-
-    // 转换回 UTC 时间
-    const todayStartUTC = new Date(todayThailand.getTime() - thailandOffset * 60 * 1000)
-    const yesterdayStartUTC = new Date(todayStartUTC.getTime() - 24 * 60 * 60 * 1000)
 
     switch (value) {
       case 'today':
-        // 今日：从今天6点开始
-        start_date = todayStartUTC.toISOString()
+        // 今日:从今天6点开始
+        start_date = todayStart.toISOString()
         break
       case 'yesterday':
-        // 昨日：昨天6点到今天6点
-        start_date = yesterdayStartUTC.toISOString()
-        end_date = todayStartUTC.toISOString()
+        // 昨日:昨天6点到今天6点
+        start_date = yesterdayStart.toISOString()
+        end_date = todayStart.toISOString()
         break
       case 'week':
         start_date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()

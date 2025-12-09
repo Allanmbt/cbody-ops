@@ -39,18 +39,18 @@ export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | 
     await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
-    // 🔧 使用服务器本地时间，以早晨6点为分界点
-    const now = new Date()
+    // 🔧 使用泰国时区(Asia/Bangkok, UTC+7),以早晨6点为分界点
+    const nowBKK = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
 
-    // 计算"今天"的时间范围：今天6:00 到 明天6:00
-    const todayStart = new Date(now)
+    // 计算"今天"的时间范围:今天6:00 到 明天6:00(泰国时区)
+    const todayStart = new Date(nowBKK)
     todayStart.setHours(6, 0, 0, 0)
 
     const tomorrowStart = new Date(todayStart)
     tomorrowStart.setDate(tomorrowStart.getDate() + 1)
 
-    // 如果当前时间小于今天6点，说明还在"昨天"
-    if (now.getHours() < 6) {
+    // 如果当前时间小于今天6点,说明还在"昨天"
+    if (nowBKK.getHours() < 6) {
       todayStart.setDate(todayStart.getDate() - 1)
       tomorrowStart.setDate(tomorrowStart.getDate() - 1)
     }
@@ -192,21 +192,21 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
         service:services!service_id(id, code, title)
       `, { count: 'exact' })
 
-    // 🔧 时间范围筛选（服务器本地时间，以早晨6点为分界点）
-    // 注意：当有搜索条件时，不限制时间范围，允许搜索全部订单
+    // 🔧 时间范围筛选(泰国时区,以早晨6点为分界点)
+    // 注意:当有搜索条件时,不限制时间范围,允许搜索全部订单
     if (!search) {
-      // 获取服务器本地当前时间
-      const now = new Date()
+      // 获取泰国时区当前时间
+      const nowBKK = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
 
-      // 计算"今天"的时间范围：今天6:00 到 明天6:00
-      const todayStart = new Date(now)
+      // 计算"今天"的时间范围:今天6:00 到 明天6:00(泰国时区)
+      const todayStart = new Date(nowBKK)
       todayStart.setHours(6, 0, 0, 0)
 
       const tomorrowStart = new Date(todayStart)
       tomorrowStart.setDate(tomorrowStart.getDate() + 1)
 
-      // 如果当前时间小于今天6点，说明还在"昨天"
-      if (now.getHours() < 6) {
+      // 如果当前时间小于今天6点,说明还在"昨天"
+      if (nowBKK.getHours() < 6) {
         todayStart.setDate(todayStart.getDate() - 1)
         tomorrowStart.setDate(tomorrowStart.getDate() - 1)
       }
