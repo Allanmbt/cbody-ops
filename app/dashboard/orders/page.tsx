@@ -100,21 +100,28 @@ export default function OrdersPage() {
     let start_date: string | undefined
     let end_date: string | undefined
 
-    // 🔧 使用泰国时区(Asia/Bangkok, UTC+7),以早晨6点为分界点
-    const nowBKK = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
+    // 🔧 泰国时区(UTC+7)财务日计算:早晨6点为分界点
+    const now = new Date()
+    // 将UTC时间转为泰国时间(+7小时)
+    const thailandTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)
 
-    // 计算"今天"的时间范围:今天6:00 到 明天6:00(泰国时区)
-    const todayStart = new Date(nowBKK)
-    todayStart.setHours(6, 0, 0, 0)
+    // 获取泰国时间的日期和小时
+    const year = thailandTime.getUTCFullYear()
+    const month = thailandTime.getUTCMonth()
+    const date = thailandTime.getUTCDate()
+    const hours = thailandTime.getUTCHours()
 
-    const yesterdayStart = new Date(todayStart)
-    yesterdayStart.setDate(yesterdayStart.getDate() - 1)
-
-    // 如果当前时间小于今天6点,说明还在"昨天"
-    if (nowBKK.getHours() < 6) {
-      todayStart.setDate(todayStart.getDate() - 1)
-      yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+    // 计算今日财务日起点(泰国6点)
+    let todayStartThailand
+    if (hours < 6) {
+      todayStartThailand = new Date(Date.UTC(year, month, date - 1, 6, 0, 0, 0))
+    } else {
+      todayStartThailand = new Date(Date.UTC(year, month, date, 6, 0, 0, 0))
     }
+
+    // 转回UTC时间
+    const todayStart = new Date(todayStartThailand.getTime() - 7 * 60 * 60 * 1000)
+    const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
 
     switch (value) {
       case 'today':

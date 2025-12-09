@@ -39,21 +39,32 @@ export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | 
     await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
 
-    // 🔧 使用泰国时区(Asia/Bangkok, UTC+7),以早晨6点为分界点
-    const nowBKK = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
+    // 🔧 泰国时区(UTC+7)财务日计算:早晨6点为分界点
+    const now = new Date()
+    // 将UTC时间转为泰国时间(+7小时)
+    const thailandTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)
 
-    // 计算"今天"的时间范围:今天6:00 到 明天6:00(泰国时区)
-    const todayStart = new Date(nowBKK)
-    todayStart.setHours(6, 0, 0, 0)
+    // 获取泰国时间的日期和小时
+    const year = thailandTime.getUTCFullYear()
+    const month = thailandTime.getUTCMonth()
+    const date = thailandTime.getUTCDate()
+    const hours = thailandTime.getUTCHours()
 
-    const tomorrowStart = new Date(todayStart)
-    tomorrowStart.setDate(tomorrowStart.getDate() + 1)
-
-    // 如果当前时间小于今天6点,说明还在"昨天"
-    if (nowBKK.getHours() < 6) {
-      todayStart.setDate(todayStart.getDate() - 1)
-      tomorrowStart.setDate(tomorrowStart.getDate() - 1)
+    // 计算今日财务日起点(泰国6点)
+    let todayStartThailand
+    if (hours < 6) {
+      // 泰国时间小于6点,财务日从昨天6点开始
+      todayStartThailand = new Date(Date.UTC(year, month, date - 1, 6, 0, 0, 0))
+    } else {
+      // 泰国时间>=6点,财务日从今天6点开始
+      todayStartThailand = new Date(Date.UTC(year, month, date, 6, 0, 0, 0))
     }
+
+    // 转回UTC时间(泰国时间-7小时)
+    const todayStart = new Date(todayStartThailand.getTime() - 7 * 60 * 60 * 1000)
+
+    // 明天财务日起点
+    const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
 
     const todayStartISO = todayStart.toISOString()
     const tomorrowStartISO = tomorrowStart.toISOString()
@@ -192,28 +203,31 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
         service:services!service_id(id, code, title)
       `, { count: 'exact' })
 
-    // 🔧 时间范围筛选(泰国时区,以早晨6点为分界点)
+    // 🔧 时间范围筛选(泰国时区UTC+7,以早晨6点为分界点)
     // 注意:当有搜索条件时,不限制时间范围,允许搜索全部订单
     if (!search) {
-      // 获取泰国时区当前时间
-      const nowBKK = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
+      const now = new Date()
+      // 将UTC时间转为泰国时间(+7小时)
+      const thailandTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)
 
-      // 计算"今天"的时间范围:今天6:00 到 明天6:00(泰国时区)
-      const todayStart = new Date(nowBKK)
-      todayStart.setHours(6, 0, 0, 0)
+      // 获取泰国时间的日期和小时
+      const year = thailandTime.getUTCFullYear()
+      const month = thailandTime.getUTCMonth()
+      const date = thailandTime.getUTCDate()
+      const hours = thailandTime.getUTCHours()
 
-      const tomorrowStart = new Date(todayStart)
-      tomorrowStart.setDate(tomorrowStart.getDate() + 1)
-
-      // 如果当前时间小于今天6点,说明还在"昨天"
-      if (nowBKK.getHours() < 6) {
-        todayStart.setDate(todayStart.getDate() - 1)
-        tomorrowStart.setDate(tomorrowStart.getDate() - 1)
+      // 计算今日财务日起点(泰国6点)
+      let todayStartThailand
+      if (hours < 6) {
+        todayStartThailand = new Date(Date.UTC(year, month, date - 1, 6, 0, 0, 0))
+      } else {
+        todayStartThailand = new Date(Date.UTC(year, month, date, 6, 0, 0, 0))
       }
 
-      // 计算昨天6点
-      const yesterdayStart = new Date(todayStart)
-      yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+      // 转回UTC时间
+      const todayStart = new Date(todayStartThailand.getTime() - 7 * 60 * 60 * 1000)
+      const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+      const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
 
       if (time_range === 'today') {
         // 今日：今天6点到明天6点
