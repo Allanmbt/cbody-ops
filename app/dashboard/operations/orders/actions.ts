@@ -43,10 +43,10 @@ export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | 
     const now = new Date()
 
     // 计算"今天"的时间范围：今天6:00 到 明天6:00
-    let todayStart = new Date(now)
+    const todayStart = new Date(now)
     todayStart.setHours(6, 0, 0, 0)
 
-    let tomorrowStart = new Date(todayStart)
+    const tomorrowStart = new Date(todayStart)
     tomorrowStart.setDate(tomorrowStart.getDate() + 1)
 
     // 如果当前时间小于今天6点，说明还在"昨天"
@@ -199,10 +199,10 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
       const now = new Date()
 
       // 计算"今天"的时间范围：今天6:00 到 明天6:00
-      let todayStart = new Date(now)
+      const todayStart = new Date(now)
       todayStart.setHours(6, 0, 0, 0)
 
-      let tomorrowStart = new Date(todayStart)
+      const tomorrowStart = new Date(todayStart)
       tomorrowStart.setDate(tomorrowStart.getDate() + 1)
 
       // 如果当前时间小于今天6点，说明还在"昨天"
