@@ -5,19 +5,45 @@ import { createServerClient } from "@supabase/ssr"
 export async function middleware(req: NextRequest) {
   const hostname = req.headers.get('host') || ''
 
-  // 🔧 api.cbody.vip 域名控制
+  // 🔧 api.cbody.vip 域名严格隔离控制
   if (hostname.includes('api.cbody.vip')) {
-    // 根路径返回404
-    if (req.nextUrl.pathname === '/') {
+    const pathname = req.nextUrl.pathname
+
+    console.log('[API Domain] 检测到 api.cbody.vip 访问:', { hostname, pathname })
+
+    // ❌ 禁止访问任何后台路径
+    const forbiddenPaths = [
+      '/dashboard',
+      '/login',
+      '/admin',
+      '/settings',
+      '/users',
+      '/orders',
+      '/finance',
+      '/operations',
+      '/configs'
+    ]
+
+    // 检查是否访问禁止路径
+    if (forbiddenPaths.some(path => pathname.startsWith(path))) {
+      console.log('[API Domain] 拒绝访问后台路径:', pathname)
+      return new NextResponse('Forbidden', { status: 403 })
+    }
+
+    // ❌ 根路径返回404
+    if (pathname === '/') {
+      console.log('[API Domain] 根路径返回404')
       return new NextResponse('Not Found', { status: 404 })
     }
 
-    // 只允许 /api/* 路径
-    if (!req.nextUrl.pathname.startsWith('/api/')) {
+    // ✅ 只允许 /api/v1/* 路径(严格限制)
+    if (!pathname.startsWith('/api/v1/')) {
+      console.log('[API Domain] 非 API 路径返回404:', pathname)
       return new NextResponse('Not Found', { status: 404 })
     }
 
-    // API 请求直接通过,不处理 Supabase session
+    console.log('[API Domain] 允许 API 访问:', pathname)
+    // ✅ API 请求直接通过,不处理 Supabase session
     return NextResponse.next()
   }
 
