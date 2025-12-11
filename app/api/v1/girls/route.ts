@@ -95,11 +95,11 @@ export async function GET(request: NextRequest) {
         id,
         girl_number,
         city_id,
-        username,
+        name,
         avatar_url,
         is_blocked,
         is_verified,
-        girls_status!inner(
+        girls_status!girls_status_girl_id_fkey(
           status,
           current_lat,
           current_lng,
@@ -118,17 +118,20 @@ export async function GET(request: NextRequest) {
     }
 
     // 6. 数据转换(脱敏)
-    const result: GirlData[] = (girls || []).map((girl: any) => ({
-      id: girl.id,
-      girl_number: girl.girl_number,
-      city_id: girl.city_id,
-      username: girl.username,
-      avatar_url: girl.avatar_url,
-      lat: girl.girls_status[0]?.current_lat || null,
-      lng: girl.girls_status[0]?.current_lng || null,
-      status: girl.girls_status[0]?.status || 'offline',
-      next_available_time: girl.girls_status[0]?.next_available_time || null
-    }))
+    const result: GirlData[] = (girls || []).map((girl: any) => {
+      const status = girl.girls_status
+      return {
+        id: girl.id,
+        girl_number: girl.girl_number,
+        city_id: girl.city_id,
+        username: girl.name,
+        avatar_url: girl.avatar_url,
+        lat: status?.current_lat || null,
+        lng: status?.current_lng || null,
+        status: status?.status || 'offline',
+        next_available_time: status?.next_available_time || null
+      }
+    })
 
     // 7. 记录日志
     logApiRequest({
