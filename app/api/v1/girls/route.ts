@@ -25,13 +25,11 @@ interface GirlData {
 export async function GET(request: NextRequest) {
   const startTime = Date.now()
   let apiKeyId: string | undefined
-  let responseStatus = 200
 
   try {
     // 1. 提取 API Key
     const apiKey = extractApiKey(request)
     if (!apiKey) {
-      responseStatus = 401
       return NextResponse.json(
         { ok: false, error: 'Missing API key. Use Authorization: Bearer <api_key> or ?api_key=<api_key>' },
         { status: 401 }
@@ -41,7 +39,6 @@ export async function GET(request: NextRequest) {
     // 2. 验证 API Key
     const validation = await validateApiKey(apiKey)
     if (!validation.valid) {
-      responseStatus = 401
       return NextResponse.json(
         { ok: false, error: validation.error || 'Invalid API key' },
         { status: 401 }
@@ -58,7 +55,6 @@ export async function GET(request: NextRequest) {
     )
 
     if (!rateLimitResult.allowed) {
-      responseStatus = 429
       return NextResponse.json(
         {
           ok: false,
@@ -84,7 +80,6 @@ export async function GET(request: NextRequest) {
 
     const ipRateLimitResult = checkIpRateLimit(ipAddress)
     if (!ipRateLimitResult.allowed) {
-      responseStatus = 429
       return NextResponse.json(
         { ok: false, error: 'IP rate limit exceeded' },
         { status: 429 }
@@ -116,7 +111,6 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('[API Girls] 查询失败:', error)
-      responseStatus = 500
       return NextResponse.json(
         { ok: false, error: 'Failed to fetch girls data' },
         { status: 500 }
@@ -167,7 +161,6 @@ export async function GET(request: NextRequest) {
     )
   } catch (error) {
     console.error('[API Girls] 异常:', error)
-    responseStatus = 500
 
     // 记录错误日志
     if (apiKeyId) {
