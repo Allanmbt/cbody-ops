@@ -3,6 +3,25 @@ import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 
 export async function middleware(req: NextRequest) {
+  const hostname = req.headers.get('host') || ''
+
+  // 🔧 api.cbody.vip 域名控制
+  if (hostname.includes('api.cbody.vip')) {
+    // 根路径返回404
+    if (req.nextUrl.pathname === '/') {
+      return new NextResponse('Not Found', { status: 404 })
+    }
+
+    // 只允许 /api/* 路径
+    if (!req.nextUrl.pathname.startsWith('/api/')) {
+      return new NextResponse('Not Found', { status: 404 })
+    }
+
+    // API 请求直接通过,不处理 Supabase session
+    return NextResponse.next()
+  }
+
+  // 以下是 ops.cbody.vip 的正常逻辑
   let res = NextResponse.next({
     request: req,
   })
@@ -27,7 +46,7 @@ export async function middleware(req: NextRequest) {
     }
   )
 
-  // 刷新 session（自动更新 cookies）
+  // 刷新 session(自动更新 cookies)
   await supabase.auth.getUser()
 
   // 根路径重定向到 dashboard
@@ -40,6 +59,6 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }
