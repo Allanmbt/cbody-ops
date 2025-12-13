@@ -17,6 +17,8 @@ export interface ReviewStats {
 
 export interface ReviewListFilters {
     status?: ReviewStatus | "all"
+    search?: string  // 搜索技师工号或名称
+    ratingRange?: "low" | "medium" | "high" | "all"  // 星级筛选：≤2星 | 3-4星 | ≥4.5星
     page?: number
     limit?: number
 }
@@ -33,6 +35,7 @@ export interface ReviewListItem {
     rating_similarity: number
     rating_overall: number
     comment_text: string | null
+    is_anonymous: boolean
     min_user_level: number
     status: ReviewStatus
     reviewed_by: string | null
@@ -130,6 +133,8 @@ export async function getReviews(filters: ReviewListFilters = {}) {
 
         const {
             status = "pending",
+            search,
+            ratingRange,
             page = 1,
             limit = 50,
         } = filters
@@ -142,6 +147,31 @@ export async function getReviews(filters: ReviewListFilters = {}) {
         // 状态筛选
         if (status && status !== "all") {
             query = query.eq("status", status)
+        }
+
+        // 星级筛选
+        if (ratingRange && ratingRange !== "all") {
+            if (ratingRange === "low") {
+                query = query.lte("rating_overall", 2)
+            } else if (ratingRange === "medium") {
+                query = query.gte("rating_overall", 3).lt("rating_overall", 4.5)
+            } else if (ratingRange === "high") {
+                query = query.gte("rating_overall", 4.5)
+            }
+        }
+
+        // 搜索筛选：按技师工号或名称
+        if (search && search.trim()) {
+            const searchTerm = search.trim()
+            // 尝试解析为数字（工号）
+            const girlNumber = parseInt(searchTerm)
+            if (!isNaN(girlNumber)) {
+                // 按工号搜索
+                query = query.eq("girl_number", girlNumber)
+            } else {
+                // 按技师名称搜索
+                query = query.ilike("girl_name", `%${searchTerm}%`)
+            }
         }
 
         // 排序：待审核优先，然后按创建时间倒序
@@ -187,6 +217,7 @@ export async function getReviews(filters: ReviewListFilters = {}) {
             rating_similarity: r.rating_similarity,
             rating_overall: r.rating_overall,
             comment_text: r.comment_text,
+            is_anonymous: r.is_anonymous,
             min_user_level: r.min_user_level,
             status: r.status,
             reviewed_by: r.reviewed_by,
@@ -426,6 +457,68 @@ export async function updateReviewLevel(id: string, minUserLevel: number) {
         return {
             ok: false as const,
             error: error instanceof Error ? error.message : "更新可见等级异常",
+        }
+    }
+}
+
+/**
+ * 更新评论匿名状态
+ */
+export async function updateReviewAnonymous(id: string, isAnonymous: boolean) {
+    try {
+        await requireAdmin(["superadmin", "admin", "support"])
+        const supabase = getSupabaseAdminClient() as any
+
+        const { error } = await (supabase as any)
+            .from("order_reviews")
+            .update({
+                is_anonymous: isAnonymous,
+            })
+            .eq("id", id)
+
+        if (error) {
+            console.error("[评论管理] 更新匿名状态失败:", error)
+            return { ok: false as const, error: `更新匿名状态失败: ${error.message}` }
+        }
+
+        return { ok: true as const }
+    } catch (error) {
+        console.error("[评论管理] 更新匿名状态异常:", error)
+        return {
+            ok: false as const,
+            error: error instanceof Error ? error.message : "更新匿名状态异常",
+        }
+    }
+}
+
+/**
+ * 更新评论内容
+ */
+export async function updateReviewComment(id: string, commentText: string) {
+    try {
+        await requireAdmin(["superadmin", "admin", "support"])
+        const supabase = getSupabaseAdminClient() as any
+
+        const trimmedComment = commentText.trim()
+
+        const { error } = await (supabase as any)
+            .from("order_reviews")
+            .update({
+                comment_text: trimmedComment || null,
+            })
+            .eq("id", id)
+
+        if (error) {
+            console.error("[评论管理] 更新评论内容失败:", error)
+            return { ok: false as const, error: `更新评论内容失败: ${error.message}` }
+        }
+
+        return { ok: true as const }
+    } catch (error) {
+        console.error("[评论管理] 更新评论内容异常:", error)
+        return {
+            ok: false as const,
+            error: error instanceof Error ? error.message : "更新评论内容异常",
         }
     }
 }

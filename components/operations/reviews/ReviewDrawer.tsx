@@ -23,9 +23,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Star, Check, X, User, Award } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Star, Check, X, User, Award, Edit2, Save } from "lucide-react"
 import { formatRelativeTime } from "@/lib/features/orders"
-import { approveReview, rejectReview, updateReviewLevel, type ReviewListItem } from "@/app/dashboard/operations/reviews/actions"
+import { approveReview, rejectReview, updateReviewLevel, updateReviewAnonymous, updateReviewComment, type ReviewListItem } from "@/app/dashboard/operations/reviews/actions"
 import { toast } from "sonner"
 
 interface ReviewDrawerProps {
@@ -77,11 +78,19 @@ export function ReviewDrawer({ open, onOpenChange, review, onReviewed }: ReviewD
     const [rejectReason, setRejectReason] = useState("")
     const [minUserLevel, setMinUserLevel] = useState(0)
     const [isUpdatingLevel, setIsUpdatingLevel] = useState(false)
+    const [isAnonymous, setIsAnonymous] = useState(false)
+    const [isUpdatingAnonymous, setIsUpdatingAnonymous] = useState(false)
+    const [isEditingComment, setIsEditingComment] = useState(false)
+    const [commentText, setCommentText] = useState("")
+    const [isUpdatingComment, setIsUpdatingComment] = useState(false)
 
-    // 同步评论的可见等级
+    // 同步评论的可见等级、匿名状态和评论内容
     useEffect(() => {
         if (review) {
             setMinUserLevel(review.min_user_level)
+            setIsAnonymous(review.is_anonymous)
+            setCommentText(review.comment_text || "")
+            setIsEditingComment(false)
         }
     }, [review])
 
@@ -137,6 +146,41 @@ export function ReviewDrawer({ open, onOpenChange, review, onReviewed }: ReviewD
         setMinUserLevel(level)
         toast.success("可见等级已更新")
         onReviewed()
+    }
+
+    const handleAnonymousChange = async (checked: boolean) => {
+        setIsUpdatingAnonymous(true)
+        const result = await updateReviewAnonymous(review.id, checked)
+        setIsUpdatingAnonymous(false)
+
+        if (!result.ok) {
+            toast.error(result.error || "更新匿名状态失败")
+            return
+        }
+
+        setIsAnonymous(checked)
+        toast.success(checked ? "已设置为匿名显示" : "已取消匿名显示")
+        onReviewed()
+    }
+
+    const handleSaveComment = async () => {
+        setIsUpdatingComment(true)
+        const result = await updateReviewComment(review.id, commentText)
+        setIsUpdatingComment(false)
+
+        if (!result.ok) {
+            toast.error(result.error || "更新评论内容失败")
+            return
+        }
+
+        setIsEditingComment(false)
+        toast.success("评论内容已更新")
+        onReviewed()
+    }
+
+    const handleCancelEditComment = () => {
+        setCommentText(review.comment_text || "")
+        setIsEditingComment(false)
     }
 
     return (
@@ -249,19 +293,61 @@ export function ReviewDrawer({ open, onOpenChange, review, onReviewed }: ReviewD
                         </div>
 
                         {/* 评论内容 */}
-                        {review.comment_text && (
-                            <div className="space-y-2">
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
                                 <div className="text-sm font-medium">评论内容</div>
-                                <div className="text-sm whitespace-pre-wrap break-words bg-muted/40 rounded-lg p-4 border">
-                                    {review.comment_text}
-                                </div>
+                                {!isEditingComment && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setIsEditingComment(true)}
+                                    >
+                                        <Edit2 className="h-3 w-3 mr-1" />
+                                        编辑
+                                    </Button>
+                                )}
                             </div>
-                        )}
+
+                            {isEditingComment ? (
+                                <div className="space-y-2">
+                                    <Textarea
+                                        value={commentText}
+                                        onChange={(e) => setCommentText(e.target.value)}
+                                        placeholder="请输入评论内容..."
+                                        className="min-h-[120px] resize-none"
+                                        disabled={isUpdatingComment}
+                                    />
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            size="sm"
+                                            onClick={handleSaveComment}
+                                            disabled={isUpdatingComment}
+                                        >
+                                            <Save className="h-3 w-3 mr-1" />
+                                            {isUpdatingComment ? "保存中..." : "保存"}
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={handleCancelEditComment}
+                                            disabled={isUpdatingComment}
+                                        >
+                                            取消
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-sm whitespace-pre-wrap break-words bg-muted/40 rounded-lg p-4 border">
+                                    {review.comment_text || <span className="text-muted-foreground">暂无评论内容</span>}
+                                </div>
+                            )}
+                        </div>
 
                         {/* 可见等级 */}
                         <div className="space-y-2">
                             <div className="text-sm font-medium">可见设置</div>
-                            <div className="p-3 bg-muted/50 rounded-lg">
+                            <div className="p-3 bg-muted/50 rounded-lg space-y-3">
+                                {/* 最低可见等级 */}
                                 <div className="flex items-center justify-between gap-3">
                                     <span className="text-sm text-muted-foreground">最低可见用户等级</span>
                                     <Select
@@ -286,8 +372,24 @@ export function ReviewDrawer({ open, onOpenChange, review, onReviewed }: ReviewD
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                {isUpdatingLevel && (
-                                    <div className="text-xs text-muted-foreground mt-2">更新中...</div>
+
+                                {/* 匿名显示 */}
+                                <div className="flex items-center justify-between gap-3 pt-2 border-t">
+                                    <div className="flex-1">
+                                        <span className="text-sm text-muted-foreground">匿名显示</span>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            启用后评论者信息将显示为"匿名用户"
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        checked={isAnonymous}
+                                        onCheckedChange={handleAnonymousChange}
+                                        disabled={isUpdatingAnonymous}
+                                    />
+                                </div>
+
+                                {(isUpdatingLevel || isUpdatingAnonymous) && (
+                                    <div className="text-xs text-muted-foreground">更新中...</div>
                                 )}
                             </div>
                         </div>

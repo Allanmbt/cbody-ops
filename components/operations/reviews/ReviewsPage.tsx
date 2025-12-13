@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { RefreshCw, AlertCircle, TrendingUp, CheckCircle2, XCircle } from "lucide-react"
+import { RefreshCw, AlertCircle, TrendingUp, CheckCircle2, XCircle, Search } from "lucide-react"
 import { toast } from "sonner"
 import { getReviews, getReviewStats, type ReviewListFilters, type ReviewListResult, type ReviewStats, type ReviewListItem } from "@/app/dashboard/operations/reviews/actions"
 import { ReviewsTable } from "./ReviewsTable"
@@ -27,8 +28,11 @@ export function ReviewsPage({ initialStats, initialReviews, initialTotal }: Revi
         totalPages: Math.ceil(initialTotal / 50)
     })
 
+    const [searchInput, setSearchInput] = useState("")
+
     const [filters, setFilters] = useState<ReviewListFilters>({
         status: "pending",
+        ratingRange: "all",
         page: 1,
         limit: 50,
     })
@@ -66,11 +70,20 @@ export function ReviewsPage({ initialStats, initialReviews, initialTotal }: Revi
         }
         loadReviews()
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filters.status, filters.page])
+    }, [filters.status, filters.page, filters.search, filters.ratingRange])
 
     const handleRefresh = async () => {
         await Promise.all([loadStats(), loadReviews()])
         toast.success("已刷新数据")
+    }
+
+    const handleSearch = () => {
+        setFilters({ ...filters, search: searchInput.trim() || undefined, page: 1 })
+    }
+
+    const handleClearSearch = () => {
+        setSearchInput("")
+        setFilters({ ...filters, search: undefined, page: 1 })
     }
 
     const total = reviews?.total || 0
@@ -149,38 +162,101 @@ export function ReviewsPage({ initialStats, initialReviews, initialTotal }: Revi
             {/* 筛选区域 */}
             <Card>
                 <CardContent className="p-4">
-                    <div className="flex flex-wrap gap-2">
-                        <Button
-                            variant={filters.status === "pending" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setFilters({ ...filters, status: "pending", page: 1 })}
-                            className={filters.status === "pending" ? "bg-yellow-500 hover:bg-yellow-600" : ""}
-                        >
-                            待审核
-                        </Button>
-                        <Button
-                            variant={filters.status === "approved" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setFilters({ ...filters, status: "approved", page: 1 })}
-                            className={filters.status === "approved" ? "bg-green-600 hover:bg-green-700" : ""}
-                        >
-                            已通过
-                        </Button>
-                        <Button
-                            variant={filters.status === "rejected" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setFilters({ ...filters, status: "rejected", page: 1 })}
-                            className={filters.status === "rejected" ? "bg-red-600 hover:bg-red-700" : ""}
-                        >
-                            已驳回
-                        </Button>
-                        <Button
-                            variant={filters.status === "all" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setFilters({ ...filters, status: "all", page: 1 })}
-                        >
-                            全部
-                        </Button>
+                    <div className="flex flex-col gap-4">
+                        {/* 搜索框 */}
+                        <div className="flex gap-2">
+                            <Input
+                                placeholder="输入技师工号或名称搜索..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        handleSearch()
+                                    }
+                                }}
+                                className="max-w-xs"
+                            />
+                            <Button onClick={handleSearch} size="sm">
+                                <Search className="mr-2 h-4 w-4" />
+                                搜索
+                            </Button>
+                            {filters.search && (
+                                <Button onClick={handleClearSearch} variant="outline" size="sm">
+                                    清除
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* 状态筛选 */}
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant={filters.status === "pending" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, status: "pending", page: 1 })}
+                                className={filters.status === "pending" ? "bg-yellow-500 hover:bg-yellow-600" : ""}
+                            >
+                                待审核
+                            </Button>
+                            <Button
+                                variant={filters.status === "approved" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, status: "approved", page: 1 })}
+                                className={filters.status === "approved" ? "bg-green-600 hover:bg-green-700" : ""}
+                            >
+                                已通过
+                            </Button>
+                            <Button
+                                variant={filters.status === "rejected" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, status: "rejected", page: 1 })}
+                                className={filters.status === "rejected" ? "bg-red-600 hover:bg-red-700" : ""}
+                            >
+                                已驳回
+                            </Button>
+                            <Button
+                                variant={filters.status === "all" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, status: "all", page: 1 })}
+                            >
+                                全部
+                            </Button>
+                        </div>
+
+                        {/* 星级筛选 */}
+                        <div className="flex flex-wrap gap-2 items-center">
+                            <span className="text-sm text-muted-foreground">星级：</span>
+                            <Button
+                                variant={filters.ratingRange === "all" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, ratingRange: "all", page: 1 })}
+                            >
+                                全部
+                            </Button>
+                            <Button
+                                variant={filters.ratingRange === "low" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, ratingRange: "low", page: 1 })}
+                                className={filters.ratingRange === "low" ? "bg-red-600 hover:bg-red-700" : ""}
+                            >
+                                ≤2★ 差评
+                            </Button>
+                            <Button
+                                variant={filters.ratingRange === "medium" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, ratingRange: "medium", page: 1 })}
+                                className={filters.ratingRange === "medium" ? "bg-orange-500 hover:bg-orange-600" : ""}
+                            >
+                                3-4★ 中评
+                            </Button>
+                            <Button
+                                variant={filters.ratingRange === "high" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilters({ ...filters, ratingRange: "high", page: 1 })}
+                                className={filters.ratingRange === "high" ? "bg-green-600 hover:bg-green-700" : ""}
+                            >
+                                ≥4.5★ 好评
+                            </Button>
+                        </div>
                     </div>
                 </CardContent>
             </Card>

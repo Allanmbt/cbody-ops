@@ -666,8 +666,9 @@ WHERE is_whitelisted = true;
 | rating_attitude | SMALLINT | 是 | - | 服务态度评分（1-5） |
 | rating_emotion | SMALLINT | 是 | - | 情绪价值评分（1-5） |
 | rating_similarity | SMALLINT | 是 | - | 本人相似度评分（1-5） |
-| rating_overall | DECIMAL(3,2) | 是 | 0 | 三项平均总分（不含相似度，触发器会自动计算，以实现） |
+| rating_overall | DECIMAL(3,2) | 是 | 0 | 三项平均总分（不含相似度，触发器会自动计算,以实现） |
 | comment_text | TEXT | 否 | NULL | 用户评价文字 |
+| is_anonymous | BOOLEAN | 否 | false | 是否匿名评论（true=匿名显示，false=显示真实用户名） |
 | min_user_level | SMALLINT | 是 | 0 | 最低可见用户等级（0=公开） |
 | status | TEXT | 是 | 'pending' | 审核状态：pending/approved/rejected |
 | reviewed_by | UUID | 否 | NULL | 审核人ID，关联auth.users表 |
@@ -684,6 +685,7 @@ WHERE is_whitelisted = true;
 - INDEX idx_order_reviews_status (status)
 - INDEX idx_order_reviews_girl_status (girl_id, status) WHERE status = 'approved'
 - INDEX idx_order_reviews_created_at (created_at DESC)
+- INDEX idx_order_reviews_anonymous (is_anonymous) WHERE is_anonymous = true
 
 **外键约束**：
 - FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
@@ -1026,6 +1028,7 @@ WHERE is_whitelisted = true;
 | last_message_text | TEXT | 否 | NULL | 最后消息文本（用于列表展示） |
 | last_push_to_customer_at | TIMESTAMPTZ | 否 | NULL | 最后一次推送给客户的时间（防30秒重复推送） |
 | last_push_to_girl_at | TIMESTAMPTZ | 否 | NULL | 最后一次推送给技师的时间（防30秒重复推送） |
+| last_auto_busy_reply_at | TIMESTAMPTZ | 否 | NULL | 最后一次发送"忙碌中"自动回复的时间（防止重复回复，2小时冷却期） |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
 | updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
 
@@ -1037,6 +1040,7 @@ WHERE is_whitelisted = true;
 - INDEX idx_chat_threads_type (thread_type)
 - INDEX idx_chat_threads_push_customer (last_push_to_customer_at) WHERE last_push_to_customer_at IS NOT NULL
 - INDEX idx_chat_threads_push_girl (last_push_to_girl_at) WHERE last_push_to_girl_at IS NOT NULL
+- INDEX idx_chat_threads_auto_busy_reply (last_auto_busy_reply_at) WHERE last_auto_busy_reply_at IS NOT NULL
 - UNIQUE INDEX idx_chat_threads_c2g (customer_id, girl_id) WHERE thread_type = 'c2g'
 - UNIQUE INDEX idx_chat_threads_s2c (support_id, customer_id) WHERE thread_type = 's2c'
 - UNIQUE INDEX idx_chat_threads_s2g (support_id, girl_id) WHERE thread_type = 's2g'

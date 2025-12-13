@@ -1804,10 +1804,8 @@ TO authenticated
 WITH CHECK (
   bucket_id = 'upload'
   AND (storage.foldername(name))[1] = 'settlements'
-  AND EXISTS (
-    SELECT 1 FROM public.girls g
-    WHERE g.id::text = (storage.foldername(name))[2]
-      AND g.user_id = auth.uid()
+  AND (storage.foldername(name))[2] IN (
+    SELECT id::text FROM public.girls WHERE user_id = auth.uid()
   )
 );
 
@@ -1818,10 +1816,8 @@ TO authenticated
 USING (
   bucket_id = 'upload'
   AND (storage.foldername(name))[1] = 'settlements'
-  AND EXISTS (
-    SELECT 1 FROM public.girls g
-    WHERE g.id::text = (storage.foldername(name))[2]
-      AND g.user_id = auth.uid()
+  AND (storage.foldername(name))[2] IN (
+    SELECT id::text FROM public.girls WHERE user_id = auth.uid()
   )
 );
 
