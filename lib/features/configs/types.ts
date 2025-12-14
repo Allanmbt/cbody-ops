@@ -79,3 +79,20 @@ export interface UpdateConfigParams {
   value_url?: string
   description?: string
 }
+
+// 银行卡账户配置
+export interface BankAccount {
+  id: string
+  code: string              // 银行代码（如 BAY, KBANK, SCB）
+  bank_name: string         // 银行名称
+  account_holder: string    // 账户持有人
+  account_number: string    // 账号
+  qr_code_url: string      // 二维码URL
+  is_active: boolean       // 是否激活
+  sort_order: number       // 排序
+}
+
+// 银行卡配置参数（存储在 app_configs.value_json 中）
+export interface BankAccountsConfig {
+  accounts: BankAccount[]
+}

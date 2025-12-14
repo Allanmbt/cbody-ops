@@ -36,14 +36,14 @@ const configCards: ConfigCard[] = [
   },
   // 预留更多配置项
   {
-    key: "map",
-    title: "地图服务配置",
-    description: "配置地图 API 密钥、路由规划和地理位置服务",
-    icon: <Map className="size-8" />,
-    href: "/dashboard/configs/map",
-    badge: "即将开放",
-    namespace: "map",
-    config_key: "api.v1",
+    key: "bank-accounts",
+    title: "平台收款银行卡配置",
+    description: "管理平台收款银行卡信息，控制是否显示给客户和技师",
+    icon: <DollarSign className="size-8" />,
+    href: "/dashboard/configs/bank-accounts",
+    badge: "已启用",
+    namespace: "settlement",
+    config_key: "bank_accounts",
   },
   {
     key: "notification",

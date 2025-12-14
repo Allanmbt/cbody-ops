@@ -1,0 +1,37 @@
+{
+  "common": {
+    "back": "返回",
+    "loading": "加载中...",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "activated": "已激活",
+    "deactivated": "已停用",
+    "success": "成功",
+    "error": "错误"
+  },
+  "configs": {
+    "title": "配置管理",
+    "description": "管理系统核心配置参数和业务规则",
+    "bankAccounts": {
+      "title": "平台收款银行卡配置",
+      "description": "管理收款银行卡显示状态",
+      "noData": "暂无银行卡配置",
+      "clickToZoom": "点击二维码可放大查看",
+      "activatedMsg": "激活的银行卡将显示在技师端",
+      "keepOneActive": "建议至少保持一张银行卡激活状态",
+      "qrCodeTitle": "收款二维码",
+      "accountHolder": "账户持有人",
+      "accountNumber": "账号",
+      "configNotice": "配置说明",
+      "activated": "已激活",
+      "deactivated": "已停用",
+      "shown": "已显示",
+      "hidden": "已隐藏",
+      "successActivated": "已激活银行卡",
+      "successDeactivated": "已停用银行卡",
+      "errorUpdate": "更新失败",
+      "errorLoad": "加载配置失败"
+    }
+  }
+}

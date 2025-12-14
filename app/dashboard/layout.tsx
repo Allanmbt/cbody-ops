@@ -7,7 +7,6 @@ import Link from "next/link"
 import NProgress from "nprogress"
 import "nprogress/nprogress.css"
 import {
-  Bell,
   ChevronRight,
   LayoutDashboard,
   Settings,
@@ -88,6 +87,8 @@ import { toast } from "sonner"
 import { PageLoading } from "@/components/ui/loading"
 import { useSidebar } from "@/components/ui/sidebar"
 import { useTheme } from "next-themes"
+import { LocaleProvider } from "@/lib/i18n/LocaleProvider"
+import { LocaleSwitcher } from "@/components/LocaleSwitcher"
 
 type SidebarNavChild = {
   key: string
@@ -546,19 +547,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }
 
   return (
-    <SidebarProvider>
-      <DashboardLayoutContent
-        filteredSidebarGroups={filteredSidebarGroups}
-        expandedMenus={expandedMenus}
-        handleToggle={handleToggle}
-        pathname={pathname}
-        breadcrumb={breadcrumb}
-        adminProfile={adminProfile}
-        handleSignOut={handleSignOut}
-      >
-        {children}
-      </DashboardLayoutContent>
-    </SidebarProvider>
+    <LocaleProvider>
+      <SidebarProvider>
+        <DashboardLayoutContent
+          filteredSidebarGroups={filteredSidebarGroups}
+          expandedMenus={expandedMenus}
+          handleToggle={handleToggle}
+          pathname={pathname}
+          breadcrumb={breadcrumb}
+          adminProfile={adminProfile}
+          handleSignOut={handleSignOut}
+        >
+          {children}
+        </DashboardLayoutContent>
+      </SidebarProvider>
+    </LocaleProvider>
   )
 }
 
@@ -746,9 +749,7 @@ function DashboardLayoutContent({
             </Breadcrumb>
           </div>
           <div className="ml-auto flex items-center gap-2 min-w-0 flex-shrink-0">
-            <Button variant="ghost" size="icon">
-              <Bell className="size-4" />
-            </Button>
+            <LocaleSwitcher />
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>

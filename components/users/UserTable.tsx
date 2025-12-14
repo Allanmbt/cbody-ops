@@ -29,11 +29,11 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Search, ChevronLeft, ChevronRight, Eye, Ban, CheckCircle, Shield, MoreVertical, Copy } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Eye, Ban, CheckCircle, Shield, MoreVertical, Copy, Edit2, X } from 'lucide-react'
 import type { UserListItem, UserListParams } from '@/lib/features/users'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { UserDetailDrawer } from './UserDetailDrawer'
-import { toggleUserBan, toggleUserWhitelist } from '@/app/dashboard/users/actions'
+import { toggleUserBan, toggleUserWhitelist, updateUserCreditScore } from '@/app/dashboard/users/actions'
 import { toast } from 'sonner'
 
 interface UserTableProps {
@@ -101,6 +101,10 @@ export function UserTable({
 
     // 操作加载状态
     const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
+
+    // 编辑诚信分状态
+    const [editingCreditScore, setEditingCreditScore] = useState<Record<string, boolean>>({})
+    const [creditScoreInputs, setCreditScoreInputs] = useState<Record<string, string>>({})
 
     const canEdit = admin?.role === 'superadmin' || admin?.role === 'admin'
 
@@ -200,6 +204,48 @@ export function UserTable({
         } finally {
             setActionLoading(prev => ({ ...prev, [actionKey]: false }))
         }
+    }
+
+    // 开始编辑诚信分
+    const handleStartEditCreditScore = (userId: string, currentScore: number) => {
+        setEditingCreditScore(prev => ({ ...prev, [userId]: true }))
+        setCreditScoreInputs(prev => ({ ...prev, [userId]: currentScore.toString() }))
+    }
+
+    // 保存诚信分
+    const handleSaveCreditScore = async (userId: string) => {
+        const inputValue = creditScoreInputs[userId]
+        const newScore = parseInt(inputValue)
+
+        if (isNaN(newScore) || newScore < 0 || newScore > 100) {
+            toast.error('诚信分必须在 0-100 之间')
+            return
+        }
+
+        const actionKey = `credit-${userId}`
+        setActionLoading(prev => ({ ...prev, [actionKey]: true }))
+
+        try {
+            const result = await updateUserCreditScore(userId, newScore)
+
+            if (result.success) {
+                toast.success('诚信分已更新')
+                setEditingCreditScore(prev => ({ ...prev, [userId]: false }))
+                onRefresh?.()
+            } else {
+                toast.error(result.error || '更新失败')
+            }
+        } catch (error) {
+            toast.error('更新失败')
+        } finally {
+            setActionLoading(prev => ({ ...prev, [actionKey]: false }))
+        }
+    }
+
+    // 取消编辑诚信分
+    const handleCancelEditCreditScore = (userId: string) => {
+        setEditingCreditScore(prev => ({ ...prev, [userId]: false }))
+        setCreditScoreInputs(prev => ({ ...prev, [userId]: '' }))
     }
 
     return (
@@ -388,9 +434,54 @@ export function UserTable({
                                                 </div>
                                             </TableCell>
                                             <TableCell>
-                                                <Badge variant={user.credit_score >= 80 ? 'default' : user.credit_score >= 60 ? 'secondary' : 'destructive'}>
-                                                    {user.credit_score}
-                                                </Badge>
+                                                {editingCreditScore[user.id] ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <Input
+                                                            type="number"
+                                                            min="0"
+                                                            max="100"
+                                                            value={creditScoreInputs[user.id] || ''}
+                                                            onChange={(e) => setCreditScoreInputs(prev => ({
+                                                                ...prev,
+                                                                [user.id]: e.target.value
+                                                            }))}
+                                                            className="w-20 h-8"
+                                                            disabled={actionLoading[`credit-${user.id}`]}
+                                                        />
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => handleSaveCreditScore(user.id)}
+                                                            disabled={actionLoading[`credit-${user.id}`]}
+                                                        >
+                                                            <CheckCircle className="h-4 w-4 text-green-600" />
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => handleCancelEditCreditScore(user.id)}
+                                                            disabled={actionLoading[`credit-${user.id}`]}
+                                                        >
+                                                            <X className="h-4 w-4 text-red-600" />
+                                                        </Button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge variant={user.credit_score >= 80 ? 'default' : user.credit_score >= 60 ? 'secondary' : 'destructive'}>
+                                                            {user.credit_score}
+                                                        </Badge>
+                                                        {canEdit && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                onClick={() => handleStartEditCreditScore(user.id, user.credit_score)}
+                                                                className="h-6 w-6 p-0"
+                                                            >
+                                                                <Edit2 className="h-3 w-3" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex flex-col gap-1">

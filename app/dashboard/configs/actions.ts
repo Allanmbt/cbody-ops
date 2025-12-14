@@ -3,8 +3,8 @@
 import { getSupabaseAdminClient } from "@/lib/supabase"
 import { requireAdmin } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
-import { fareParamsSchema } from "@/lib/features/configs"
-import type { AppConfig, FareParamsConfig } from "@/lib/features/configs"
+import { fareParamsSchema, bankAccountsConfigSchema } from "@/lib/features/configs"
+import type { AppConfig, FareParamsConfig, BankAccountsConfig } from "@/lib/features/configs"
 
 // 通用返回类型
 type ActionResult<T = any> = {
@@ -117,6 +117,81 @@ export async function getConfigsList(): Promise<ActionResult<AppConfig[]>> {
     return { ok: true, data: data || [] }
   } catch (error) {
     console.error("获取配置列表异常:", error)
+    return { ok: false, error: "系统错误" }
+  }
+}
+
+/**
+ * 获取银行卡配置
+ */
+export async function getBankAccountsConfig(): Promise<ActionResult<AppConfig>> {
+  try {
+    await requireAdmin(['superadmin', 'admin'])
+    const supabase = getSupabaseAdminClient()
+
+    const { data, error } = await supabase
+      .from("app_configs")
+      .select("*")
+      .eq("namespace", "settlement")
+      .eq("config_key", "bank_accounts")
+      .eq("scope", "global")
+      .eq("is_active", true)
+      .single()
+
+    if (error) {
+      console.error("[Configs] 获取银行卡配置失败:", error)
+      return { ok: false, error: "获取配置失败" }
+    }
+
+    if (!data) {
+      return { ok: false, error: "配置不存在" }
+    }
+
+    return { ok: true, data }
+  } catch (error) {
+    console.error("[Configs] 获取银行卡配置异常:", error)
+    return { ok: false, error: "系统错误" }
+  }
+}
+
+/**
+ * 更新银行卡配置（仅更新 is_active 状态）
+ */
+export async function updateBankAccountsConfig(
+  configId: string,
+  bankAccountsConfig: BankAccountsConfig
+): Promise<ActionResult> {
+  try {
+    await requireAdmin(['superadmin', 'admin'])
+    const supabase = getSupabaseAdminClient()
+
+    // 验证数据
+    const validation = bankAccountsConfigSchema.safeParse(bankAccountsConfig)
+    if (!validation.success) {
+      const errors = validation.error.issues.map((e: any) => e.message).join(", ")
+      return { ok: false, error: `数据验证失败: ${errors}` }
+    }
+
+    // 更新配置
+    const { error: updateError } = await (supabase as any)
+      .from("app_configs")
+      .update({
+        value_json: bankAccountsConfig,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", configId)
+
+    if (updateError) {
+      console.error("[Configs] 更新银行卡配置失败:", updateError)
+      return { ok: false, error: "更新配置失败" }
+    }
+
+    revalidatePath("/dashboard/configs")
+    revalidatePath("/dashboard/configs/bank-accounts")
+
+    return { ok: true }
+  } catch (error) {
+    console.error("[Configs] 更新银行卡配置异常:", error)
     return { ok: false, error: "系统错误" }
   }
 }

@@ -16,6 +16,39 @@ import {
 } from '@/lib/audit'
 import type { UpdateUserProfileData, UserListParams, UserListItem } from '@/lib/features/users'
 
+/**
+ * 更新用户诚信分
+ */
+export async function updateUserCreditScore(
+    userId: string,
+    creditScore: number
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        await requireAdmin(['superadmin', 'admin'])
+        const supabase = getSupabaseAdminClient() as any
+
+        if (creditScore < 0 || creditScore > 100) {
+            return { success: false, error: '诚信分必须在 0-100 之间' }
+        }
+
+        const { error } = await (supabase as any)
+            .from('user_profiles')
+            .update({ credit_score: creditScore })
+            .eq('id', userId)
+
+        if (error) {
+            console.error('[用户管理] 更新诚信分失败:', error)
+            return { success: false, error: '更新失败' }
+        }
+
+        revalidatePath('/dashboard/users')
+        return { success: true }
+    } catch (error) {
+        console.error('[用户管理] 更新诚信分异常:', error)
+        return { success: false, error: error instanceof Error ? error.message : '操作异常' }
+    }
+}
+
 // 注意：现在统一使用 getSupabaseAdminClient() 和 requireAdmin()，不再需要单独创建客户端
 
 // 获取用户列表
