@@ -19,9 +19,10 @@ import {
   getServiceTitle,
   formatCurrency
 } from "@/lib/features/orders"
-import { MapPin, Clock, User, Phone, Copy, Check } from "lucide-react"
+import { MapPin, Clock, User, Phone, Copy, Check, ArrowUp } from "lucide-react"
 import { toast } from "sonner"
 import { useState } from "react"
+import { UpgradeServiceDialog } from "./UpgradeServiceDialog"
 
 interface OrderMonitoringDrawerProps {
   open: boolean
@@ -37,8 +38,12 @@ export function OrderMonitoringDrawer({
   onRefresh
 }: OrderMonitoringDrawerProps) {
   const [copiedUserId, setCopiedUserId] = useState(false)
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false)
 
   if (!order) return null
+
+  // 判断订单是否可以升级服务（未完成且未取消）
+  const canUpgrade = order.status !== 'completed' && order.status !== 'cancelled'
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return '-'
@@ -294,16 +299,43 @@ export function OrderMonitoringDrawer({
           )}
 
           {/* 操作按钮区域 */}
-          <div className="flex gap-2 pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+          <div className="flex flex-col gap-2 pt-4 sm:flex-row">
+            <Button
+              variant="outline"
+              className="flex-1 order-2 sm:order-1"
+              onClick={() => onOpenChange(false)}
+            >
               关闭
             </Button>
-            <Button variant="default" className="flex-1">
+            {canUpgrade && (
+              <Button
+                variant="secondary"
+                className="flex-1 order-1 sm:order-2"
+                onClick={() => setUpgradeDialogOpen(true)}
+              >
+                <ArrowUp className="mr-2 h-4 w-4" />
+                升级服务
+              </Button>
+            )}
+            <Button
+              variant="default"
+              className="flex-1 order-1 sm:order-3"
+            >
               客服介入
             </Button>
           </div>
         </div>
       </SheetContent>
+
+      {/* 升级服务对话框 */}
+      <UpgradeServiceDialog
+        open={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        order={order}
+        onSuccess={() => {
+          onRefresh()
+        }}
+      />
     </Sheet>
   )
 }

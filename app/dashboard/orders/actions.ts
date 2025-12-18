@@ -276,6 +276,444 @@ export interface OrderCancellation {
 }
 
 /**
+ * 检查订单的结算状态
+ */
+export async function checkOrderSettlementStatus(orderId: string): Promise<ApiResponse<{
+  hasSettlement: boolean
+  settlementStatus: string | null
+  canUpgrade: boolean
+}>> {
+  try {
+    await requireAdmin(['superadmin', 'admin', 'support'])
+    const supabase = getSupabaseAdminClient()
+
+    const { data, error } = await supabase
+      .from('order_settlements')
+      .select('id, settlement_status')
+      .eq('order_id', orderId)
+      .maybeSingle()
+
+    if (!error && data) {
+      const settlement = data as { id: string; settlement_status: string }
+      return {
+        ok: true,
+        data: {
+          hasSettlement: true,
+          settlementStatus: settlement.settlement_status,
+          canUpgrade: settlement.settlement_status === 'pending'
+        }
+      }
+    } else {
+      return {
+        ok: true,
+        data: {
+          hasSettlement: false,
+          settlementStatus: null,
+          canUpgrade: false
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[检查结算状态] 失败:', error)
+    return {
+      ok: false,
+      error: "检查结算状态失败"
+    }
+  }
+}
+
+/**
+ * 获取订单可升级的服务列表（订单管理专用）
+ * 区别于订单监管：
+ * 1. 只能对已完成订单（completed）进行升级
+ * 2. 订单的结算记录必须存在且为待核验状态（settlement_status = 'pending'）
+ * 3. 升级逻辑与订单监管相同：
+ *    - 相同服务：只能选择更长时长（价格可以相同或更高）
+ *    - 不同服务：价格必须≥当前服务价格
+ * 4. 升级后需要同步更新 order_settlements 表中的相关提成和金额
+ */
+export async function getUpgradableServicesForCompleted(orderId: string): Promise<{ ok: true; data: any[] } | { ok: false; error: string }> {
+  try {
+    await requireAdmin(['superadmin', 'admin', 'support'])
+    const supabase = getSupabaseAdminClient()
+
+    // 1. 获取订单详情
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .select('id, girl_id, service_id, service_duration_id, service_duration, service_price, status')
+      .eq('id', orderId)
+      .maybeSingle()
+
+    if (orderError || !orderData) {
+      return { ok: false, error: "订单不存在" }
+    }
+
+    const order = orderData as {
+      id: string
+      girl_id: string
+      service_id: number
+      service_duration_id: number
+      service_duration: number
+      service_price: number
+      status: string
+    }
+
+    // 2. 检查订单状态，必须是已完成的订单
+    if (order.status !== 'completed') {
+      return { ok: false, error: "只能对已完成的订单进行升级" }
+    }
+
+    // 3. 检查订单结算记录，必须是待核验状态
+    const { data: settlementData, error: settlementError } = await supabase
+      .from('order_settlements')
+      .select('id, settlement_status')
+      .eq('order_id', orderId)
+      .maybeSingle()
+
+    if (settlementError || !settlementData) {
+      return { ok: false, error: "订单结算记录不存在" }
+    }
+
+    const settlement = settlementData as { id: string; settlement_status: string }
+
+    if (settlement.settlement_status !== 'pending') {
+      return { ok: false, error: "订单已核验，无法升级服务" }
+    }
+
+    // 4. 获取该技师绑定的所有服务（与订单监管逻辑相同）
+    const { data: girlServices, error: servicesError } = await supabase
+      .from('admin_girl_services')
+      .select(`
+        id,
+        service_id,
+        is_qualified,
+        services!inner (
+          id,
+          code,
+          title,
+          is_active
+        )
+      `)
+      .eq('girl_id', order.girl_id)
+      .eq('is_qualified', true)
+      .eq('services.is_active', true)
+
+    if (servicesError || !girlServices || girlServices.length === 0) {
+      return { ok: false, error: "技师未绑定任何服务" }
+    }
+
+    // 5. 获取所有技师绑定服务的时长配置
+    const girlServiceIds = girlServices.map((s: any) => s.id)
+
+    const { data: allDurations, error: durationsError } = await supabase
+      .from('girl_service_durations')
+      .select(`
+        id,
+        admin_girl_service_id,
+        service_duration_id,
+        custom_price,
+        is_active,
+        service_durations!inner (
+          id,
+          service_id,
+          duration_minutes,
+          default_price,
+          is_active
+        )
+      `)
+      .in('admin_girl_service_id', girlServiceIds)
+      .eq('is_active', true)
+      .eq('service_durations.is_active', true)
+
+    if (durationsError || !allDurations || allDurations.length === 0) {
+      return { ok: false, error: "技师未配置任何服务时长选项" }
+    }
+
+    // 6. 筛选可升级的服务（与订单监管逻辑相同）
+    const upgradableServices = allDurations
+      .map((d: any) => {
+        const duration = d.service_durations
+        const price = d.custom_price || duration.default_price
+
+        const serviceInfo = girlServices.find((s: any) => s.id === d.admin_girl_service_id) as any
+
+        return {
+          service_duration_id: d.service_duration_id,
+          service_id: duration.service_id,
+          duration_minutes: duration.duration_minutes,
+          price: price,
+          service_name: serviceInfo?.services?.title || {},
+          is_active: d.is_active,
+          is_qualified: true
+        }
+      })
+      .filter((s: any) => {
+        if (s.service_duration_id === order.service_duration_id) {
+          return false
+        }
+
+        // 相同服务：只能选更长时长（价格可以相同）
+        if (s.service_id === order.service_id) {
+          return s.duration_minutes > order.service_duration
+        }
+
+        // 不同服务：价格必须≥当前服务价格
+        return s.price >= order.service_price
+      })
+      .sort((a: any, b: any) => {
+        if (a.service_id !== b.service_id) {
+          return a.service_id - b.service_id
+        }
+        return a.duration_minutes - b.duration_minutes
+      })
+
+    if (upgradableServices.length === 0) {
+      return { ok: false, error: "暂无可升级的服务选项" }
+    }
+
+    return {
+      ok: true,
+      data: upgradableServices
+    }
+  } catch (error) {
+    console.error('[订单管理-升级服务] 获取可升级服务失败:', error)
+    return { ok: false, error: "获取可升级服务失败" }
+  }
+}
+
+/**
+ * 执行已完成订单的服务升级（订单管理专用）
+ * 与订单监管升级的区别：
+ * 1. 订单状态必须是 completed
+ * 2. 必须同步更新 order_settlements 表的金额和提成
+ * 3. 结算状态必须保持为 pending
+ */
+export async function upgradeCompletedOrderService(orderId: string, newServiceDurationId: number): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
+  try {
+    await requireAdmin(['superadmin', 'admin', 'support'])
+    const supabase = getSupabaseAdminClient()
+
+    // 1. 获取订单当前信息
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        girl_id,
+        service_id,
+        service_duration_id,
+        service_duration,
+        service_price,
+        service_fee,
+        service_name,
+        extra_fee,
+        travel_fee,
+        discount_amount,
+        total_amount,
+        status
+      `)
+      .eq('id', orderId)
+      .maybeSingle()
+
+    if (orderError || !orderData) {
+      return { ok: false, error: "订单不存在" }
+    }
+
+    const order = orderData as {
+      id: string
+      girl_id: string
+      service_id: number
+      service_duration_id: number
+      service_duration: number
+      service_price: number
+      service_fee: number
+      service_name: any
+      extra_fee: number
+      travel_fee: number
+      discount_amount: number
+      total_amount: number
+      status: string
+    }
+
+    // 2. 检查订单状态
+    if (order.status !== 'completed') {
+      return { ok: false, error: "只能对已完成的订单进行升级" }
+    }
+
+    // 3. 检查订单结算记录
+    const { data: settlementData, error: settlementQueryError } = await supabase
+      .from('order_settlements')
+      .select(`
+        id,
+        settlement_status,
+        service_fee,
+        extra_fee,
+        service_commission_rate,
+        extra_commission_rate,
+        platform_should_get,
+        customer_paid_to_platform,
+        settlement_amount
+      `)
+      .eq('order_id', orderId)
+      .maybeSingle()
+
+    if (settlementQueryError || !settlementData) {
+      return { ok: false, error: "订单结算记录不存在" }
+    }
+
+    const settlement = settlementData as {
+      id: string
+      settlement_status: string
+      service_fee: number
+      extra_fee: number
+      service_commission_rate: number
+      extra_commission_rate: number
+      platform_should_get: number
+      customer_paid_to_platform: number
+      settlement_amount: number
+    }
+
+    if (settlement.settlement_status !== 'pending') {
+      return { ok: false, error: "订单已核验，无法升级服务" }
+    }
+
+    // 4. 获取新服务时长和价格，包括服务名称和提成比例
+    const { data: girlServiceDurationData, error: durationError } = await supabase
+      .from('girl_service_durations')
+      .select(`
+        id,
+        custom_price,
+        is_active,
+        admin_girl_services!inner (
+          girl_id,
+          service_id,
+          is_qualified,
+          services!inner (
+            id,
+            title,
+            commission_rate
+          )
+        ),
+        service_durations!inner (
+          id,
+          service_id,
+          duration_minutes,
+          default_price,
+          is_active
+        )
+      `)
+      .eq('service_duration_id', newServiceDurationId)
+      .eq('is_active', true)
+      .eq('service_durations.is_active', true)
+      .eq('admin_girl_services.girl_id', order.girl_id)
+      .eq('admin_girl_services.is_qualified', true)
+      .maybeSingle()
+
+    if (durationError || !girlServiceDurationData) {
+      return { ok: false, error: "目标服务不可用或技师未绑定" }
+    }
+
+    const girlServiceDuration = girlServiceDurationData as any
+    const newServiceId = girlServiceDuration.service_durations.service_id
+    const newDuration = girlServiceDuration.service_durations.duration_minutes
+    const newPrice = girlServiceDuration.custom_price || girlServiceDuration.service_durations.default_price
+    const newServiceName = girlServiceDuration.admin_girl_services.services.title
+    const newServiceCommissionRate = girlServiceDuration.admin_girl_services.services.commission_rate
+
+    // 5. 验证升级规则
+    if (newServiceId === order.service_id) {
+      if (newDuration <= order.service_duration) {
+        return { ok: false, error: "同一服务必须升级到更长时长" }
+      }
+    } else {
+      if (newPrice < order.service_price) {
+        return { ok: false, error: "更换服务的价格不能低于当前服务" }
+      }
+    }
+
+    // 6. 计算新的金额
+    const priceDifference = newPrice - order.service_price
+    const newTotalAmount = order.total_amount + priceDifference
+    const newServiceFee = order.service_fee + priceDifference
+
+    // 7. 计算新的结算数据
+    // 🔧 关键修复：如果更换了服务，使用新服务的提成比例；否则使用原提成比例
+    const isServiceChanged = newServiceId !== order.service_id
+    const finalServiceCommissionRate = isServiceChanged && newServiceCommissionRate !== null
+      ? newServiceCommissionRate
+      : settlement.service_commission_rate
+
+    const newPlatformShouldGet = newServiceFee * finalServiceCommissionRate + settlement.extra_fee * settlement.extra_commission_rate
+    const newSettlementAmount = newPlatformShouldGet - settlement.customer_paid_to_platform
+
+    // 8. 更新订单信息
+    const { error: updateOrderError } = await (supabase
+      .from('orders') as any)
+      .update({
+        service_id: newServiceId,
+        service_duration_id: newServiceDurationId,
+        service_duration: newDuration,
+        service_price: newPrice,
+        service_fee: newServiceFee,
+        total_amount: newTotalAmount,
+        service_name: newServiceName,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', orderId)
+
+    if (updateOrderError) {
+      console.error('[订单管理-升级服务] 更新订单失败:', updateOrderError)
+      return { ok: false, error: "更新订单失败" }
+    }
+
+    // 9. 同步更新结算记录
+    const settlementUpdateData: any = {
+      service_fee: newServiceFee,
+      platform_should_get: newPlatformShouldGet,
+      settlement_amount: newSettlementAmount,
+      updated_at: new Date().toISOString()
+    }
+
+    // 🔧 如果更换了服务，同时更新提成比例
+    if (isServiceChanged) {
+      settlementUpdateData.service_commission_rate = finalServiceCommissionRate
+    }
+
+    const { error: updateSettlementError } = await (supabase
+      .from('order_settlements') as any)
+      .update(settlementUpdateData)
+      .eq('id', settlement.id)
+
+    if (updateSettlementError) {
+      console.error('[订单管理-升级服务] 更新结算记录失败:', updateSettlementError)
+      return { ok: false, error: "更新结算记录失败" }
+    }
+
+    return {
+      ok: true,
+      data: {
+        order_id: orderId,
+        old_service_id: order.service_id,
+        new_service_id: newServiceId,
+        service_changed: isServiceChanged,
+        old_duration: order.service_duration,
+        new_duration: newDuration,
+        old_price: order.service_price,
+        new_price: newPrice,
+        price_difference: priceDifference,
+        new_total: newTotalAmount,
+        old_commission_rate: settlement.service_commission_rate,
+        new_commission_rate: finalServiceCommissionRate,
+        new_platform_should_get: newPlatformShouldGet,
+        new_settlement_amount: newSettlementAmount
+      }
+    }
+  } catch (error) {
+    console.error('[订单管理-升级服务] 执行升级失败:', error)
+    return { ok: false, error: "升级服务失败" }
+  }
+}
+
+/**
  * 获取订单取消记录
  */
 export async function getOrderCancellation(orderId: string): Promise<ApiResponse<OrderCancellation>> {

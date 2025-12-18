@@ -179,6 +179,11 @@ export default function OrdersPage() {
     setShowDetailDrawer(true)
   }
 
+  // 刷新数据（升级服务成功后调用）
+  const handleRefresh = () => {
+    loadOrders()
+  }
+
   return (
     <div className="flex flex-col gap-6 p-4 md:px-8 md:py-6">
       {/* 页面标题 */}
@@ -304,6 +309,7 @@ export default function OrdersPage() {
         open={showDetailDrawer}
         onOpenChange={setShowDetailDrawer}
         order={selectedOrder}
+        onRefresh={handleRefresh}
       />
     </div>
   )

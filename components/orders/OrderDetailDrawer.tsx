@@ -1,6 +1,8 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Sheet,
   SheetContent,
@@ -17,18 +19,78 @@ import {
   getServiceTitle,
   formatCurrency
 } from "@/lib/features/orders"
+import { ArrowUp } from "lucide-react"
+import { OrderUpgradeServiceDialog } from "./OrderUpgradeServiceDialog"
 
 interface OrderDetailDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   order: Order | null
+  onRefresh?: () => void
+}
+
+interface SettlementStatus {
+  hasSettlement: boolean
+  settlementStatus: string | null
+  canUpgrade: boolean
 }
 
 export function OrderDetailDrawer({
   open,
   onOpenChange,
-  order
+  order,
+  onRefresh
 }: OrderDetailDrawerProps) {
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false)
+  const [settlementStatus, setSettlementStatus] = useState<SettlementStatus>({
+    hasSettlement: false,
+    settlementStatus: null,
+    canUpgrade: false
+  })
+
+  // 检查订单的结算状态
+  useEffect(() => {
+    if (order && open) {
+      checkSettlementStatus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order, open])
+
+  const checkSettlementStatus = async () => {
+    if (!order) return
+
+    // 只有已完成的订单才需要检查结算状态
+    if (order.status === 'completed') {
+      try {
+        const { checkOrderSettlementStatus } = await import('@/app/dashboard/orders/actions')
+        const result = await checkOrderSettlementStatus(order.id)
+
+        if (result.ok && result.data) {
+          setSettlementStatus(result.data)
+        } else {
+          setSettlementStatus({
+            hasSettlement: false,
+            settlementStatus: null,
+            canUpgrade: false
+          })
+        }
+      } catch (error) {
+        console.error('检查结算状态失败:', error)
+        setSettlementStatus({
+          hasSettlement: false,
+          settlementStatus: null,
+          canUpgrade: false
+        })
+      }
+    } else {
+      setSettlementStatus({
+        hasSettlement: false,
+        settlementStatus: null,
+        canUpgrade: false
+      })
+    }
+  }
+
   if (!order) return null
 
   const formatDateTime = (dateStr: string | null) => {
@@ -46,6 +108,9 @@ export function OrderDetailDrawer({
   const extraFee = Number(order.extra_fee ?? 0)
   const discountAmount = Number(order.discount_amount ?? 0)
 
+  // 判断是否可以升级服务
+  const canUpgrade = order.status === 'completed' && settlementStatus.canUpgrade
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="overflow-y-auto w-full sm:max-w-2xl">
@@ -60,9 +125,16 @@ export function OrderDetailDrawer({
           {/* 订单状态 */}
           <div>
             <h3 className="text-sm font-semibold mb-3">订单状态</h3>
-            <Badge variant={getOrderStatusVariant(order.status)}>
-              {getOrderStatusText(order.status)}
-            </Badge>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant={getOrderStatusVariant(order.status)}>
+                {getOrderStatusText(order.status)}
+              </Badge>
+              {order.status === 'completed' && settlementStatus.hasSettlement && (
+                <Badge variant={settlementStatus.settlementStatus === 'settled' ? 'default' : 'secondary'}>
+                  {settlementStatus.settlementStatus === 'settled' ? '已核验' : '待核验'}
+                </Badge>
+              )}
+            </div>
           </div>
 
           <Separator />
@@ -235,8 +307,45 @@ export function OrderDetailDrawer({
               </div>
             </>
           )}
+
+          {/* 操作按钮区域 */}
+          {canUpgrade && (
+            <>
+              <Separator />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => onOpenChange(false)}
+                >
+                  关闭
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setUpgradeDialogOpen(true)}
+                >
+                  <ArrowUp className="mr-2 h-4 w-4" />
+                  升级服务
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </SheetContent>
+
+      {/* 升级服务对话框 */}
+      <OrderUpgradeServiceDialog
+        open={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        order={order}
+        onSuccess={() => {
+          if (onRefresh) {
+            onRefresh()
+          }
+          checkSettlementStatus()
+        }}
+      />
     </Sheet>
   )
 }

@@ -23,3 +23,13 @@ export const orderListParamsSchema = z.object({
 })
 
 export type OrderListParamsInput = z.input<typeof orderListParamsSchema>
+
+/**
+ * 升级服务请求参数验证
+ */
+export const upgradeServiceSchema = z.object({
+  order_id: z.string().min(1, '订单ID不能为空'),
+  new_service_duration_id: z.number().int().positive('服务时长ID必须为正整数')
+})
+
+export type UpgradeServiceInput = z.input<typeof upgradeServiceSchema>

@@ -125,3 +125,24 @@ export interface ApiResponse<T = any> {
   data?: T
   error?: string
 }
+
+/**
+ * 可升级的服务选项
+ */
+export interface UpgradableService {
+  service_id: number
+  service_duration_id: number
+  service_name: MultiLangText
+  duration_minutes: number
+  price: number
+  is_active: boolean
+  is_qualified: boolean
+}
+
+/**
+ * 升级服务请求参数
+ */
+export interface UpgradeServiceRequest {
+  order_id: string
+  new_service_duration_id: number
+}
