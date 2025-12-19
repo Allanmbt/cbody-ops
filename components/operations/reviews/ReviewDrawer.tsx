@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Star, Check, X, User, Award, Edit2, Save } from "lucide-react"
+import { Star, Check, X, User, Award, Edit2, Save, Copy } from "lucide-react"
 import { formatRelativeTime } from "@/lib/features/orders"
 import { approveReview, rejectReview, updateReviewLevel, updateReviewAnonymous, updateReviewComment, type ReviewListItem } from "@/app/dashboard/operations/reviews/actions"
 import { toast } from "sonner"
@@ -183,6 +183,16 @@ export function ReviewDrawer({ open, onOpenChange, review, onReviewed }: ReviewD
         setIsEditingComment(false)
     }
 
+    // 复制客户ID到剪贴板
+    const copyCustomerId = async () => {
+        try {
+            await navigator.clipboard.writeText(review.user_id)
+            toast.success("客户ID已复制")
+        } catch (error) {
+            toast.error("复制失败")
+        }
+    }
+
     return (
         <>
             <Sheet open={open} onOpenChange={onOpenChange}>
@@ -217,8 +227,17 @@ export function ReviewDrawer({ open, onOpenChange, review, onReviewed }: ReviewD
                                         <div className="text-sm font-medium truncate">
                                             {review.user_profile?.display_name || "未命名用户"}
                                         </div>
-                                        <div className="text-xs text-muted-foreground font-mono">
-                                            {review.user_id.slice(0, 8)}...
+                                        <div className="flex items-center gap-1">
+                                            <code className="text-xs text-muted-foreground font-mono">
+                                                {review.user_id.slice(0, 8)}...
+                                            </code>
+                                            <button
+                                                onClick={copyCustomerId}
+                                                className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-muted"
+                                                title="复制完整客户ID"
+                                            >
+                                                <Copy className="h-3 w-3" />
+                                            </button>
                                         </div>
                                     </div>
                                 </div>

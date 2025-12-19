@@ -29,10 +29,11 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Search, ChevronLeft, ChevronRight, Eye, Ban, CheckCircle, Shield, MoreVertical, Copy, Edit2, X } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Eye, Ban, CheckCircle, Shield, MoreVertical, Copy, Edit2, X, Send } from 'lucide-react'
 import type { UserListItem, UserListParams } from '@/lib/features/users'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { UserDetailDrawer } from './UserDetailDrawer'
+import { SendNotificationDialog } from './SendNotificationDialog'
 import { toggleUserBan, toggleUserWhitelist, updateUserCreditScore } from '@/app/dashboard/users/actions'
 import { toast } from 'sonner'
 
@@ -99,6 +100,11 @@ export function UserTable({
     const [detailUserId, setDetailUserId] = useState<string | null>(null)
     const [detailDrawerOpen, setDetailDrawerOpen] = useState(false)
 
+    // 系统通知对话框
+    const [notificationDialogOpen, setNotificationDialogOpen] = useState(false)
+    const [notificationUserId, setNotificationUserId] = useState<string>('')
+    const [notificationUserName, setNotificationUserName] = useState<string>('')
+
     // 操作加载状态
     const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
 
@@ -156,6 +162,13 @@ export function UserTable({
     const handleViewDetail = (userId: string) => {
         setDetailUserId(userId)
         setDetailDrawerOpen(true)
+    }
+
+    // 打开发送通知对话框
+    const handleSendNotification = (userId: string, userName?: string) => {
+        setNotificationUserId(userId)
+        setNotificationUserName(userName || userId)
+        setNotificationDialogOpen(true)
     }
 
     // 切换封禁状态
@@ -536,6 +549,12 @@ export function UserTable({
                                                             </DropdownMenuTrigger>
                                                             <DropdownMenuContent align="end">
                                                                 <DropdownMenuItem
+                                                                    onClick={() => handleSendNotification(user.id, user.display_name || user.username || user.email || undefined)}
+                                                                >
+                                                                    <Send className="mr-2 h-4 w-4 text-blue-600" />
+                                                                    发送通知
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
                                                                     onClick={() => handleToggleBan(user.id, user.is_banned)}
                                                                     disabled={actionLoading[`ban-${user.id}`]}
                                                                 >
@@ -614,6 +633,14 @@ export function UserTable({
                 open={detailDrawerOpen}
                 onOpenChange={setDetailDrawerOpen}
                 userId={detailUserId}
+            />
+
+            {/* 发送系统通知对话框 */}
+            <SendNotificationDialog
+                open={notificationDialogOpen}
+                onOpenChange={setNotificationDialogOpen}
+                userId={notificationUserId}
+                userName={notificationUserName}
             />
         </>
     )

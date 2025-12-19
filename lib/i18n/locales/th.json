@@ -10,6 +10,63 @@
     "success": "สำเร็จ",
     "error": "ข้อผิดพลาด"
   },
+  "nav": {
+    "groups": {
+      "system": "การจัดการระบบ",
+      "aloha": "การจัดการ Aloha",
+      "cbody": "การจัดการ CBODY",
+      "operations": "การจัดการการดำเนินงาน",
+      "business": "การจัดการธุรกิจ",
+      "finance": "การจัดการการเงิน",
+      "settings": "การตั้งค่าระบบ"
+    },
+    "items": {
+      "dashboard": "แดชบอร์ด",
+      "management": "การจัดการผู้ดูแลระบบ",
+      "alohaManagement": "การจัดการ Aloha",
+      "cbodyManagement": "การจัดการ CBODY",
+      "ordersMonitor": "ตรวจสอบคำสั่งซื้อ",
+      "therapistsStatus": "สถานะช่าง",
+      "chatsMonitor": "ตรวจสอบการสนทนา",
+      "reportsHandle": "จัดการรายงาน",
+      "reviewsAudit": "ตรวจสอบรีวิว",
+      "girlsManagement": "การจัดการช่าง",
+      "mediaManagement": "การจัดการสื่อ",
+      "servicesManagement": "การจัดการบริการ",
+      "usersManagement": "การจัดการผู้ใช้",
+      "ordersManagement": "การจัดการคำสั่งซื้อ",
+      "settlementsVerify": "ตรวจสอบคำสั่งซื้อ",
+      "accountsManagement": "บัญชีการชำระเงิน",
+      "transactionsManagement": "การจัดการธุรกรรม",
+      "financeStats": "สถิติการเงิน",
+      "configsManagement": "การจัดการการตั้งค่า"
+    },
+    "breadcrumbs": {
+      "overview": "ภาพรวม",
+      "management": "การจัดการผู้ดูแลระบบ",
+      "aloha": "การจัดการ Aloha",
+      "cbody": "การจัดการ CBODY",
+      "operations": "การจัดการการดำเนินงาน",
+      "ordersMonitor": "ตรวจสอบคำสั่งซื้อ",
+      "therapistsStatus": "สถานะช่าง",
+      "chatsMonitor": "ตรวจสอบการสนทนา",
+      "reportsHandle": "จัดการรายงาน",
+      "reviewsAudit": "ตรวจสอบรีวิว",
+      "girlsManagement": "การจัดการช่าง",
+      "mediaManagement": "การจัดการสื่อ",
+      "servicesManagement": "การจัดการบริการ",
+      "usersManagement": "การจัดการผู้ใช้",
+      "ordersManagement": "การจัดการคำสั่งซื้อ",
+      "finance": "การจัดการการเงิน",
+      "financeStats": "สถิติการเงิน",
+      "accountsManagement": "บัญชีการชำระเงิน",
+      "accountDetail": "รายละเอียดบัญชี",
+      "settlementsVerify": "ตรวจสอบคำสั่งซื้อ",
+      "transactionsManagement": "การจัดการธุรกรรม",
+      "configsManagement": "การจัดการการตั้งค่า",
+      "fareConfig": "การตั้งค่าค่าโดยสาร"
+    }
+  },
   "configs": {
     "title": "การจัดการการตั้งค่า",
     "description": "จัดการพารามิเตอร์การตั้งค่าหลักของระบบและกฎทางธุรกิจ",
@@ -32,6 +89,106 @@
       "successDeactivated": "ปิดใช้งานบัญชีธนาคารแล้ว",
       "errorUpdate": "อัปเดตไม่สำเร็จ",
       "errorLoad": "โหลดการตั้งค่าไม่สำเร็จ"
+    }
+  },
+  "transactions": {
+    "title": "การจัดการชำระเงิน/ถอนเงิน",
+    "description": "การอนุมัติคำขอชำระเงินและถอนเงินของช่าง",
+    "stats": {
+      "pending": "รอการตรวจสอบ",
+      "todayApproved": "อนุมัติวันนี้",
+      "todaySettlement": "ชำระเงินวันนี้",
+      "todayWithdrawal": "ถอนเงินวันนี้",
+      "count": "รายการ",
+      "waitingProcess": "รอดำเนินการ",
+      "todayApprovedCount": "อนุมัติแล้ววันนี้",
+      "settlementToPlat": "ช่างชำระเงินให้แพลตฟอร์ม",
+      "platWithdrawal": "แพลตฟอร์มถอนเงินแทน"
+    },
+    "tabs": {
+      "settlement": "คำขอชำระเงิน (THB)",
+      "withdrawal": "คำขอถอนเงิน (RMB)"
+    },
+    "search": {
+      "placeholder": "ค้นหาชื่อหรือรหัสช่าง..."
+    },
+    "filters": {
+      "status": "สถานะ",
+      "allStatus": "สถานะทั้งหมด",
+      "pending": "รอการตรวจสอบ",
+      "confirmed": "ยืนยันแล้ว",
+      "cancelled": "ยกเลิกแล้ว"
+    },
+    "table": {
+      "therapistInfo": "ข้อมูลช่าง",
+      "amount": "จำนวนเงิน",
+      "paymentMethod": "วิธีการชำระเงิน",
+      "paymentProof": "หลักฐานการชำระเงิน",
+      "exchangeAndFee": "อัตราแลกเปลี่ยน & ค่าธรรมเนียม",
+      "actualAmount": "จำนวนเงินจริง (THB)",
+      "bankAccount": "บัญชีรับเงิน",
+      "notes": "หมายเหตุ",
+      "applyTime": "เวลายื่นคำขอ",
+      "status": "สถานะ",
+      "actions": "การดำเนินการ",
+      "viewProof": "ดูหลักฐาน",
+      "viewBank": "ดู",
+      "viewNotes": "ดู",
+      "exchangeRate": "อัตราแลกเปลี่ยน",
+      "feeRate": "อัตราค่าธรรมเนียม",
+      "reject": "ปฏิเสธ",
+      "confirmReceive": "ยืนยันรับเงิน",
+      "confirmPay": "ยืนยันการจ่าย",
+      "rejectedReason": "ปฏิเสธ",
+      "noData": "ไม่มีประวัติคำขอ"
+    },
+    "pagination": {
+      "page": "หน้า {page} จาก {total} หน้า",
+      "prev": "ก่อนหน้า",
+      "next": "ถัดไป"
+    },
+    "dialog": {
+      "confirmReceive": "ยืนยันรับเงิน",
+      "confirmPay": "ยืนยันการจ่าย",
+      "rejectTitle": "ปฏิเสธคำขอ",
+      "therapist": "ช่าง",
+      "amountRMB": "จำนวนเงินที่ขอ (RMB)",
+      "amountTHB": "จำนวนเงิน (THB)",
+      "exchangeRate": "อัตราแลกเปลี่ยน (CNY to THB)",
+      "feeRate": "อัตราค่าบริการ",
+      "actualPay": "จำนวนเงินจริง (THB)",
+      "paymentMethod": "วิธีการ",
+      "receiverInfo": "ข้อมูลรับเงิน/หมายเหตุ",
+      "confirmReceiveMsg": "กรุณายืนยันว่าคุณได้รับเงินโอนจากช่างแล้ว ยืนยันแล้วจะหักยอดหนี้ของช่าง",
+      "confirmPayMsg": "กรุณายืนยันว่าคุณได้โอนเงินให้ช่างแล้ว ยืนยันแล้วจะหักยอดรับฝากของช่าง",
+      "notesOptional": "หมายเหตุ（ไม่บังคับ）",
+      "notesRequired": "เหตุผลในการปฏิเสธ（บังคับ）",
+      "notesPlaceholder": "ป้อนหมายเหตุ...",
+      "rejectPlaceholder": "กรุณาป้อนเหตุผลในการปฏิเสธ...",
+      "cancel": "ยกเลิก",
+      "confirmApprove": "ยืนยันอนุมัติ",
+      "confirmReject": "ยืนยันปฏิเสธ",
+      "processing": "กำลังดำเนินการ...",
+      "imagePreview": "ดูตัวอย่างหลักฐานการชำระเงิน",
+      "notesTitle": "ข้อมูลหมายเหตุ",
+      "close": "ปิด",
+      "bankAccountTitle": "บัญชีรับเงินช่าง",
+      "loading": "กำลังโหลด...",
+      "noAccount": "ไม่พบข้อมูลบัญชีรับเงิน",
+      "accountName": "ชื่อบัญชี",
+      "accountNumber": "เลขที่บัญชี",
+      "bankName": "ธนาคาร",
+      "bankBranch": "สาขา",
+      "qrCode": "QR Code รับเงิน"
+    },
+    "toast": {
+      "loadError": "ดึงรายการคำขอไม่สำเร็จ",
+      "loadListError": "โหลดรายการคำขอไม่สำเร็จ",
+      "rejectReasonRequired": "กรุณาป้อนเหตุผลในการปฏิเสธ",
+      "reviewError": "การตรวจสอบไม่สำเร็จ",
+      "approved": "คำขออนุมัติแล้ว",
+      "rejected": "คำขอปฏิเสธแล้ว",
+      "bankAccountError": "ค้นหาบัญชีรับเงินไม่สำเร็จ"
     }
   }
 }

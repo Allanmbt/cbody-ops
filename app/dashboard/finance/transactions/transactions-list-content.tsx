@@ -26,8 +26,11 @@ import type { Transaction, TransactionStats, TransactionType } from "@/lib/featu
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { zhCN } from "date-fns/locale"
+import { useLocale } from "@/lib/i18n/LocaleProvider"
+import { t } from "@/lib/i18n"
 
 export function TransactionsListContent() {
+    const { t: translations } = useLocale()
     const [stats, setStats] = useState<TransactionStats | null>(null)
     const [transactions, setTransactions] = useState<Transaction[]>([])
     const [loading, setLoading] = useState(true)
@@ -99,7 +102,7 @@ export function TransactionsListContent() {
             })
 
             if (!result.ok) {
-                toast.error(result.error || "获取申请列表失败")
+                toast.error(result.error || t(translations, 'transactions.toast.loadError'))
                 return
             }
 
@@ -110,7 +113,7 @@ export function TransactionsListContent() {
             }
         } catch (error) {
             console.error('[TransactionsList] 加载失败:', error)
-            toast.error("加载申请列表失败")
+            toast.error(t(translations, 'transactions.toast.loadListError'))
         } finally {
             setLoading(false)
         }
@@ -132,7 +135,7 @@ export function TransactionsListContent() {
         if (!selectedTransaction) return
 
         if (reviewAction === "reject" && !reviewNotes.trim()) {
-            toast.error("请输入拒绝原因")
+            toast.error(t(translations, 'transactions.toast.rejectReasonRequired'))
             return
         }
 
@@ -153,16 +156,16 @@ export function TransactionsListContent() {
             }
 
             if (!result.ok) {
-                toast.error(result.error || "审核操作失败")
+                toast.error(result.error || t(translations, 'transactions.toast.reviewError'))
                 return
             }
 
-            toast.success(reviewAction === "approve" ? "申请已批准" : "申请已拒绝")
+            toast.success(reviewAction === "approve" ? t(translations, 'transactions.toast.approved') : t(translations, 'transactions.toast.rejected'))
             setReviewDialogOpen(false)
             await Promise.all([loadStats(), loadTransactions()])
         } catch (error) {
             console.error('[TransactionsList] 审核失败:', error)
-            toast.error("审核操作失败")
+            toast.error(t(translations, 'transactions.toast.reviewError'))
         } finally {
             setReviewing(false)
         }
@@ -178,7 +181,7 @@ export function TransactionsListContent() {
         setLoadingBankAccount(false)
 
         if (!result.ok) {
-            toast.error(result.error || "查询收款账号失败")
+            toast.error(result.error || t(translations, 'transactions.toast.bankAccountError'))
             return
         }
 
@@ -197,9 +200,9 @@ export function TransactionsListContent() {
         <div className="flex flex-col gap-6 p-4 md:px-8 md:py-6">
             {/* 标题 */}
             <div>
-                <h1 className="text-2xl font-bold">结账/提现申请管理</h1>
+                <h1 className="text-2xl font-bold">{t(translations, 'transactions.title')}</h1>
                 <p className="text-muted-foreground mt-1">
-                    技师结账和提现申请审核管理
+                    {t(translations, 'transactions.description')}
                 </p>
             </div>
 
@@ -207,55 +210,55 @@ export function TransactionsListContent() {
             <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                        <CardTitle className="text-sm font-medium">待审核</CardTitle>
+                        <CardTitle className="text-sm font-medium">{t(translations, 'transactions.stats.pending')}</CardTitle>
                         <Clock className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
                             {statsLoading ? "-" : stats?.pending_count || 0}
-                            <span className="text-base font-normal text-muted-foreground ml-1">笔</span>
+                            <span className="text-base font-normal text-muted-foreground ml-1">{t(translations, 'transactions.stats.count')}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">等待处理</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t(translations, 'transactions.stats.waitingProcess')}</p>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                        <CardTitle className="text-sm font-medium">今日已审</CardTitle>
+                        <CardTitle className="text-sm font-medium">{t(translations, 'transactions.stats.todayApproved')}</CardTitle>
                         <CheckCircle className="h-4 w-4 text-green-600" />
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
                             {statsLoading ? "-" : stats?.today_approved_count || 0}
-                            <span className="text-base font-normal text-muted-foreground ml-1">笔</span>
+                            <span className="text-base font-normal text-muted-foreground ml-1">{t(translations, 'transactions.stats.count')}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">今日审核通过</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t(translations, 'transactions.stats.todayApprovedCount')}</p>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                        <CardTitle className="text-sm font-medium">今日结账</CardTitle>
+                        <CardTitle className="text-sm font-medium">{t(translations, 'transactions.stats.todaySettlement')}</CardTitle>
                         <TrendingUp className="h-4 w-4 text-blue-600" />
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
                             {statsLoading ? "-" : formatCurrency(stats?.today_settlement_amount || 0, 'THB')}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">技师结账给平台</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t(translations, 'transactions.stats.settlementToPlat')}</p>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                        <CardTitle className="text-sm font-medium">今日提现</CardTitle>
+                        <CardTitle className="text-sm font-medium">{t(translations, 'transactions.stats.todayWithdrawal')}</CardTitle>
                         <TrendingDown className="h-4 w-4 text-orange-600" />
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
                             {statsLoading ? "-" : formatCurrency(stats?.today_withdrawal_amount || 0, 'RMB')}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">平台代收提现</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t(translations, 'transactions.stats.platWithdrawal')}</p>
                     </CardContent>
                 </Card>
             </div>
@@ -269,11 +272,11 @@ export function TransactionsListContent() {
                     <TabsList>
                         <TabsTrigger value="settlement" className="gap-2">
                             <TrendingUp className="size-4" />
-                            结账申请 (THB)
+                            {t(translations, 'transactions.tabs.settlement')}
                         </TabsTrigger>
                         <TabsTrigger value="withdrawal" className="gap-2">
                             <TrendingDown className="size-4" />
-                            提现申请 (RMB)
+                            {t(translations, 'transactions.tabs.withdrawal')}
                         </TabsTrigger>
                     </TabsList>
 
@@ -282,7 +285,7 @@ export function TransactionsListContent() {
                         <div className="relative w-64">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                             <Input
-                                placeholder="搜索技师姓名或工号..."
+                                placeholder={t(translations, 'transactions.search.placeholder')}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -299,13 +302,13 @@ export function TransactionsListContent() {
                             }}
                         >
                             <SelectTrigger className="w-[120px] h-9">
-                                <SelectValue placeholder="状态" />
+                                <SelectValue placeholder={t(translations, 'transactions.filters.status')} />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">全部状态</SelectItem>
-                                <SelectItem value="pending">待审核</SelectItem>
-                                <SelectItem value="confirmed">已确认</SelectItem>
-                                <SelectItem value="cancelled">已取消</SelectItem>
+                                <SelectItem value="all">{t(translations, 'transactions.filters.allStatus')}</SelectItem>
+                                <SelectItem value="pending">{t(translations, 'transactions.filters.pending')}</SelectItem>
+                                <SelectItem value="confirmed">{t(translations, 'transactions.filters.confirmed')}</SelectItem>
+                                <SelectItem value="cancelled">{t(translations, 'transactions.filters.cancelled')}</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -320,31 +323,31 @@ export function TransactionsListContent() {
                         ) : transactions.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-12">
                                 <DollarSign className="size-12 text-muted-foreground mb-4" />
-                                <p className="text-muted-foreground">暂无申请记录</p>
+                                <p className="text-muted-foreground">{t(translations, 'transactions.table.noData')}</p>
                             </div>
                         ) : (
                             <div className="rounded-md">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>技师信息</TableHead>
-                                            <TableHead className="text-right">金额</TableHead>
+                                            <TableHead>{t(translations, 'transactions.table.therapistInfo')}</TableHead>
+                                            <TableHead className="text-right">{t(translations, 'transactions.table.amount')}</TableHead>
                                             {activeTab === 'settlement' ? (
                                                 <>
-                                                    <TableHead>支付方式</TableHead>
-                                                    <TableHead>支付凭证</TableHead>
+                                                    <TableHead>{t(translations, 'transactions.table.paymentMethod')}</TableHead>
+                                                    <TableHead>{t(translations, 'transactions.table.paymentProof')}</TableHead>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <TableHead className="text-right">汇率 & 手续费</TableHead>
-                                                    <TableHead className="text-right">实际打款 (THB)</TableHead>
-                                                    <TableHead>收款账号</TableHead>
-                                                    <TableHead>备注</TableHead>
+                                                    <TableHead className="text-right">{t(translations, 'transactions.table.exchangeAndFee')}</TableHead>
+                                                    <TableHead className="text-right">{t(translations, 'transactions.table.actualAmount')}</TableHead>
+                                                    <TableHead>{t(translations, 'transactions.table.bankAccount')}</TableHead>
+                                                    <TableHead>{t(translations, 'transactions.table.notes')}</TableHead>
                                                 </>
                                             )}
-                                            <TableHead>申请时间</TableHead>
-                                            <TableHead>状态</TableHead>
-                                            <TableHead className="text-right">操作</TableHead>
+                                            <TableHead>{t(translations, 'transactions.table.applyTime')}</TableHead>
+                                            <TableHead>{t(translations, 'transactions.table.status')}</TableHead>
+                                            <TableHead className="text-right">{t(translations, 'transactions.table.actions')}</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -387,7 +390,7 @@ export function TransactionsListContent() {
                                                                     onClick={() => setPreviewImage(tx.payment_proof_url)}
                                                                 >
                                                                     <ImageIcon className="size-4" />
-                                                                    查看凭证
+                                                                    {t(translations, 'transactions.table.viewProof')}
                                                                 </Button>
                                                             ) : (
                                                                 <span className="text-muted-foreground text-sm">-</span>
@@ -400,10 +403,10 @@ export function TransactionsListContent() {
                                                         <TableCell className="text-right">
                                                             <div className="flex flex-col text-sm">
                                                                 <span className="text-muted-foreground text-xs">
-                                                                    汇率: {tx.exchange_rate?.toFixed(4) || '-'}
+                                                                    {t(translations, 'transactions.table.exchangeRate')}: {tx.exchange_rate?.toFixed(4) || '-'}
                                                                 </span>
                                                                 <span className="text-muted-foreground text-xs">
-                                                                    费率: {tx.service_fee_rate ? `${(tx.service_fee_rate * 100).toFixed(2)}%` : '-'}
+                                                                    {t(translations, 'transactions.table.feeRate')}: {tx.service_fee_rate ? `${(tx.service_fee_rate * 100).toFixed(2)}%` : '-'}
                                                                 </span>
                                                             </div>
                                                         </TableCell>
@@ -426,7 +429,7 @@ export function TransactionsListContent() {
                                                                 onClick={() => handleViewBankAccount(tx.girl_id)}
                                                             >
                                                                 <CreditCard className="size-4" />
-                                                                查看
+                                                                {t(translations, 'transactions.table.viewBank')}
                                                             </Button>
                                                         </TableCell>
                                                         {/* 备注 */}
@@ -442,7 +445,7 @@ export function TransactionsListContent() {
                                                                     }}
                                                                 >
                                                                     <Info className="size-4" />
-                                                                    查看
+                                                                    {t(translations, 'transactions.table.viewNotes')}
                                                                 </Button>
                                                             ) : (
                                                                 <span className="text-muted-foreground text-sm">-</span>
@@ -458,19 +461,19 @@ export function TransactionsListContent() {
                                                     {tx.status === 'pending' && (
                                                         <Badge variant="outline" className="gap-1 bg-yellow-50 text-yellow-700 border-yellow-200">
                                                             <Clock className="size-3" />
-                                                            待审核
+                                                            {t(translations, 'transactions.filters.pending')}
                                                         </Badge>
                                                     )}
                                                     {tx.status === 'confirmed' && (
                                                         <Badge variant="default" className="gap-1 bg-green-600 hover:bg-green-700">
                                                             <CheckCircle className="size-3" />
-                                                            已确认
+                                                            {t(translations, 'transactions.filters.confirmed')}
                                                         </Badge>
                                                     )}
                                                     {tx.status === 'cancelled' && (
                                                         <Badge variant="destructive" className="gap-1">
                                                             <XCircle className="size-3" />
-                                                            已取消
+                                                            {t(translations, 'transactions.filters.cancelled')}
                                                         </Badge>
                                                     )}
                                                 </TableCell>
@@ -483,7 +486,7 @@ export function TransactionsListContent() {
                                                                 className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                                                 onClick={() => openReviewDialog(tx, 'reject')}
                                                             >
-                                                                驳回
+                                                                {t(translations, 'transactions.table.reject')}
                                                             </Button>
                                                             <Button
                                                                 variant="default"
@@ -491,13 +494,13 @@ export function TransactionsListContent() {
                                                                 className="bg-green-600 hover:bg-green-700"
                                                                 onClick={() => openReviewDialog(tx, 'approve')}
                                                             >
-                                                                {activeTab === 'settlement' ? '确认收款' : '确认打款'}
+                                                                {activeTab === 'settlement' ? t(translations, 'transactions.table.confirmReceive') : t(translations, 'transactions.table.confirmPay')}
                                                             </Button>
                                                         </div>
                                                     )}
                                                     {tx.status === 'cancelled' && tx.notes && (
                                                         <div className="text-xs text-red-500 text-right max-w-[150px] ml-auto truncate" title={tx.notes}>
-                                                            驳回: {tx.notes}
+                                                            {t(translations, 'transactions.table.rejectedReason')}: {tx.notes}
                                                         </div>
                                                     )}
                                                 </TableCell>
@@ -513,7 +516,7 @@ export function TransactionsListContent() {
                     {totalPages > 1 && (
                         <div className="flex items-center justify-between p-4 border-t">
                             <p className="text-sm text-muted-foreground">
-                                第 {page} 页，共 {totalPages} 页
+                                {t(translations, 'transactions.pagination.page').replace('{page}', String(page)).replace('{total}', String(totalPages))}
                             </p>
                             <div className="flex gap-2">
                                 <Button
@@ -522,7 +525,7 @@ export function TransactionsListContent() {
                                     onClick={() => setPage(p => Math.max(1, p - 1))}
                                     disabled={page === 1}
                                 >
-                                    上一页
+                                    {t(translations, 'transactions.pagination.prev')}
                                 </Button>
                                 <Button
                                     variant="outline"
@@ -530,7 +533,7 @@ export function TransactionsListContent() {
                                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                                     disabled={page === totalPages}
                                 >
-                                    下一页
+                                    {t(translations, 'transactions.pagination.next')}
                                 </Button>
                             </div>
                         </div>
@@ -544,8 +547,8 @@ export function TransactionsListContent() {
                     <DialogHeader>
                         <DialogTitle>
                             {reviewAction === 'approve'
-                                ? (selectedTransaction?.transaction_type === 'settlement' ? '确认收款' : '确认打款')
-                                : '驳回申请'
+                                ? (selectedTransaction?.transaction_type === 'settlement' ? t(translations, 'transactions.dialog.confirmReceive') : t(translations, 'transactions.dialog.confirmPay'))
+                                : t(translations, 'transactions.dialog.rejectTitle')
                             }
                         </DialogTitle>
                     </DialogHeader>
@@ -553,12 +556,12 @@ export function TransactionsListContent() {
                     {selectedTransaction && (
                         <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">技师</span>
+                                <span className="text-muted-foreground">{t(translations, 'transactions.dialog.therapist')}</span>
                                 <span className="font-medium">{selectedTransaction.girl?.name} (#{selectedTransaction.girl?.girl_number})</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">
-                                    {selectedTransaction.transaction_type === 'withdrawal' ? '申请金额 (RMB)' : '金额 (THB)'}
+                                    {selectedTransaction.transaction_type === 'withdrawal' ? t(translations, 'transactions.dialog.amountRMB') : t(translations, 'transactions.dialog.amountTHB')}
                                 </span>
                                 <span className="font-bold text-lg">
                                     {selectedTransaction.transaction_type === 'withdrawal'
@@ -572,11 +575,11 @@ export function TransactionsListContent() {
                             {selectedTransaction.transaction_type === 'withdrawal' && (
                                 <>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">汇率 (CNY to THB)</span>
+                                        <span className="text-muted-foreground">{t(translations, 'transactions.dialog.exchangeRate')}</span>
                                         <span className="font-medium">{selectedTransaction.exchange_rate?.toFixed(4) || '-'}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">服务费率</span>
+                                        <span className="text-muted-foreground">{t(translations, 'transactions.dialog.feeRate')}</span>
                                         <span className="font-medium">
                                             {selectedTransaction.service_fee_rate
                                                 ? `${(selectedTransaction.service_fee_rate * 100).toFixed(2)}%`
@@ -584,7 +587,7 @@ export function TransactionsListContent() {
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center pt-2 border-t">
-                                        <span className="text-muted-foreground font-semibold">实际打款 (THB)</span>
+                                        <span className="text-muted-foreground font-semibold">{t(translations, 'transactions.dialog.actualPay')}</span>
                                         <span className="font-bold text-xl text-green-600">
                                             {selectedTransaction.actual_amount_thb
                                                 ? `฿${selectedTransaction.actual_amount_thb.toFixed(2)}`
@@ -596,14 +599,14 @@ export function TransactionsListContent() {
 
                             {selectedTransaction.transaction_type === 'settlement' && (
                                 <div className="flex justify-between">
-                                    <span className="text-muted-foreground">方式</span>
+                                    <span className="text-muted-foreground">{t(translations, 'transactions.dialog.paymentMethod')}</span>
                                     <span>{selectedTransaction.payment_method || '-'}</span>
                                 </div>
                             )}
 
                             {selectedTransaction.notes && (
                                 <div className="flex flex-col gap-1 pt-2 border-t">
-                                    <span className="text-muted-foreground text-sm">收款信息/备注</span>
+                                    <span className="text-muted-foreground text-sm">{t(translations, 'transactions.dialog.receiverInfo')}</span>
                                     <span className="text-sm">{selectedTransaction.notes}</span>
                                 </div>
                             )}
@@ -616,9 +619,9 @@ export function TransactionsListContent() {
                                 <AlertCircle className="size-4 mt-0.5 shrink-0" />
                                 <div>
                                     {selectedTransaction?.transaction_type === 'settlement' ? (
-                                        <p>请确认您已收到技师转账的款项。确认后将扣除技师的欠款余额。</p>
+                                        <p>{t(translations, 'transactions.dialog.confirmReceiveMsg')}</p>
                                     ) : (
-                                        <p>请确认您已向技师完成打款。确认后将扣除技师的代收余额。</p>
+                                        <p>{t(translations, 'transactions.dialog.confirmPayMsg')}</p>
                                     )}
                                 </div>
                             </div>
@@ -626,13 +629,13 @@ export function TransactionsListContent() {
 
                         <div className="space-y-2">
                             <Label htmlFor="review-notes">
-                                {reviewAction === 'approve' ? '备注（可选）' : '驳回原因（必填）'}
+                                {reviewAction === 'approve' ? t(translations, 'transactions.dialog.notesOptional') : t(translations, 'transactions.dialog.notesRequired')}
                             </Label>
                             <Textarea
                                 id="review-notes"
                                 value={reviewNotes}
                                 onChange={(e) => setReviewNotes(e.target.value)}
-                                placeholder={reviewAction === 'approve' ? '输入备注信息...' : '请输入驳回原因...'}
+                                placeholder={reviewAction === 'approve' ? t(translations, 'transactions.dialog.notesPlaceholder') : t(translations, 'transactions.dialog.rejectPlaceholder')}
                                 rows={3}
                             />
                         </div>
@@ -644,7 +647,7 @@ export function TransactionsListContent() {
                             onClick={() => setReviewDialogOpen(false)}
                             disabled={reviewing}
                         >
-                            取消
+                            {t(translations, 'transactions.dialog.cancel')}
                         </Button>
                         {reviewAction === 'approve' ? (
                             <Button
@@ -652,7 +655,7 @@ export function TransactionsListContent() {
                                 disabled={reviewing}
                                 className="bg-green-600 hover:bg-green-700"
                             >
-                                {reviewing ? '处理中...' : '确认通过'}
+                                {reviewing ? t(translations, 'transactions.dialog.processing') : t(translations, 'transactions.dialog.confirmApprove')}
                             </Button>
                         ) : (
                             <Button
@@ -660,7 +663,7 @@ export function TransactionsListContent() {
                                 onClick={handleReview}
                                 disabled={reviewing}
                             >
-                                {reviewing ? '处理中...' : '确认驳回'}
+                                {reviewing ? t(translations, 'transactions.dialog.processing') : t(translations, 'transactions.dialog.confirmReject')}
                             </Button>
                         )}
                     </DialogFooter>
@@ -671,14 +674,14 @@ export function TransactionsListContent() {
             <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
                 <DialogContent className="max-w-3xl p-0 overflow-hidden bg-black/90 border-none">
                     <DialogHeader className="sr-only">
-                        <DialogTitle>支付凭证预览</DialogTitle>
+                        <DialogTitle>{t(translations, 'transactions.dialog.imagePreview')}</DialogTitle>
                     </DialogHeader>
                     <div className="relative w-full h-[80vh] flex items-center justify-center">
                         {previewImage && (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                                 src={previewImage}
-                                alt="支付凭证"
+                                alt={t(translations, 'transactions.dialog.imagePreview')}
                                 className="max-w-full max-h-full object-contain"
                             />
                         )}
@@ -698,14 +701,14 @@ export function TransactionsListContent() {
             <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>备注信息</DialogTitle>
+                        <DialogTitle>{t(translations, 'transactions.dialog.notesTitle')}</DialogTitle>
                     </DialogHeader>
                     <div className="py-4">
                         <p className="text-sm whitespace-pre-wrap">{selectedNotes}</p>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setNotesDialogOpen(false)}>
-                            关闭
+                            {t(translations, 'transactions.dialog.close')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -715,7 +718,7 @@ export function TransactionsListContent() {
             <Dialog open={bankAccountDialogOpen} onOpenChange={setBankAccountDialogOpen}>
                 <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
                     <DialogHeader className="flex-shrink-0">
-                        <DialogTitle>技师收款账号</DialogTitle>
+                        <DialogTitle>{t(translations, 'transactions.dialog.bankAccountTitle')}</DialogTitle>
                     </DialogHeader>
 
                     <div className="flex-1 overflow-y-auto min-h-0 px-1">
@@ -723,33 +726,33 @@ export function TransactionsListContent() {
                             <div className="flex items-center justify-center py-12">
                                 <div className="text-center space-y-2">
                                     <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]" />
-                                    <p className="text-sm text-muted-foreground">加载中...</p>
+                                    <p className="text-sm text-muted-foreground">{t(translations, 'transactions.dialog.loading')}</p>
                                 </div>
                             </div>
                         ) : !selectedBankAccount ? (
                             <div className="flex flex-col items-center justify-center py-12">
                                 <AlertCircle className="size-12 text-muted-foreground mb-4" />
-                                <p className="text-muted-foreground">未找到收款账号信息</p>
+                                <p className="text-muted-foreground">{t(translations, 'transactions.dialog.noAccount')}</p>
                             </div>
                         ) : (
                             <div className="space-y-6 py-4">
                                 {/* 银行账号信息 */}
                                 <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
                                     <div className="flex justify-between items-center gap-4">
-                                        <span className="text-sm text-muted-foreground flex-shrink-0">账户名</span>
+                                        <span className="text-sm text-muted-foreground flex-shrink-0">{t(translations, 'transactions.dialog.accountName')}</span>
                                         <span className="font-medium text-right break-all">{selectedBankAccount.bank_account_name || '-'}</span>
                                     </div>
                                     <div className="flex justify-between items-center gap-4">
-                                        <span className="text-sm text-muted-foreground flex-shrink-0">账号</span>
+                                        <span className="text-sm text-muted-foreground flex-shrink-0">{t(translations, 'transactions.dialog.accountNumber')}</span>
                                         <span className="font-mono font-medium text-right break-all">{selectedBankAccount.bank_account_number || '-'}</span>
                                     </div>
                                     <div className="flex justify-between items-center gap-4">
-                                        <span className="text-sm text-muted-foreground flex-shrink-0">银行</span>
+                                        <span className="text-sm text-muted-foreground flex-shrink-0">{t(translations, 'transactions.dialog.bankName')}</span>
                                         <span className="font-medium text-right break-all">{selectedBankAccount.bank_name || '-'}</span>
                                     </div>
                                     {selectedBankAccount.bank_branch && (
                                         <div className="flex justify-between items-center gap-4">
-                                            <span className="text-sm text-muted-foreground flex-shrink-0">支行</span>
+                                            <span className="text-sm text-muted-foreground flex-shrink-0">{t(translations, 'transactions.dialog.bankBranch')}</span>
                                             <span className="font-medium text-right break-all">{selectedBankAccount.bank_branch}</span>
                                         </div>
                                     )}
@@ -758,12 +761,12 @@ export function TransactionsListContent() {
                                 {/* 二维码图片 */}
                                 {selectedBankAccount.bank_meta?.qr_code_url && (
                                     <div className="space-y-2">
-                                        <Label className="text-sm font-medium">收款二维码</Label>
+                                        <Label className="text-sm font-medium">{t(translations, 'transactions.dialog.qrCode')}</Label>
                                         <div className="border rounded-lg p-4 bg-white flex items-center justify-center">
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             <img
                                                 src={selectedBankAccount.bank_meta.qr_code_url}
-                                                alt="收款二维码"
+                                                alt={t(translations, 'transactions.dialog.qrCode')}
                                                 className="max-w-full h-auto object-contain"
                                             />
                                         </div>
@@ -775,7 +778,7 @@ export function TransactionsListContent() {
 
                     <DialogFooter className="flex-shrink-0">
                         <Button variant="outline" onClick={() => setBankAccountDialogOpen(false)}>
-                            关闭
+                            {t(translations, 'transactions.dialog.close')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

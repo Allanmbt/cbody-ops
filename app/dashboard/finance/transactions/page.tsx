@@ -3,8 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { TransactionsListContent } from "./transactions-list-content"
 
 export const metadata = {
-    title: "结账/提现申请管理 - CBODY Ops",
-    description: "技师结账和提现申请审核管理",
+    title: "CBODY Ops",
 }
 
 export default function TransactionsPage() {

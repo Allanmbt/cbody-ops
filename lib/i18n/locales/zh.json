@@ -10,6 +10,63 @@
     "success": "成功",
     "error": "错误"
   },
+  "nav": {
+    "groups": {
+      "system": "系统管理",
+      "aloha": "Aloha 管理",
+      "cbody": "CBODY 管理",
+      "operations": "运营管理",
+      "business": "业务管理",
+      "finance": "财务管理",
+      "settings": "系统设置"
+    },
+    "items": {
+      "dashboard": "仪表盘",
+      "management": "管理员管理",
+      "alohaManagement": "Aloha 管理",
+      "cbodyManagement": "CBODY 管理",
+      "ordersMonitor": "订单监控",
+      "therapistsStatus": "技师状态",
+      "chatsMonitor": "会话监管",
+      "reportsHandle": "举报处理",
+      "reviewsAudit": "评论审核",
+      "girlsManagement": "技师管理",
+      "mediaManagement": "媒体管理",
+      "servicesManagement": "服务管理",
+      "usersManagement": "用户管理",
+      "ordersManagement": "订单管理",
+      "settlementsVerify": "订单核验",
+      "accountsManagement": "结算账户",
+      "transactionsManagement": "交易管理",
+      "financeStats": "财务统计",
+      "configsManagement": "配置管理"
+    },
+    "breadcrumbs": {
+      "overview": "概览",
+      "management": "管理员管理",
+      "aloha": "Aloha 管理",
+      "cbody": "CBODY 管理",
+      "operations": "运营管理",
+      "ordersMonitor": "订单监控",
+      "therapistsStatus": "技师状态",
+      "chatsMonitor": "会话监管",
+      "reportsHandle": "举报处理",
+      "reviewsAudit": "评论审核",
+      "girlsManagement": "技师管理",
+      "mediaManagement": "媒体管理",
+      "servicesManagement": "服务管理",
+      "usersManagement": "用户管理",
+      "ordersManagement": "订单管理",
+      "finance": "财务管理",
+      "financeStats": "财务统计",
+      "accountsManagement": "结算账户",
+      "accountDetail": "账户详情",
+      "settlementsVerify": "订单核验",
+      "transactionsManagement": "交易管理",
+      "configsManagement": "配置管理",
+      "fareConfig": "车费计价配置"
+    }
+  },
   "configs": {
     "title": "配置管理",
     "description": "管理系统核心配置参数和业务规则",
@@ -32,6 +89,106 @@
       "successDeactivated": "已停用银行卡",
       "errorUpdate": "更新失败",
       "errorLoad": "加载配置失败"
+    }
+  },
+  "transactions": {
+    "title": "结账/提现申请管理",
+    "description": "技师结账和提现申请审核管理",
+    "stats": {
+      "pending": "待审核",
+      "todayApproved": "今日已审",
+      "todaySettlement": "今日结账",
+      "todayWithdrawal": "今日提现",
+      "count": "笔",
+      "waitingProcess": "等待处理",
+      "todayApprovedCount": "今日审核通过",
+      "settlementToPlat": "技师结账给平台",
+      "platWithdrawal": "平台代收提现"
+    },
+    "tabs": {
+      "settlement": "结账申请 (THB)",
+      "withdrawal": "提现申请 (RMB)"
+    },
+    "search": {
+      "placeholder": "搜索技师姓名或工号..."
+    },
+    "filters": {
+      "status": "状态",
+      "allStatus": "全部状态",
+      "pending": "待审核",
+      "confirmed": "已确认",
+      "cancelled": "已取消"
+    },
+    "table": {
+      "therapistInfo": "技师信息",
+      "amount": "金额",
+      "paymentMethod": "支付方式",
+      "paymentProof": "支付凭证",
+      "exchangeAndFee": "汇率 & 手续费",
+      "actualAmount": "实际打款 (THB)",
+      "bankAccount": "收款账号",
+      "notes": "备注",
+      "applyTime": "申请时间",
+      "status": "状态",
+      "actions": "操作",
+      "viewProof": "查看凭证",
+      "viewBank": "查看",
+      "viewNotes": "查看",
+      "exchangeRate": "汇率",
+      "feeRate": "费率",
+      "reject": "驳回",
+      "confirmReceive": "确认收款",
+      "confirmPay": "确认打款",
+      "rejectedReason": "驳回",
+      "noData": "暂无申请记录"
+    },
+    "pagination": {
+      "page": "第 {page} 页，共 {total} 页",
+      "prev": "上一页",
+      "next": "下一页"
+    },
+    "dialog": {
+      "confirmReceive": "确认收款",
+      "confirmPay": "确认打款",
+      "rejectTitle": "驳回申请",
+      "therapist": "技师",
+      "amountRMB": "申请金额 (RMB)",
+      "amountTHB": "金额 (THB)",
+      "exchangeRate": "汇率 (CNY to THB)",
+      "feeRate": "服务费率",
+      "actualPay": "实际打款 (THB)",
+      "paymentMethod": "方式",
+      "receiverInfo": "收款信息/备注",
+      "confirmReceiveMsg": "请确认您已收到技师转账的款项。确认后将扣除技师的欠款余额。",
+      "confirmPayMsg": "请确认您已向技师完成打款。确认后将扣除技师的代收余额。",
+      "notesOptional": "备注（可选）",
+      "notesRequired": "驳回原因（必填）",
+      "notesPlaceholder": "输入备注信息...",
+      "rejectPlaceholder": "请输入驳回原因...",
+      "cancel": "取消",
+      "confirmApprove": "确认通过",
+      "confirmReject": "确认驳回",
+      "processing": "处理中...",
+      "imagePreview": "支付凭证预览",
+      "notesTitle": "备注信息",
+      "close": "关闭",
+      "bankAccountTitle": "技师收款账号",
+      "loading": "加载中...",
+      "noAccount": "未找到收款账号信息",
+      "accountName": "账户名",
+      "accountNumber": "账号",
+      "bankName": "银行",
+      "bankBranch": "支行",
+      "qrCode": "收款二维码"
+    },
+    "toast": {
+      "loadError": "获取申请列表失败",
+      "loadListError": "加载申请列表失败",
+      "rejectReasonRequired": "请输入拒绝原因",
+      "reviewError": "审核操作失败",
+      "approved": "申请已批准",
+      "rejected": "申请已拒绝",
+      "bankAccountError": "查询收款账号失败"
     }
   }
 }

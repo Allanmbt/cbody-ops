@@ -87,8 +87,9 @@ import { toast } from "sonner"
 import { PageLoading } from "@/components/ui/loading"
 import { useSidebar } from "@/components/ui/sidebar"
 import { useTheme } from "next-themes"
-import { LocaleProvider } from "@/lib/i18n/LocaleProvider"
+import { LocaleProvider, useLocale } from "@/lib/i18n/LocaleProvider"
 import { LocaleSwitcher } from "@/components/LocaleSwitcher"
+import { t } from "@/lib/i18n"
 
 type SidebarNavChild = {
   key: string
@@ -110,22 +111,24 @@ type SidebarNavItem = {
   requiredRole?: AdminRole[]
 }
 
-const sidebarGroups: {
+// 生成侧边栏菜单配置（支持多语言）
+function getSidebarGroups(translations: any): {
   label: string
   items: SidebarNavItem[]
-}[] = [
+}[] {
+  return [
     {
-      label: "系统管理",
+      label: t(translations, 'nav.groups.system'),
       items: [
         {
           key: "dashboard",
-          title: "仪表盘",
+          title: t(translations, 'nav.items.dashboard'),
           icon: LayoutDashboard,
           href: "/dashboard",
         },
         {
           key: "management",
-          title: "管理员管理",
+          title: t(translations, 'nav.items.management'),
           icon: Shield,
           href: "/dashboard/management",
           requiredRole: ['superadmin'],
@@ -133,63 +136,63 @@ const sidebarGroups: {
       ],
     },
     {
-      label: "Aloha 管理",
+      label: t(translations, 'nav.groups.aloha'),
       items: [
         {
           key: "aloha",
-          title: "Aloha 管理",
+          title: t(translations, 'nav.items.alohaManagement'),
           icon: Sparkle,
           href: "/dashboard/aloha",
-          requiredRole: ['support'], // 实际通过 display_name 判断
+          requiredRole: ['support'],
         },
       ],
     },
     {
-      label: "CBODY 管理",
+      label: t(translations, 'nav.groups.cbody'),
       items: [
         {
           key: "cbody",
-          title: "CBODY 管理",
+          title: t(translations, 'nav.items.cbodyManagement'),
           icon: UserCog,
           href: "/dashboard/cbody",
-          requiredRole: ['support'], // 实际通过 display_name 判断
+          requiredRole: ['support'],
         },
       ],
     },
     {
-      label: "运营管理",
+      label: t(translations, 'nav.groups.operations'),
       items: [
         {
           key: "operations-orders",
-          title: "订单监控",
+          title: t(translations, 'nav.items.ordersMonitor'),
           icon: Activity,
           href: "/dashboard/operations/orders",
           requiredRole: ['superadmin', 'admin', 'support'],
         },
         {
           key: "operations-therapists",
-          title: "技师状态",
+          title: t(translations, 'nav.items.therapistsStatus'),
           icon: UserCog,
           href: "/dashboard/operations/therapists",
           requiredRole: ['superadmin', 'admin', 'support'],
         },
         {
           key: "operations-chats",
-          title: "会话监管",
+          title: t(translations, 'nav.items.chatsMonitor'),
           icon: MessageSquare,
           href: "/dashboard/operations/chats",
           requiredRole: ['superadmin', 'admin', 'support'],
         },
         {
           key: "operations-reports",
-          title: "举报处理",
+          title: t(translations, 'nav.items.reportsHandle'),
           icon: AlertTriangle,
           href: "/dashboard/operations/reports",
           requiredRole: ['superadmin', 'admin', 'support'],
         },
         {
           key: "operations-reviews",
-          title: "评论审核",
+          title: t(translations, 'nav.items.reviewsAudit'),
           icon: Star,
           href: "/dashboard/operations/reviews",
           requiredRole: ['superadmin', 'admin', 'support'],
@@ -197,39 +200,39 @@ const sidebarGroups: {
       ],
     },
     {
-      label: "业务管理",
+      label: t(translations, 'nav.groups.business'),
       items: [
         {
           key: "girls-management",
-          title: "技师管理",
+          title: t(translations, 'nav.items.girlsManagement'),
           icon: Users,
           href: "/dashboard/girls",
           requiredRole: ['superadmin', 'admin', 'support'],
         },
         {
           key: "media-management",
-          title: "媒体管理",
+          title: t(translations, 'nav.items.mediaManagement'),
           icon: Image,
           href: "/dashboard/media",
           requiredRole: ['superadmin', 'admin'],
         },
         {
           key: "services-management",
-          title: "服务管理",
+          title: t(translations, 'nav.items.servicesManagement'),
           icon: Briefcase,
           href: "/dashboard/services",
           requiredRole: ['superadmin', 'admin'],
         },
         {
           key: "users-management",
-          title: "用户管理",
+          title: t(translations, 'nav.items.usersManagement'),
           icon: UserCheck,
           href: "/dashboard/users",
           requiredRole: ['superadmin', 'admin'],
         },
         {
           key: "orders-management",
-          title: "订单管理",
+          title: t(translations, 'nav.items.ordersManagement'),
           icon: Workflow,
           href: "/dashboard/orders",
           requiredRole: ['superadmin', 'admin', 'finance', 'support'],
@@ -237,32 +240,32 @@ const sidebarGroups: {
       ],
     },
     {
-      label: "财务管理",
+      label: t(translations, 'nav.groups.finance'),
       items: [
         {
           key: "finance-settlements",
-          title: "订单核验",
+          title: t(translations, 'nav.items.settlementsVerify'),
           icon: Receipt,
           href: "/dashboard/finance/settlements",
           requiredRole: ['superadmin', 'admin', 'finance'],
         },
         {
           key: "finance-accounts",
-          title: "结算账户",
+          title: t(translations, 'nav.items.accountsManagement'),
           icon: Users,
           href: "/dashboard/finance/accounts",
           requiredRole: ['superadmin', 'admin', 'finance'],
         },
         {
           key: "finance-transactions",
-          title: "交易管理",
+          title: t(translations, 'nav.items.transactionsManagement'),
           icon: ArrowUpDown,
           href: "/dashboard/finance/transactions",
           requiredRole: ['superadmin', 'admin', 'finance'],
         },
         {
           key: "finance-stats",
-          title: "财务统计",
+          title: t(translations, 'nav.items.financeStats'),
           icon: BarChart3,
           href: "/dashboard/finance/stats",
           requiredRole: ['superadmin', 'admin', 'finance'],
@@ -270,11 +273,11 @@ const sidebarGroups: {
       ],
     },
     {
-      label: "系统设置",
+      label: t(translations, 'nav.groups.settings'),
       items: [
         {
           key: "configs",
-          title: "配置管理",
+          title: t(translations, 'nav.items.configsManagement'),
           icon: Settings,
           href: "/dashboard/configs",
           requiredRole: ['superadmin', 'admin'],
@@ -282,6 +285,7 @@ const sidebarGroups: {
       ],
     },
   ]
+}
 
 function getRoleDisplayName(role: AdminRole): string {
   switch (role) {
@@ -298,62 +302,62 @@ function getRoleDisplayName(role: AdminRole): string {
   }
 }
 
-function getBreadcrumbFromPath(pathname: string): Array<{ label: string; href?: string }> {
+function getBreadcrumbFromPath(pathname: string, translations: any): Array<{ label: string; href?: string }> {
   const segments = pathname.split('/').filter(Boolean)
 
   if (segments.length === 1) {
-    return [{ label: "概览" }]
+    return [{ label: t(translations, 'nav.breadcrumbs.overview') }]
   }
 
   const breadcrumbs: Array<{ label: string; href?: string }> = []
 
   if (segments[1] === 'management') {
-    breadcrumbs.push({ label: "管理员管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.management') })
   } else if (segments[1] === 'aloha') {
-    breadcrumbs.push({ label: "Aloha 管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.aloha') })
   } else if (segments[1] === 'cbody') {
-    breadcrumbs.push({ label: "CBODY 管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.cbody') })
   } else if (segments[1] === 'operations') {
-    breadcrumbs.push({ label: "运营管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.operations') })
     if (segments[2] === 'orders') {
-      breadcrumbs.push({ label: "订单监控", href: "/dashboard/operations/orders" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.ordersMonitor'), href: "/dashboard/operations/orders" })
     } else if (segments[2] === 'therapists') {
-      breadcrumbs.push({ label: "技师状态", href: "/dashboard/operations/therapists" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.therapistsStatus'), href: "/dashboard/operations/therapists" })
     } else if (segments[2] === 'chats') {
-      breadcrumbs.push({ label: "会话监管", href: "/dashboard/operations/chats" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.chatsMonitor'), href: "/dashboard/operations/chats" })
     } else if (segments[2] === 'reports') {
-      breadcrumbs.push({ label: "举报处理", href: "/dashboard/operations/reports" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.reportsHandle'), href: "/dashboard/operations/reports" })
     } else if (segments[2] === 'reviews') {
-      breadcrumbs.push({ label: "评论审核", href: "/dashboard/operations/reviews" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.reviewsAudit'), href: "/dashboard/operations/reviews" })
     }
   } else if (segments[1] === 'girls') {
-    breadcrumbs.push({ label: "技师管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.girlsManagement') })
   } else if (segments[1] === 'media') {
-    breadcrumbs.push({ label: "媒体管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.mediaManagement') })
   } else if (segments[1] === 'services') {
-    breadcrumbs.push({ label: "服务管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.servicesManagement') })
   } else if (segments[1] === 'users') {
-    breadcrumbs.push({ label: "用户管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.usersManagement') })
   } else if (segments[1] === 'orders') {
-    breadcrumbs.push({ label: "订单管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.ordersManagement') })
   } else if (segments[1] === 'finance') {
-    breadcrumbs.push({ label: "财务管理", href: "/dashboard/finance" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.finance'), href: "/dashboard/finance" })
     if (segments[2] === 'stats') {
-      breadcrumbs.push({ label: "财务统计" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.financeStats') })
     } else if (segments[2] === 'accounts') {
-      breadcrumbs.push({ label: "结算账户", href: "/dashboard/finance/accounts" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.accountsManagement'), href: "/dashboard/finance/accounts" })
       if (segments[3]) {
-        breadcrumbs.push({ label: "账户详情" })
+        breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.accountDetail') })
       }
     } else if (segments[2] === 'settlements') {
-      breadcrumbs.push({ label: "订单核验" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.settlementsVerify') })
     } else if (segments[2] === 'transactions') {
-      breadcrumbs.push({ label: "交易管理" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.transactionsManagement') })
     }
   } else if (segments[1] === 'configs') {
-    breadcrumbs.push({ label: "配置管理" })
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.configsManagement') })
     if (segments[2] === 'fare') {
-      breadcrumbs.push({ label: "车费计价配置", href: "/dashboard/configs/fare" })
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.fareConfig'), href: "/dashboard/configs/fare" })
     }
   }
 
@@ -467,6 +471,41 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }
 
+  if (loading) {
+    return <PageLoading text="正在验证用户身份..." />
+  }
+
+  if (!adminProfile) {
+    return null
+  }
+
+  return (
+    <LocaleProvider>
+      <DashboardLayoutWithLocale
+        pathname={pathname}
+        adminProfile={adminProfile}
+        handleSignOut={handleSignOut}
+      >
+        {children}
+      </DashboardLayoutWithLocale>
+    </LocaleProvider>
+  )
+}
+
+// 包含多语言支持的布局组件
+function DashboardLayoutWithLocale({
+  pathname,
+  adminProfile,
+  handleSignOut,
+  children
+}: {
+  pathname: string
+  adminProfile: AdminProfile
+  handleSignOut: () => void
+  children: React.ReactNode
+}) {
+  const { t: translations } = useLocale()
+
   const hasAccess = (requiredRoles?: AdminRole[]) => {
     if (!adminProfile || !requiredRoles) return true
 
@@ -487,6 +526,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return requiredRoles.includes(adminProfile.role)
   }
+
+  const sidebarGroups = getSidebarGroups(translations)
 
   const filteredSidebarGroups = sidebarGroups.map(group => ({
     ...group,
@@ -536,43 +577,35 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     })
   }, [])
 
-  const breadcrumb = getBreadcrumbFromPath(pathname)
-
-  if (loading) {
-    return <PageLoading text="正在验证用户身份..." />
-  }
-
-  if (!adminProfile) {
-    return null
-  }
+  const breadcrumb = getBreadcrumbFromPath(pathname, translations)
 
   return (
-    <LocaleProvider>
-      <SidebarProvider>
-        <DashboardLayoutContent
-          filteredSidebarGroups={filteredSidebarGroups}
-          expandedMenus={expandedMenus}
-          handleToggle={handleToggle}
-          pathname={pathname}
-          breadcrumb={breadcrumb}
-          adminProfile={adminProfile}
-          handleSignOut={handleSignOut}
-        >
-          {children}
-        </DashboardLayoutContent>
-      </SidebarProvider>
-    </LocaleProvider>
+    <SidebarProvider>
+      <DashboardLayoutContent
+        filteredSidebarGroups={filteredSidebarGroups}
+        expandedMenus={expandedMenus}
+        handleToggle={handleToggle}
+        pathname={pathname}
+        breadcrumb={breadcrumb}
+        adminProfile={adminProfile}
+        handleSignOut={handleSignOut}
+        translations={translations}
+      >
+        {children}
+      </DashboardLayoutContent>
+    </SidebarProvider>
   )
 }
 
 interface DashboardLayoutContentProps {
-  filteredSidebarGroups: typeof sidebarGroups
+  filteredSidebarGroups: ReturnType<typeof getSidebarGroups>
   expandedMenus: string[]
   handleToggle: (key: string, open: boolean) => void
   pathname: string
   breadcrumb: Array<{ label: string; href?: string }>
   adminProfile: AdminProfile
   handleSignOut: () => void
+  translations: any
   children: React.ReactNode
 }
 
@@ -584,6 +617,7 @@ function DashboardLayoutContent({
   breadcrumb,
   adminProfile,
   handleSignOut,
+  translations,
   children
 }: DashboardLayoutContentProps) {
   const { setOpenMobile } = useSidebar()
@@ -725,7 +759,7 @@ function DashboardLayoutContent({
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
                     <Link href="/dashboard">
-                      仪表盘
+                      {t(translations, 'nav.items.dashboard')}
                     </Link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>

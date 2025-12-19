@@ -26,8 +26,8 @@ export const settlementListFiltersSchema = z.object({
 
 export const transactionListFiltersSchema = z.object({
     girl_id: z.string().uuid().optional(),
-    transaction_type: z.enum(['deposit', 'payment', 'withdrawal', 'adjustment', 'all']).optional(),
-    approval_status: z.enum(['pending', 'approved', 'rejected', 'all']).optional(),
+    transaction_type: z.enum(['settlement', 'withdrawal', 'adjustment', 'all']).optional(),
+    approval_status: z.enum(['pending', 'confirmed', 'cancelled', 'all']).optional(),
     date_from: z.string().optional(),
     date_to: z.string().optional(),
 })

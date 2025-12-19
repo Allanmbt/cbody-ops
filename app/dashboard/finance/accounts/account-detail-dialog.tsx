@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -21,6 +22,8 @@ import {
 import {
     Receipt,
     ArrowUpDown,
+    ChevronLeft,
+    ChevronRight,
 } from "lucide-react"
 import {
     getSettlementAccountDetail,
@@ -49,54 +52,104 @@ export function AccountDetailDialog({ girlId, open, onOpenChange }: AccountDetai
     const [transactions, setTransactions] = useState<SettlementTransactionWithDetails[]>([])
     const [loadingOrders, setLoadingOrders] = useState(false)
     const [loadingTxs, setLoadingTxs] = useState(false)
+    const [transactionsLoaded, setTransactionsLoaded] = useState(false) // 标记是否已加载过交易记录
+
+    // 分页状态
+    const [ordersPage, setOrdersPage] = useState(1)
+    const [ordersTotalPages, setOrdersTotalPages] = useState(1)
+    const [txsPage, setTxsPage] = useState(1)
+    const [txsTotalPages, setTxsTotalPages] = useState(1)
+    const pageSize = 20
 
     useEffect(() => {
         if (open && girlId) {
+            setOrdersPage(1)
+            setTxsPage(1)
+            setTransactionsLoaded(false) // 重置加载标记
             loadData()
         } else {
-            // 关闭时清空数据
             setAccount(null)
             setOrderSettlements([])
             setTransactions([])
+            setOrdersPage(1)
+            setOrdersTotalPages(1)
+            setTxsPage(1)
+            setTxsTotalPages(1)
+            setTransactionsLoaded(false)
         }
     }, [open, girlId])
+
+    useEffect(() => {
+        if (open && girlId) {
+            loadOrdersData()
+        }
+    }, [ordersPage])
+
+    // 仅在交易记录已被加载过时，才监听 txsPage 变化进行翻页
+    useEffect(() => {
+        if (open && girlId && transactionsLoaded) {
+            loadTransactionsData()
+        }
+    }, [txsPage])
 
     async function loadData() {
         if (!girlId) return
 
         try {
-            // 并行加载账户信息和订单记录
-            const [accountResult, ordersResult] = await Promise.all([
-                getSettlementAccountDetail(girlId),
-                getGirlOrderSettlements(girlId, {}, { page: 1, pageSize: 50 })
-            ])
-
+            const accountResult = await getSettlementAccountDetail(girlId)
             if (accountResult.ok) {
                 setAccount(accountResult.data!)
             }
-
-            if (ordersResult.ok) {
-                setOrderSettlements(ordersResult.data!.data)
-            }
+            await loadOrdersData()
         } catch (error) {
             console.error('[AccountDialog] 加载失败:', error)
             toast.error("加载数据失败")
         }
     }
 
+    async function loadOrdersData() {
+        if (!girlId) return
+
+        try {
+            setLoadingOrders(true)
+            const result = await getGirlOrderSettlements(girlId, {}, { page: ordersPage, pageSize })
+
+            if (result.ok && result.data) {
+                setOrderSettlements(result.data.data)
+                setOrdersTotalPages(result.data.totalPages)
+            }
+        } catch (error) {
+            console.error('[AccountDialog] 加载订单失败:', error)
+            toast.error("加载订单记录失败")
+        } finally {
+            setLoadingOrders(false)
+        }
+    }
+
     async function loadTransactions() {
-        if (!girlId || transactions.length > 0 || loadingTxs) return
+        if (!girlId || loadingTxs) return
+        // 标记已加载，触发数据加载
+        setTransactionsLoaded(true)
+        setTxsPage(1) // 重置到第一页
+        await loadTransactionsData()
+    }
+
+    async function loadTransactionsData() {
+        if (!girlId) return
 
         try {
             setLoadingTxs(true)
-            const result = await getGirlTransactions(girlId, {}, { page: 1, pageSize: 50 })
+            const result = await getGirlTransactions(girlId, {}, { page: txsPage, pageSize })
 
             if (!result.ok) {
                 toast.error(result.error || "获取交易记录失败")
                 return
             }
 
-            setTransactions(result.data!.data)
+            if (result.data) {
+                setTransactions(result.data.data)
+                setTxsTotalPages(result.data.totalPages)
+            }
         } catch (error) {
             console.error('[AccountDialog] 加载交易失败:', error)
             toast.error("加载交易记录失败")
@@ -118,12 +171,16 @@ export function AccountDetailDialog({ girlId, open, onOpenChange }: AccountDetai
                 </DialogHeader>
 
                 <div className="flex-1 overflow-y-auto">
-                    <Tabs defaultValue="orders" className="w-full">
+                    <Tabs defaultValue="orders" className="w-full" onValueChange={(value) => {
+                        if (value === 'transactions') {
+                            loadTransactions()
+                        }
+                    }}>
                         <TabsList className="grid w-full grid-cols-2">
                             <TabsTrigger value="orders">
                                 订单核验记录
                             </TabsTrigger>
-                            <TabsTrigger value="transactions" onClick={loadTransactions}>
+                            <TabsTrigger value="transactions">
                                 结账/提现记录
                             </TabsTrigger>
                         </TabsList>
@@ -169,6 +226,33 @@ export function AccountDetailDialog({ girlId, open, onOpenChange }: AccountDetai
                                             ))}
                                         </TableBody>
                                     </Table>
+                                    {ordersTotalPages > 1 && (
+                                        <div className="flex items-center justify-between px-4 py-3 border-t">
+                                            <p className="text-sm text-muted-foreground">
+                                                第 {ordersPage} 页，共 {ordersTotalPages} 页
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setOrdersPage(p => Math.max(1, p - 1))}
+                                                    disabled={ordersPage === 1 || loadingOrders}
+                                                >
+                                                    <ChevronLeft className="h-4 w-4 mr-1" />
+                                                    上一页
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setOrdersPage(p => Math.min(ordersTotalPages, p + 1))}
+                                                    disabled={ordersPage === ordersTotalPages || loadingOrders}
+                                                >
+                                                    下一页
+                                                    <ChevronRight className="h-4 w-4 ml-1" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </TabsContent>
@@ -192,7 +276,6 @@ export function AccountDetailDialog({ girlId, open, onOpenChange }: AccountDetai
                                         <TableBody>
                                             {transactions.map((item) => {
                                                 const typeLabels: Record<string, string> = {
-                                                    deposit: '定金',
                                                     settlement: '结账',
                                                     withdrawal: '提现',
                                                     adjustment: '调整',
@@ -200,28 +283,39 @@ export function AccountDetailDialog({ girlId, open, onOpenChange }: AccountDetai
                                                 const statusLabels: Record<string, string> = {
                                                     pending: '待审核',
                                                     confirmed: '已确认',
-                                                    rejected: '已拒绝',
+                                                    cancelled: '已取消',
                                                 }
+
+                                                // 根据类型显示不同的金额和币种
+                                                const displayAmount = item.transaction_type === 'withdrawal'
+                                                    ? `¥${Number(item.amount).toFixed(2)}`  // 提现显示RMB
+                                                    : `฿${Number(item.amount).toFixed(2)}`  // 结账显示THB
+
+                                                const amountColor = item.transaction_type === 'withdrawal'
+                                                    ? 'text-orange-600'  // 提现（平台付出）橙色
+                                                    : 'text-green-600'   // 结账（平台收入）绿色
 
                                                 return (
                                                     <TableRow key={item.id}>
                                                         <TableCell>
-                                                            <Badge variant="outline">
+                                                            <Badge
+                                                                variant={item.transaction_type === 'withdrawal' ? 'secondary' : 'outline'}
+                                                            >
                                                                 {typeLabels[item.transaction_type] || item.transaction_type}
                                                             </Badge>
                                                         </TableCell>
-                                                        <TableCell className="text-right font-medium">
-                                                            {formatCurrency(item.amount)}
+                                                        <TableCell className={`text-right font-medium ${amountColor}`}>
+                                                            {displayAmount}
                                                         </TableCell>
                                                         <TableCell>
                                                             <Badge
                                                                 variant={
-                                                                    item.approval_status === 'approved' ? 'default' :
-                                                                        item.approval_status === 'rejected' ? 'destructive' :
+                                                                    item.status === 'confirmed' ? 'default' :
+                                                                        item.status === 'cancelled' ? 'destructive' :
                                                                             'secondary'
                                                                 }
                                                             >
-                                                                {statusLabels[item.approval_status] || item.approval_status}
+                                                                {statusLabels[item.status] || item.status}
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell className="text-sm text-muted-foreground">
@@ -232,6 +326,33 @@ export function AccountDetailDialog({ girlId, open, onOpenChange }: AccountDetai
                                             })}
                                         </TableBody>
                                     </Table>
+                                    {txsTotalPages > 1 && (
+                                        <div className="flex items-center justify-between px-4 py-3 border-t">
+                                            <p className="text-sm text-muted-foreground">
+                                                第 {txsPage} 页，共 {txsTotalPages} 页
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setTxsPage(p => Math.max(1, p - 1))}
+                                                    disabled={txsPage === 1 || loadingTxs}
+                                                >
+                                                    <ChevronLeft className="h-4 w-4 mr-1" />
+                                                    上一页
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setTxsPage(p => Math.min(txsTotalPages, p + 1))}
+                                                    disabled={txsPage === txsTotalPages || loadingTxs}
+                                                >
+                                                    下一页
+                                                    <ChevronRight className="h-4 w-4 ml-1" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </TabsContent>

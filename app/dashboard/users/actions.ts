@@ -462,3 +462,43 @@ export async function toggleUserWhitelist(
         return { success: false, error: '操作失败，请稍后重试' }
     }
 }
+
+/**
+ * 发送系统通知给用户
+ */
+export async function sendSystemNotificationToUser(
+    userId: string,
+    content: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+        const admin = await requireAdmin(['superadmin', 'admin'])
+        const supabase = getSupabaseAdminClient()
+
+        if (!content || content.trim().length === 0) {
+            return { success: false, error: '通知内容不能为空' }
+        }
+
+        if (content.length > 1000) {
+            return { success: false, error: '通知内容不能超过1000字符' }
+        }
+
+        // 调用 RPC 函数发送系统通知
+        const { data: messageId, error } = await (supabase as any)
+            .rpc('send_system_notification_to_customer', {
+                p_customer_id: userId,
+                p_content: content.trim()
+            })
+
+        if (error) {
+            console.error('[系统通知] 发送失败:', error)
+            return { success: false, error: '发送通知失败' }
+        }
+
+        console.log(`[系统通知] 用户 ${userId} 收到系统通知, 消息ID: ${messageId}, 操作人: ${admin.display_name}`)
+
+        return { success: true, messageId }
+    } catch (error) {
+        console.error('[系统通知] 发送异常:', error)
+        return { success: false, error: error instanceof Error ? error.message : '发送通知失败' }
+    }
+}

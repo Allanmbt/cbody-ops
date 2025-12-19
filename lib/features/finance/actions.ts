@@ -553,10 +553,6 @@ export async function getGirlTransactions(
           name,
           username,
           avatar_url
-        ),
-        orders (
-          id,
-          order_number
         )
       `, { count: 'exact' })
 
@@ -570,8 +566,8 @@ export async function getGirlTransactions(
             query = query.eq('transaction_type', filters.transaction_type)
         }
 
-        if (filters.approval_status && filters.approval_status !== 'all') {
-            query = query.eq('approval_status', filters.approval_status)
+        if (filters.status && filters.status !== 'all') {
+            query = query.eq('status', filters.status)
         }
 
         if (filters.date_from) {
@@ -644,7 +640,7 @@ export async function getRecentPendingItems(
             avatar_url
           )
         `)
-                .eq('approval_status', 'pending')
+                .eq('status', 'pending')
                 .order('created_at', { ascending: false })
                 .limit(limit),
 
@@ -778,15 +774,15 @@ export async function approveTransaction(
         }
 
         const tx = transaction as any
-        if (tx.approval_status !== 'pending') {
+        if (tx.status !== 'pending') {
             return { ok: false, error: '该交易已经被处理过了' }
         }
 
-        // 4. 更新交易状态为已批准
-        type ApprovalUpdate = { approval_status: string; approved_at: string; operator_id: string }
+        // 4. 更新交易状态为已批准（confirmed）
+        type ApprovalUpdate = { status: string; confirmed_at: string; operator_id: string }
         const updateData: ApprovalUpdate = {
-            approval_status: 'approved',
-            approved_at: new Date().toISOString(),
+            status: 'confirmed',
+            confirmed_at: new Date().toISOString(),
             operator_id: admin.id
         }
 
@@ -849,7 +845,7 @@ export async function rejectTransaction(
         // 3. 获取交易详情
         const { data: transaction, error: fetchError } = await supabase
             .from('settlement_transactions')
-            .select('approval_status')
+            .select('status')
             .eq('id', validated.transaction_id)
             .single()
 
@@ -858,21 +854,21 @@ export async function rejectTransaction(
         }
 
         const tx = transaction as any
-        if (tx.approval_status !== 'pending') {
+        if (tx.status !== 'pending') {
             return { ok: false, error: '该交易已经被处理过了' }
         }
 
-        // 4. 更新交易状态为已拒绝
+        // 4. 更新交易状态为已取消（cancelled）
         type RejectionUpdate = {
-            approval_status: string
+            status: string
             reject_reason: string
-            approved_at: string
+            confirmed_at: string
             operator_id: string
         }
         const updateData: RejectionUpdate = {
-            approval_status: 'rejected',
+            status: 'cancelled',
             reject_reason: validated.reject_reason,
-            approved_at: new Date().toISOString(),
+            confirmed_at: new Date().toISOString(),
             operator_id: admin.id
         }
 

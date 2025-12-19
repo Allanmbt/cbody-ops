@@ -42,9 +42,9 @@ export interface OrderSettlement {
 
 // ==================== 结算交易记录 ====================
 
-export type TransactionType = 'deposit' | 'payment' | 'withdrawal' | 'adjustment'
+export type TransactionType = 'settlement' | 'withdrawal' | 'adjustment'
 export type TransactionDirection = 'to_platform' | 'to_girl'
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
+export type TransactionStatus = 'pending' | 'confirmed' | 'cancelled'
 
 export interface SettlementTransaction {
     id: string
@@ -52,14 +52,16 @@ export interface SettlementTransaction {
     transaction_type: TransactionType
     amount: number
     direction: TransactionDirection
-    order_id: string | null
-    order_settlement_id: string | null
     payment_method: string | null
     payment_proof_url: string | null
+    receiver_account_info: string | null
+    exchange_rate: number | null
+    service_fee_rate: number | null
+    actual_amount_thb: number | null
     notes: string | null
     operator_id: string | null
-    approval_status: ApprovalStatus
-    approved_at: string | null
+    status: TransactionStatus
+    confirmed_at: string | null
     reject_reason: string | null
     created_at: string
 }
@@ -110,10 +112,6 @@ export interface SettlementTransactionWithDetails extends SettlementTransaction 
         username: string
         avatar_url: string | null
     }
-    orders?: {
-        id: string
-        order_number: string
-    } | null
     operator?: {
         id: string
         display_name: string
@@ -183,7 +181,7 @@ export interface SettlementListFilters {
 export interface TransactionListFilters {
     girl_id?: string
     transaction_type?: TransactionType | 'all'
-    approval_status?: ApprovalStatus | 'all'
+    status?: TransactionStatus | 'all'
     date_from?: string
     date_to?: string
 }
