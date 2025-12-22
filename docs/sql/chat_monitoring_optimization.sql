@@ -5,8 +5,10 @@
 -- 性能提升：100 倍+
 -- ========================================
 
--- 1. 创建会话统计 RPC 函数（合并 3 次查询为 1 次）
-CREATE OR REPLACE FUNCTION get_chat_stats()
+-- 1. 创建会话统计 RPC 函数（合并 3 次查询为 1 次，支持角色过滤）
+CREATE OR REPLACE FUNCTION get_chat_stats(
+  p_filter_sort_order BOOLEAN DEFAULT false
+)
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -18,24 +20,63 @@ DECLARE
   locked_count INT;
   yesterday TIMESTAMP;
   today_start TIMESTAMP;
+  v_allowed_girl_ids UUID[];
 BEGIN
   yesterday := NOW() - INTERVAL '24 hours';
   today_start := DATE_TRUNC('day', NOW());
-  
-  -- 一次性获取所有统计
-  SELECT 
-    COUNT(*) FILTER (WHERE last_message_at >= yesterday) AS active,
-    COUNT(*) FILTER (WHERE created_at >= today_start) AS today_new,
-    COUNT(*) FILTER (WHERE is_locked = true) AS locked
+
+  -- 如果需要过滤，获取允许的技师ID列表（sort_order >= 998）
+  IF p_filter_sort_order THEN
+    SELECT ARRAY_AGG(id)
+    INTO v_allowed_girl_ids
+    FROM girls
+    WHERE sort_order >= 998;
+
+    -- 如果没有符合条件的技师，返回空统计
+    IF v_allowed_girl_ids IS NULL OR array_length(v_allowed_girl_ids, 1) = 0 THEN
+      RETURN json_build_object(
+        'active', 0,
+        'today_new', 0,
+        'locked', 0
+      );
+    END IF;
+  END IF;
+
+  -- 一次性获取所有统计（支持过滤 girl_id，允许 null）
+  SELECT
+    COUNT(*) FILTER (
+      WHERE last_message_at >= yesterday
+      AND (
+        NOT p_filter_sort_order
+        OR girl_id IS NULL
+        OR girl_id = ANY(v_allowed_girl_ids)
+      )
+    ) AS active,
+    COUNT(*) FILTER (
+      WHERE created_at >= today_start
+      AND (
+        NOT p_filter_sort_order
+        OR girl_id IS NULL
+        OR girl_id = ANY(v_allowed_girl_ids)
+      )
+    ) AS today_new,
+    COUNT(*) FILTER (
+      WHERE is_locked = true
+      AND (
+        NOT p_filter_sort_order
+        OR girl_id IS NULL
+        OR girl_id = ANY(v_allowed_girl_ids)
+      )
+    ) AS locked
   INTO active_count, today_new_count, locked_count
   FROM chat_threads;
-  
+
   result := json_build_object(
     'active', COALESCE(active_count, 0),
     'today_new', COALESCE(today_new_count, 0),
     'locked', COALESCE(locked_count, 0)
   );
-  
+
   RETURN result;
 END;
 $$;
@@ -69,12 +110,13 @@ SELECT
   customer.language_code AS customer_language_code,
   customer.credit_score AS customer_credit_score,
 
-  -- 技师信息
+  -- 技师信息（包含 sort_order 用于角色过滤）
   girl.id AS girl_id_full,
   girl.girl_number,
   girl.name AS girl_name,
   girl.username AS girl_username,
   girl.avatar_url AS girl_avatar_url,
+  girl.sort_order AS girl_sort_order,
 
   -- 客服信息
   support.id AS support_user_id,
@@ -115,5 +157,5 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_order
   WHERE order_id IS NOT NULL;
 
 -- 4. 注释
-COMMENT ON FUNCTION get_chat_stats() IS '获取会话统计（活跃/今日新增/已锁定），合并3次查询为1次';
-COMMENT ON VIEW v_chat_monitoring IS '会话监控视图，预关联用户、技师、客服信息（含用户完整资料）和关联订单';
+COMMENT ON FUNCTION get_chat_stats(BOOLEAN) IS '获取会话统计（活跃/今日新增/已锁定），合并3次查询为1次，支持角色过滤 sort_order < 998';
+COMMENT ON VIEW v_chat_monitoring IS '会话监控视图，预关联用户、技师（含 sort_order）、客服信息和关联订单';

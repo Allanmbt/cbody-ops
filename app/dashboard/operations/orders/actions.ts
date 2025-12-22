@@ -36,8 +36,11 @@ export interface MonitoringOrderFilters {
  */
 export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | { ok: false; error: string }> {
   try {
-    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+    const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
+
+    // 判断是否需要过滤 sort_order < 998 的技师订单
+    const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
 
     // 🔧 泰国时区(UTC+7)财务日计算:早晨6点为分界点
     const now = new Date()
@@ -74,13 +77,14 @@ export async function getOrderStats(): Promise<{ ok: true; data: OrderStats } | 
     const { data, error } = await (supabase as any).rpc('get_order_stats', {
       p_today_start: todayStartISO,
       p_tomorrow_start: tomorrowStartISO,
-      p_ten_minutes_ago: tenMinutesAgo
+      p_ten_minutes_ago: tenMinutesAgo,
+      p_filter_sort_order: shouldFilterSortOrder
     })
 
     if (error) {
       console.error('[订单统计] RPC调用失败，回退到多次查询:', error)
       // 回退方案：如果RPC不存在，使用原来的多次查询
-      return await getOrderStatsLegacy(supabase, todayStartISO, tomorrowStartISO, tenMinutesAgo)
+      return await getOrderStatsLegacy(supabase, todayStartISO, tomorrowStartISO, tenMinutesAgo, shouldFilterSortOrder)
     }
 
     return {
@@ -108,47 +112,83 @@ async function getOrderStatsLegacy(
   supabase: any,
   todayStart: string,
   tomorrowStart: string,
-  tenMinutesAgo: string
+  tenMinutesAgo: string,
+  shouldFilterSortOrder: boolean = false
 ): Promise<{ ok: true; data: OrderStats }> {
+  // 如果需要过滤 sort_order，先获取符合条件的技师ID列表
+  let allowedGirlIds: string[] | null = null
+  if (shouldFilterSortOrder) {
+    const { data: girls } = await supabase
+      .from('girls')
+      .select('id')
+      .gte('sort_order', 998)
+    allowedGirlIds = girls ? girls.map((g: any) => g.id) : []
+
+    // 如果没有符合条件的技师，直接返回空统计
+    if (allowedGirlIds && allowedGirlIds.length === 0) {
+      return {
+        ok: true as const,
+        data: {
+          pending: 0,
+          pending_overtime: 0,
+          active: 0,
+          active_abnormal: 0,
+          today_completed: 0,
+          today_cancelled: 0
+        }
+      }
+    }
+  }
+
   // 待确认（今日6:00到明天6:00）
-  const { count: pendingCount } = await supabase
+  let pendingQuery = supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'pending')
     .gte('created_at', todayStart)
     .lt('created_at', tomorrowStart)
+  if (allowedGirlIds && allowedGirlIds.length > 0) pendingQuery = pendingQuery.in('girl_id', allowedGirlIds)
+  const { count: pendingCount } = await pendingQuery
 
   // 待确认超时（今日6:00到明天6:00且10分钟前创建）
-  const { count: pendingOvertimeCount } = await supabase
+  let pendingOvertimeQuery = supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'pending')
     .gte('created_at', todayStart)
     .lt('created_at', tomorrowStart)
     .lt('created_at', tenMinutesAgo)
+  if (allowedGirlIds && allowedGirlIds.length > 0) pendingOvertimeQuery = pendingOvertimeQuery.in('girl_id', allowedGirlIds)
+  const { count: pendingOvertimeCount } = await pendingOvertimeQuery
 
   // 进行中（今日6:00到明天6:00）
-  const { count: activeCount } = await supabase
+  let activeQuery = supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .in('status', ['confirmed', 'en_route', 'arrived', 'in_service'])
     .gte('created_at', todayStart)
     .lt('created_at', tomorrowStart)
+  if (allowedGirlIds && allowedGirlIds.length > 0) activeQuery = activeQuery.in('girl_id', allowedGirlIds)
+  const { count: activeCount } = await activeQuery
 
   // 今日完成（今日6:00到明天6:00且已完成）
-  const { count: todayCompletedCount } = await supabase
+  let todayCompletedQuery = supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'completed')
     .gte('created_at', todayStart)
     .lt('created_at', tomorrowStart)
+  if (allowedGirlIds && allowedGirlIds.length > 0) todayCompletedQuery = todayCompletedQuery.in('girl_id', allowedGirlIds)
+  const { count: todayCompletedCount } = await todayCompletedQuery
 
   // 今日取消（今日6:00到明天6:00创建的订单）
-  const { data: todayOrderIds } = await supabase
+  let todayOrderIdsQuery = supabase
     .from('orders')
     .select('id')
     .gte('created_at', todayStart)
     .lt('created_at', tomorrowStart)
+  if (allowedGirlIds && allowedGirlIds.length > 0) todayOrderIdsQuery = todayOrderIdsQuery.in('girl_id', allowedGirlIds)
+  const { data: todayOrderIds } = await todayOrderIdsQuery
 
   const todayOrderIdList = (todayOrderIds || []).map((o: any) => o.id)
 
@@ -180,8 +220,11 @@ async function getOrderStatsLegacy(
  */
 export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) {
   try {
-    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+    const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
+
+    // 判断是否需要过滤 sort_order < 998 的技师订单
+    const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
 
     const {
       search,
@@ -194,6 +237,30 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
       limit = 50
     } = filters
 
+    // 如果需要过滤 sort_order，先获取符合条件的技师ID列表
+    let allowedGirlIds: string[] | null = null
+    if (shouldFilterSortOrder) {
+      const { data: girls } = await supabase
+        .from('girls')
+        .select('id')
+        .gte('sort_order', 998)
+      allowedGirlIds = girls ? girls.map((g: any) => g.id) : []
+
+      // 如果没有符合条件的技师，直接返回空结果
+      if (allowedGirlIds.length === 0) {
+        return {
+          ok: true as const,
+          data: {
+            orders: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 0
+          }
+        }
+      }
+    }
+
     // ✅ 优化：查询订单，暂时不 JOIN user_profiles（因为外键关系复杂）
     let query = supabase
       .from('orders')
@@ -202,6 +269,11 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
         girl:girls!girl_id(id, girl_number, username, name, avatar_url),
         service:services!service_id(id, code, title)
       `, { count: 'exact' })
+
+    // 添加 sort_order 过滤
+    if (allowedGirlIds && allowedGirlIds.length > 0) {
+      query = query.in('girl_id', allowedGirlIds)
+    }
 
     // 🔧 时间范围筛选(泰国时区UTC+7,以早晨6点为分界点)
     // 注意:当有搜索条件时,不限制时间范围,允许搜索全部订单
@@ -271,10 +343,17 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
     // 搜索
     let girlIdsFromSearch: string[] = []
     if (search) {
-      const { data: matchedGirls } = await supabase
+      let girlSearchQuery = supabase
         .from('girls')
         .select('id')
         .or(`girl_number.eq.${parseInt(search) || 0},name.ilike.%${search}%,username.ilike.%${search}%`)
+
+      // 如果需要过滤 sort_order，在搜索时也要过滤
+      if (shouldFilterSortOrder) {
+        girlSearchQuery = girlSearchQuery.gte('sort_order', 998)
+      }
+
+      const { data: matchedGirls } = await girlSearchQuery
 
       if (matchedGirls && matchedGirls.length > 0) {
         girlIdsFromSearch = matchedGirls.map((g: any) => g.id)

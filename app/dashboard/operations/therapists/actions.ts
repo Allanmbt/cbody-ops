@@ -40,51 +40,64 @@ export interface MonitoringTherapistFilters {
  */
 export async function getTherapistStats() {
   try {
-    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+    const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
+
+    // 判断是否需要过滤 sort_order < 998 的技师
+    const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
 
     // 在线技师（已授权：is_blocked=false + is_verified=true）
     // 需要 JOIN girls_status 表获取状态
-    const { count: onlineCount } = await supabase
+    let onlineQuery = supabase
       .from('girls_status')
       .select('girl_id, girls!inner(id)', { count: 'exact', head: true })
       .eq('status', 'available')
       .eq('girls.is_blocked', false)
       .eq('girls.is_verified', true)
+    if (shouldFilterSortOrder) onlineQuery = onlineQuery.gte('girls.sort_order', 998)
+    const { count: onlineCount } = await onlineQuery
 
     // 忙碌技师
-    const { count: busyCount } = await supabase
+    let busyQuery = supabase
       .from('girls_status')
       .select('girl_id, girls!inner(id)', { count: 'exact', head: true })
       .eq('status', 'busy')
       .eq('girls.is_blocked', false)
       .eq('girls.is_verified', true)
+    if (shouldFilterSortOrder) busyQuery = busyQuery.gte('girls.sort_order', 998)
+    const { count: busyCount } = await busyQuery
 
     // 离线技师
-    const { count: offlineCount } = await supabase
+    let offlineQuery = supabase
       .from('girls_status')
       .select('girl_id, girls!inner(id)', { count: 'exact', head: true })
       .eq('status', 'offline')
       .eq('girls.is_blocked', false)
       .eq('girls.is_verified', true)
+    if (shouldFilterSortOrder) offlineQuery = offlineQuery.gte('girls.sort_order', 998)
+    const { count: offlineCount } = await offlineQuery
 
     // 计算今日上线率（已授权技师总数）
-    const { count: totalCount } = await supabase
+    let totalQuery = supabase
       .from('girls')
       .select('*', { count: 'exact', head: true })
       .eq('is_blocked', false)
       .eq('is_verified', true)
+    if (shouldFilterSortOrder) totalQuery = totalQuery.gte('sort_order', 998)
+    const { count: totalCount } = await totalQuery
 
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
     // 今日上线过的技师数量
-    const { count: todayOnlineCount } = await supabase
+    let todayOnlineQuery = supabase
       .from('girls_status')
       .select('girl_id, girls!inner(id)', { count: 'exact', head: true })
       .eq('girls.is_blocked', false)
       .eq('girls.is_verified', true)
       .gte('last_online_at', todayStart.toISOString())
+    if (shouldFilterSortOrder) todayOnlineQuery = todayOnlineQuery.gte('girls.sort_order', 998)
+    const { count: todayOnlineCount } = await todayOnlineQuery
 
     const todayOnlineRate = totalCount && todayOnlineCount
       ? Math.round((todayOnlineCount / totalCount) * 100)
@@ -111,8 +124,11 @@ export async function getTherapistStats() {
  */
 export async function getMonitoringTherapists(filters: MonitoringTherapistFilters = {}) {
   try {
-    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+    const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
     const supabase = getSupabaseAdminClient()
+
+    // 判断是否需要过滤 sort_order < 998 的技师
+    const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
 
     const {
       search,
@@ -127,6 +143,11 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
     let query = (supabase as any)
       .from('v_therapist_monitoring')
       .select('*', { count: 'exact' })
+
+    // 添加 sort_order 过滤
+    if (shouldFilterSortOrder) {
+      query = query.gte('sort_order', 998)
+    }
 
     // ✅ 优化：状态筛选（直接在视图的 status 字段上）
     if (status && status.length > 0) {

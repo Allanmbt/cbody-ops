@@ -96,7 +96,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
 | \`next_available_time\` | string \\| null | Next available time (ISO 8601) |
 
 **Filters:**
-- Only returns girls where \`is_blocked = false\` and \`is_verified = true\`
+- Only returns girls where \`is_blocked = false\`, \`is_verified = true\`, and \`sort_order >= 998\`
+- Girls with \`sort_order < 998\` are internal/test accounts and are not exposed via API
 
 ## Error Responses
 

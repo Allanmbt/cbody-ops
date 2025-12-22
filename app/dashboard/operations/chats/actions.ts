@@ -29,11 +29,16 @@ export interface ChatThreadFilters {
  */
 export async function getChatStats() {
     try {
-        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+        const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
         const supabase = getSupabaseAdminClient()
 
+        // 判断是否需要过滤 sort_order < 998 的技师会话
+        const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
+
         // ✅ 优化：使用 RPC 函数一次性获取所有统计（3次查询 → 1次）
-        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_chat_stats')
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_chat_stats', {
+            p_filter_sort_order: shouldFilterSortOrder
+        })
 
         if (!rpcError && rpcData) {
             return {
@@ -44,24 +49,67 @@ export async function getChatStats() {
 
         // 回退方案：如果 RPC 不可用，使用原来的方式
         console.warn('[会话统计] RPC 不可用，使用回退方案')
+
+        // 如果需要过滤，先获取允许的技师ID列表
+        let allowedGirlIds: string[] | null = null
+        if (shouldFilterSortOrder) {
+            const { data: girls } = await supabase
+                .from('girls')
+                .select('id')
+                .gte('sort_order', 998)
+            allowedGirlIds = girls ? girls.map((g: any) => g.id) : []
+        }
+
         const now = new Date()
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-        const { count: activeCount } = await supabase
+        // 活跃会话（需要过滤技师）
+        let activeQuery = supabase
             .from('chat_threads')
             .select('*', { count: 'exact', head: true })
             .gte('last_message_at', yesterday.toISOString())
 
-        const { count: todayNewCount } = await supabase
+        // 过滤：只统计 girl_id 为 null（非技师会话）或在允许列表中的会话
+        if (allowedGirlIds !== null) {
+            if (allowedGirlIds.length > 0) {
+                activeQuery = activeQuery.or(`girl_id.is.null,girl_id.in.(${allowedGirlIds.join(',')})`)
+            } else {
+                // 如果没有允许的技师，只统计非技师会话
+                activeQuery = activeQuery.is('girl_id', null)
+            }
+        }
+        const { count: activeCount } = await activeQuery
+
+        // 今日新增会话
+        let todayNewQuery = supabase
             .from('chat_threads')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', todayStart.toISOString())
 
-        const { count: lockedCount } = await supabase
+        if (allowedGirlIds !== null) {
+            if (allowedGirlIds.length > 0) {
+                todayNewQuery = todayNewQuery.or(`girl_id.is.null,girl_id.in.(${allowedGirlIds.join(',')})`)
+            } else {
+                todayNewQuery = todayNewQuery.is('girl_id', null)
+            }
+        }
+        const { count: todayNewCount } = await todayNewQuery
+
+        // 已锁定会话
+        let lockedQuery = supabase
             .from('chat_threads')
             .select('*', { count: 'exact', head: true })
             .eq('is_locked', true)
+
+        if (allowedGirlIds !== null) {
+            if (allowedGirlIds.length > 0) {
+                lockedQuery = lockedQuery.or(`girl_id.is.null,girl_id.in.(${allowedGirlIds.join(',')})`)
+            } else {
+                lockedQuery = lockedQuery.is('girl_id', null)
+            }
+        }
+        const { count: lockedCount } = await lockedQuery
 
         return {
             ok: true as const,
@@ -82,8 +130,11 @@ export async function getChatStats() {
  */
 export async function getChatThreads(filters: ChatThreadFilters = {}) {
     try {
-        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+        const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
         const supabase = getSupabaseAdminClient()
+
+        // 判断是否需要过滤 sort_order < 998 的技师会话
+        const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
 
         const {
             search,
@@ -98,6 +149,12 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
         let query = supabase
             .from('v_chat_monitoring')
             .select('*', { count: 'exact' })
+
+        // 添加 sort_order 过滤（视图应包含 girl_sort_order 字段）
+        if (shouldFilterSortOrder) {
+            // 过滤：girl_id 为 null 或 girl_sort_order >= 998
+            query = query.or('girl_id.is.null,girl_sort_order.gte.998')
+        }
 
         // 类型筛选
         if (thread_type && thread_type !== 'all') {
@@ -261,8 +318,35 @@ export async function getCustomerOrderHistory(
     limit = 20
 ): Promise<{ ok: boolean; data?: { orders: any[]; total: number; page: number; limit: number; totalPages: number }; error?: string }> {
     try {
-        await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+        const admin = await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
         const supabase = getSupabaseAdminClient()
+
+        // 判断是否需要过滤 sort_order < 998 的技师订单
+        const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
+
+        // 如果需要过滤，先获取允许的技师ID列表
+        let allowedGirlIds: string[] | null = null
+        if (shouldFilterSortOrder) {
+            const { data: girls } = await supabase
+                .from('girls')
+                .select('id')
+                .gte('sort_order', 998)
+            allowedGirlIds = girls ? girls.map((g: any) => g.id) : []
+
+            // 如果没有允许的技师，返回空结果
+            if (allowedGirlIds.length === 0) {
+                return {
+                    ok: true,
+                    data: {
+                        orders: [],
+                        total: 0,
+                        page,
+                        limit,
+                        totalPages: 0
+                    }
+                }
+            }
+        }
 
         // 查询客户的订单历史（订单表使用 user_id 而不是 customer_id）
         let query = supabase
@@ -274,10 +358,15 @@ export async function getCustomerOrderHistory(
                 total_amount,
                 service_name,
                 created_at,
-                girl:girls!girl_id(id, girl_number, name, avatar_url)
+                girl:girls!girl_id(id, girl_number, name, avatar_url, sort_order)
             `, { count: 'exact' })
             .eq('user_id', customerId)
             .order('created_at', { ascending: false })
+
+        // 添加 girl_id 过滤
+        if (allowedGirlIds && allowedGirlIds.length > 0) {
+            query = query.in('girl_id', allowedGirlIds)
+        }
 
         // 分页
         const from = (page - 1) * limit

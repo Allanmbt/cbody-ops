@@ -99,6 +99,7 @@ export async function GET(request: NextRequest) {
         avatar_url,
         is_blocked,
         is_verified,
+        sort_order,
         girls_status!girls_status_girl_id_fkey(
           status,
           current_lat,
@@ -108,6 +109,7 @@ export async function GET(request: NextRequest) {
       `)
       .eq('is_blocked', false)
       .eq('is_verified', true)
+      .gte('sort_order', 998)
 
     if (error) {
       console.error('[API Girls] 查询失败:', error)

@@ -417,15 +417,13 @@
 | last_device_id | VARCHAR(100) | 否 | NULL | 最后登录设备ID |
 | last_ip_address | INET | 否 | NULL | 最后登录IP |
 | last_login_at | TIMESTAMPTZ | 否 | NULL | 最后登录时间 |
-| is_whitelisted | BOOLEAN | 否 | false | 白名单标识：true 时豁免并发下单限制 |
+| is_whitelisted | BOOLEAN | 否 | false | 白名单标识：true 时豁免并发下单限制和恶意取消检查 |
+| temp_blocked_until | TIMESTAMPTZ | 否 | NULL | 临时禁止下单截止时间（NULL=未限制，用于恶意取消防范） |
+| temp_block_reason | TEXT | 否 | NULL | 临时限制原因（如：频繁取消订单） |
+| last_credit_recovery_at | TIMESTAMPTZ | 否 | NULL | 上次信用分恢复时间（预留字段，暂不启用自动恢复） |
 | is_banned | BOOLEAN | 是 | false | 是否被封禁 |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
 | updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
-
--- 添加索引，优化查询性能
-CREATE INDEX IF NOT EXISTS idx_user_profiles_whitelisted 
-ON public.user_profiles(id) 
-WHERE is_whitelisted = true;
 
 **索引**：
 - PRIMARY KEY (id)
@@ -435,9 +433,11 @@ WHERE is_whitelisted = true;
 - INDEX idx_user_profiles_banned (id) WHERE is_banned = true
 - INDEX idx_user_profiles_last_login (last_login_at DESC)
 - INDEX idx_user_profiles_last_ip (last_ip_address)
-- INDEX idx_user_profiles_whitelisted (user_profiles(id))
+- INDEX idx_user_profiles_whitelisted (id) WHERE is_whitelisted = true
 - INDEX idx_user_profiles_phone_country_code (phone_country_code)
 - INDEX idx_user_profiles_phone_number (phone_number)
+- INDEX idx_user_profiles_temp_blocked (temp_blocked_until) WHERE temp_blocked_until IS NOT NULL
+- INDEX idx_user_profiles_credit_score (credit_score) WHERE credit_score < 80
 
 
 **外键约束**：
@@ -447,9 +447,23 @@ WHERE is_whitelisted = true;
 - CHECK (gender IN (0, 1, 2))
 - CHECK (level >= 1 AND level <= 9)
 - CHECK (experience >= 0)
-- CHECK (credit_score >= 0 AND credit_score <= 1000)
+- CHECK (credit_score >= 0 AND credit_score <= 100)
 - CHECK (phone_country_code ~ '^\+[0-9]{1,3}$')
 - CHECK (phone_number IS NULL OR phone_number ~ '^[0-9]{5,15}$')
+
+**说明**：
+- **恶意取消防范系统**（自动轻量限制，不涉及永久封禁）：
+  - **触发A**：1小时内≥2次取消（不含arrived状态） → 临时禁止下单2小时
+  - **触发B**：24小时内≥3次取消（不含arrived状态） → 临时禁止下单24小时 + 扣除12信用分
+  - **奖励机制**：完成订单 → 信用分+2（最高100分）
+  - **白名单豁免**：`is_whitelisted = true` 的用户豁免所有自动限制
+  - **arrived取消**：技师已到达后的取消不触发自动限制，需通过技师举报系统人工处理
+  - **临时限制过期**：`place_order` RPC 自动检查并清除过期限制
+- **信用分系统**（0-100分，初始80分）：
+  - 60分以下禁止下单
+  - 完成订单自动+2分（最高100分）
+  - 触发B自动-12分（最低0分）
+  - 技师评价会影响信用分（现有逻辑）
 
 ## user_connected_accounts（第三方账户绑定表）
 
