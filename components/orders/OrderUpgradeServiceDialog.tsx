@@ -71,7 +71,7 @@ export function OrderUpgradeServiceDialog({
 
   const handleUpgrade = async () => {
     if (!order || !selectedServiceDurationId) {
-      toast.error("请选择要升级的服务")
+      toast.error("请选择要调整的服务")
       return
     }
 
@@ -79,11 +79,11 @@ export function OrderUpgradeServiceDialog({
     const result = await upgradeCompletedOrderService(order.id, selectedServiceDurationId)
 
     if (result.ok) {
-      toast.success(`升级成功！订单金额已更新为 ${formatCurrency(result.data.new_total)}`)
+      toast.success(`调整成功！订单金额已更新为 ${formatCurrency(result.data.new_total)}`)
       onSuccess()
       onOpenChange(false)
     } else {
-      toast.error(result.error || "升级服务失败")
+      toast.error(result.error || "调整服务失败")
     }
     setUpgrading(false)
   }
@@ -98,13 +98,13 @@ export function OrderUpgradeServiceDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowUp className="h-5 w-5" />
-            升级服务
+            调整服务
           </DialogTitle>
           <DialogDescription>
-            为订单 <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{order.order_number}</code> 选择要升级的服务
+            为订单 <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{order.order_number}</code> 选择要调整的服务
           </DialogDescription>
           <p className="mt-2 text-xs text-orange-600">
-            注意：此订单已完成但未核验，升级后将同步更新结算金额
+            注意：此订单已完成但未核验，调整后将同步更新结算金额
           </p>
         </DialogHeader>
 
@@ -114,12 +114,12 @@ export function OrderUpgradeServiceDialog({
           </div>
         ) : services.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            暂无可升级的服务选项
+            暂无可调整的服务选项
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             {/* 当前服务信息 */}
-            <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+            <div className="bg-muted/50 p-4 rounded-lg space-y-2 sticky top-0 z-10">
               <div className="text-sm font-medium">当前服务</div>
               <div className="flex items-center justify-between">
                 <div className="space-y-1">
@@ -136,9 +136,9 @@ export function OrderUpgradeServiceDialog({
               </div>
             </div>
 
-            {/* 可升级服务列表 */}
+            {/* 可调整服务列表 */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">选择升级后的服务</Label>
+              <Label className="text-sm font-medium">选择调整后的服务</Label>
               <RadioGroup
                 value={selectedServiceDurationId?.toString()}
                 onValueChange={(value) => setSelectedServiceDurationId(Number(value))}
@@ -148,6 +148,8 @@ export function OrderUpgradeServiceDialog({
                   const durationDiff = service.duration_minutes - order.service_duration
                   const isSameService = service.service_id === order.service_id
                   const serviceName = getServiceTitle(service.service_name)
+                  const isDowngrade = isSameService && durationDiff < 0
+                  const isUpgrade = isSameService && durationDiff > 0
 
                   return (
                     <div
@@ -176,25 +178,45 @@ export function OrderUpgradeServiceDialog({
                             {formatCurrency(service.price)}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                           {!isSameService && (
                             <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                               更换服务
                             </Badge>
                           )}
-                          {durationDiff > 0 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{durationDiff}分钟
-                            </Badge>
+                          {isUpgrade && (
+                            <>
+                              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                                升级
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                +{durationDiff}分钟
+                              </Badge>
+                            </>
                           )}
-                          {durationDiff < 0 && (
-                            <Badge variant="outline" className="text-xs text-orange-600">
-                              {durationDiff}分钟
-                            </Badge>
+                          {isDowngrade && (
+                            <>
+                              <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
+                                降级
+                              </Badge>
+                              <Badge variant="outline" className="text-xs text-orange-600">
+                                {durationDiff}分钟
+                              </Badge>
+                            </>
                           )}
                           {priceDiff > 0 && (
-                            <Badge variant="outline" className="text-xs">
+                            <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
                               +{formatCurrency(priceDiff)}
+                            </Badge>
+                          )}
+                          {priceDiff < 0 && (
+                            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">
+                              {formatCurrency(priceDiff)}
+                            </Badge>
+                          )}
+                          {priceDiff === 0 && !isSameService && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                              同价
                             </Badge>
                           )}
                         </div>
@@ -205,14 +227,14 @@ export function OrderUpgradeServiceDialog({
               </RadioGroup>
             </div>
 
-            {/* 升级后总金额预览 */}
+            {/* 调整后总金额预览 */}
             {selectedService && (
               <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <div className="text-sm font-medium">升级后订单总金额</div>
+                    <div className="text-sm font-medium">调整后订单总金额</div>
                     <div className="text-xs text-muted-foreground">
-                      原价 {formatCurrency(order.total_amount)} + 差价 {formatCurrency(selectedService.price - order.service_price)}
+                      原价 {formatCurrency(order.total_amount)} {selectedService.price !== order.service_price && `+ 差价 ${formatCurrency(selectedService.price - order.service_price)}`}
                     </div>
                   </div>
                   <div className="text-right">
@@ -243,12 +265,12 @@ export function OrderUpgradeServiceDialog({
             {upgrading ? (
               <>
                 <LoadingSpinner className="mr-2 h-4 w-4" />
-                升级中...
+                调整中...
               </>
             ) : (
               <>
                 <ArrowUp className="mr-2 h-4 w-4" />
-                确认升级
+                确认调整
               </>
             )}
           </Button>

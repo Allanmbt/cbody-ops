@@ -323,14 +323,14 @@ export async function checkOrderSettlementStatus(orderId: string): Promise<ApiRe
 }
 
 /**
- * 获取订单可升级的服务列表（订单管理专用）
+ * 获取订单可调整的服务列表（订单管理专用）
  * 区别于订单监管：
- * 1. 只能对已完成订单（completed）进行升级
+ * 1. 只能对已完成订单（completed）进行调整
  * 2. 订单的结算记录必须存在且为待核验状态（settlement_status = 'pending'）
- * 3. 升级逻辑与订单监管相同：
- *    - 相同服务：只能选择更长时长（价格可以相同或更高）
- *    - 不同服务：价格必须≥当前服务价格
- * 4. 升级后需要同步更新 order_settlements 表中的相关提成和金额
+ * 3. 调整逻辑：
+ *    - 可选择该技师提供的所有服务和时长（包括价格更低的）
+ *    - 排除当前已选的服务时长组合
+ * 4. 调整后需要同步更新 order_settlements 表中的相关提成和金额
  */
 export async function getUpgradableServicesForCompleted(orderId: string): Promise<{ ok: true; data: any[] } | { ok: false; error: string }> {
   try {
@@ -429,8 +429,8 @@ export async function getUpgradableServicesForCompleted(orderId: string): Promis
       return { ok: false, error: "技师未配置任何服务时长选项" }
     }
 
-    // 6. 筛选可升级的服务（与订单监管逻辑相同）
-    const upgradableServices = allDurations
+    // 6. 筛选可调整的服务（允许选择技师提供的所有服务，包括价格更低的）
+    const adjustableServices = allDurations
       .map((d: any) => {
         const duration = d.service_durations
         const price = d.custom_price || duration.default_price
@@ -448,45 +448,39 @@ export async function getUpgradableServicesForCompleted(orderId: string): Promis
         }
       })
       .filter((s: any) => {
-        if (s.service_duration_id === order.service_duration_id) {
-          return false
-        }
-
-        // 相同服务：只能选更长时长（价格可以相同）
-        if (s.service_id === order.service_id) {
-          return s.duration_minutes > order.service_duration
-        }
-
-        // 不同服务：价格必须≥当前服务价格
-        return s.price >= order.service_price
+        // 仅排除当前已选的服务时长组合
+        return s.service_duration_id !== order.service_duration_id
       })
       .sort((a: any, b: any) => {
+        // 优先按服务ID排序，同一服务内按时长排序
         if (a.service_id !== b.service_id) {
           return a.service_id - b.service_id
         }
         return a.duration_minutes - b.duration_minutes
       })
 
-    if (upgradableServices.length === 0) {
-      return { ok: false, error: "暂无可升级的服务选项" }
+    if (adjustableServices.length === 0) {
+      return { ok: false, error: "暂无可调整的服务选项" }
     }
 
     return {
       ok: true,
-      data: upgradableServices
+      data: adjustableServices
     }
   } catch (error) {
-    console.error('[订单管理-升级服务] 获取可升级服务失败:', error)
-    return { ok: false, error: "获取可升级服务失败" }
+    console.error('[订单管理-调整服务] 获取可调整服务失败:', error)
+    return { ok: false, error: "获取可调整服务失败" }
   }
 }
 
 /**
- * 执行已完成订单的服务升级（订单管理专用）
+ * 执行已完成订单的服务调整（订单管理专用）
  * 与订单监管升级的区别：
  * 1. 订单状态必须是 completed
  * 2. 必须同步更新 order_settlements 表的金额和提成
  * 3. 结算状态必须保持为 pending
+ * 4. 支持调整为技师提供的任何服务（包括价格更低的）
+ * 5. 自动根据新服务重新计算提成比例
  */
 export async function upgradeCompletedOrderService(orderId: string, newServiceDurationId: number): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
   try {
@@ -536,7 +530,7 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
 
     // 2. 检查订单状态
     if (order.status !== 'completed') {
-      return { ok: false, error: "只能对已完成的订单进行升级" }
+      return { ok: false, error: "只能对已完成的订单进行调整" }
     }
 
     // 3. 检查订单结算记录
@@ -573,7 +567,7 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
     }
 
     if (settlement.settlement_status !== 'pending') {
-      return { ok: false, error: "订单已核验，无法升级服务" }
+      return { ok: false, error: "订单已核验，无法调整服务" }
     }
 
     // 4. 获取新服务时长和价格，包括服务名称和提成比例
@@ -619,16 +613,9 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
     const newServiceName = girlServiceDuration.admin_girl_services.services.title
     const newServiceCommissionRate = girlServiceDuration.admin_girl_services.services.commission_rate
 
-    // 5. 验证升级规则
-    if (newServiceId === order.service_id) {
-      if (newDuration <= order.service_duration) {
-        return { ok: false, error: "同一服务必须升级到更长时长" }
-      }
-    } else {
-      if (newPrice < order.service_price) {
-        return { ok: false, error: "更换服务的价格不能低于当前服务" }
-      }
-    }
+    // 5. 验证调整规则
+    // 允许选择技师提供的任何服务和时长（包括价格更低的）
+    // 已在列表筛选时通过技师服务绑定验证，无需额外验证
 
     // 6. 计算新的金额
     const priceDifference = newPrice - order.service_price
@@ -636,9 +623,10 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
     const newServiceFee = order.service_fee + priceDifference
 
     // 7. 计算新的结算数据
-    // 🔧 关键修复：如果更换了服务，使用新服务的提成比例；否则使用原提成比例
+    // 🔧 关键：始终使用新服务的提成比例（即使是相同服务的不同时长）
+    // 因为可能需要重新核算提成，确保结算准确
     const isServiceChanged = newServiceId !== order.service_id
-    const finalServiceCommissionRate = isServiceChanged && newServiceCommissionRate !== null
+    const finalServiceCommissionRate = newServiceCommissionRate !== null
       ? newServiceCommissionRate
       : settlement.service_commission_rate
 
@@ -661,21 +649,17 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
       .eq('id', orderId)
 
     if (updateOrderError) {
-      console.error('[订单管理-升级服务] 更新订单失败:', updateOrderError)
+      console.error('[订单管理-调整服务] 更新订单失败:', updateOrderError)
       return { ok: false, error: "更新订单失败" }
     }
 
-    // 9. 同步更新结算记录
+    // 9. 同步更新结算记录（始终更新提成比例以确保准确）
     const settlementUpdateData: any = {
       service_fee: newServiceFee,
+      service_commission_rate: finalServiceCommissionRate,
       platform_should_get: newPlatformShouldGet,
       settlement_amount: newSettlementAmount,
       updated_at: new Date().toISOString()
-    }
-
-    // 🔧 如果更换了服务，同时更新提成比例
-    if (isServiceChanged) {
-      settlementUpdateData.service_commission_rate = finalServiceCommissionRate
     }
 
     const { error: updateSettlementError } = await (supabase
@@ -684,7 +668,7 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
       .eq('id', settlement.id)
 
     if (updateSettlementError) {
-      console.error('[订单管理-升级服务] 更新结算记录失败:', updateSettlementError)
+      console.error('[订单管理-调整服务] 更新结算记录失败:', updateSettlementError)
       return { ok: false, error: "更新结算记录失败" }
     }
 
@@ -708,8 +692,8 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
       }
     }
   } catch (error) {
-    console.error('[订单管理-升级服务] 执行升级失败:', error)
-    return { ok: false, error: "升级服务失败" }
+    console.error('[订单管理-调整服务] 执行调整失败:', error)
+    return { ok: false, error: "调整服务失败" }
   }
 }
 

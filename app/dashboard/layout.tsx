@@ -30,6 +30,7 @@ import {
   ArrowUpDown,
   Menu,
   BarChart3,
+  ClipboardList,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -237,6 +238,13 @@ function getSidebarGroups(translations: any): {
           href: "/dashboard/orders",
           requiredRole: ['superadmin', 'admin', 'finance', 'support'],
         },
+        {
+          key: "girl-attendance",
+          title: t(translations, 'nav.items.girlAttendance'),
+          icon: ClipboardList,
+          href: "/dashboard/business/girl-attendance",
+          requiredRole: ['superadmin', 'admin'],
+        },
       ],
     },
     {
@@ -340,6 +348,11 @@ function getBreadcrumbFromPath(pathname: string, translations: any): Array<{ lab
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.usersManagement') })
   } else if (segments[1] === 'orders') {
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.ordersManagement') })
+  } else if (segments[1] === 'business') {
+    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.business') })
+    if (segments[2] === 'girl-attendance') {
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.girlAttendance') })
+    }
   } else if (segments[1] === 'finance') {
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.finance'), href: "/dashboard/finance" })
     if (segments[2] === 'stats') {
