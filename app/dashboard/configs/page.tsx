@@ -6,10 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { ChevronRight, DollarSign, Map, Bell, Globe } from "lucide-react"
+import { ChevronRight, DollarSign, Map, Bell, Globe, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { getConfigsList } from "./actions"
 import type { AppConfig } from "@/lib/features/configs"
+import { useCurrentAdmin } from "@/hooks/use-current-admin"
 
 // 配置项卡片数据
 interface ConfigCard {
@@ -46,6 +47,16 @@ const configCards: ConfigCard[] = [
     config_key: "bank_accounts",
   },
   {
+    key: "chat-cleanup",
+    title: "聊天记录清理",
+    description: "管理和清理系统聊天记录，删除无效线程和超过90天的消息及图片",
+    icon: <Trash2 className="size-8" />,
+    href: "/dashboard/configs/chat-cleanup",
+    badge: "超级管理员",
+    namespace: "system",
+    config_key: "chat_cleanup",
+  },
+  {
     key: "notification",
     title: "通知推送配置",
     description: "管理消息推送、邮件通知和短信服务配置",
@@ -68,6 +79,7 @@ const configCards: ConfigCard[] = [
 ]
 
 export default function ConfigsPage() {
+  const { admin, loading: adminLoading } = useCurrentAdmin()
   const [configs, setConfigs] = useState<AppConfig[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -98,6 +110,14 @@ export default function ConfigsPage() {
     )
   }
 
+  // 过滤配置卡片（聊天清理仅超级管理员可见）
+  const visibleCards = configCards.filter(card => {
+    if (card.key === 'chat-cleanup') {
+      return admin?.role === 'superadmin'
+    }
+    return true
+  })
+
   return (
     <div className="space-y-6">
       {/* 页面标题 */}
@@ -109,13 +129,13 @@ export default function ConfigsPage() {
       </div>
 
       {/* 配置项网格 */}
-      {loading ? (
+      {loading || adminLoading ? (
         <div className="flex items-center justify-center py-12">
           <LoadingSpinner />
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
-          {configCards.map((card) => {
+          {visibleCards.map((card) => {
             const isActive = isConfigActive(card.namespace, card.config_key)
             const isDisabled = card.badge === "即将开放"
 

@@ -1,7 +1,7 @@
 "use server"
 
 import { getSupabaseAdminClient } from "@/lib/supabase"
-import { requireAdmin } from "@/lib/auth"
+import { requireAdmin, getCurrentAdminFromServerAction } from "@/lib/auth"
 import {
   girlAttendanceListParamsSchema,
   type GirlAttendanceListParams,
@@ -9,6 +9,24 @@ import {
   type City,
   type ApiResponse
 } from "@/lib/features/girl-attendance"
+
+/**
+ * 获取当前管理员信息
+ */
+export async function getCurrentAdminInfo(): Promise<ApiResponse<{ role: string }>> {
+  try {
+    const admin = await getCurrentAdminFromServerAction()
+
+    if (!admin) {
+      return { ok: false, error: '未登录' }
+    }
+
+    return { ok: true, data: { role: admin.role } }
+  } catch (error) {
+    console.error('[获取管理员信息] 异常:', error)
+    return { ok: false, error: '获取管理员信息失败' }
+  }
+}
 
 /**
  * 获取技师考勤统计列表
@@ -83,5 +101,43 @@ export async function getCities(): Promise<ApiResponse<City[]>> {
   } catch (error) {
     console.error('[城市列表] 异常:', error)
     return { ok: false, error: error instanceof Error ? error.message : '获取城市列表异常' }
+  }
+}
+
+/**
+ * 根据考勤表现批量更新技师诚信分
+ * 仅超级管理员可执行
+ */
+export async function updateTrustScoresByAttendance(): Promise<ApiResponse<{ updated_count: number }>> {
+  try {
+    // 严格权限验证：仅超级管理员
+    const admin = await requireAdmin(['superadmin'])
+
+    const supabase = getSupabaseAdminClient()
+
+    // 执行批量更新 SQL
+    const { data, error } = await supabase.rpc('update_trust_scores_by_attendance')
+
+    if (error) {
+      console.error('[诚信分更新] 执行失败:', error)
+      return { ok: false, error: '更新诚信分失败' }
+    }
+
+    // 记录操作日志
+    await supabase.from('audit_logs').insert({
+      admin_id: admin.id,
+      action: 'update_trust_scores',
+      target_type: 'girls',
+      target_id: null,
+      payload: { source: 'attendance_stats' },
+      ip_address: null
+    } as any)
+
+    console.log('[诚信分更新] 成功更新技师诚信分')
+
+    return { ok: true, data: { updated_count: data || 0 } }
+  } catch (error) {
+    console.error('[诚信分更新] 异常:', error)
+    return { ok: false, error: error instanceof Error ? error.message : '更新诚信分异常' }
   }
 }

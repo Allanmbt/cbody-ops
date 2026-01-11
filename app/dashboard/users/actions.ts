@@ -502,3 +502,112 @@ export async function sendSystemNotificationToUser(
         return { success: false, error: error instanceof Error ? error.message : '发送通知失败' }
     }
 }
+
+/**
+ * 获取用户预订历史记录
+ */
+export async function getUserBookingHistory(
+    userId: string,
+    page = 1,
+    limit = 20
+): Promise<{ ok: boolean; data?: { orders: any[]; total: number; page: number; limit: number; totalPages: number }; error?: string }> {
+    try {
+        const admin = await requireAdmin(['superadmin', 'admin', 'support'])
+        const supabase = getSupabaseAdminClient()
+
+        // 判断是否需要过滤 sort_order < 998 的技师订单
+        const shouldFilterSortOrder = admin.role !== 'superadmin' && admin.role !== 'admin'
+
+        // 如果需要过滤，先获取允许的技师ID列表
+        let allowedGirlIds: string[] | null = null
+        if (shouldFilterSortOrder) {
+            const { data: girls } = await supabase
+                .from('girls')
+                .select('id')
+                .gte('sort_order', 998)
+            allowedGirlIds = girls ? girls.map((g: any) => g.id) : []
+
+            // 如果没有允许的技师，返回空结果
+            if (allowedGirlIds.length === 0) {
+                return {
+                    ok: true,
+                    data: {
+                        orders: [],
+                        total: 0,
+                        page,
+                        limit,
+                        totalPages: 0
+                    }
+                }
+            }
+        }
+
+        // 构建查询
+        let query = supabase
+            .from('orders')
+            .select(`
+                id,
+                order_number,
+                status,
+                total_amount,
+                created_at,
+                girl_id,
+                service_duration_id,
+                girls:girl_id (
+                    id,
+                    girl_number,
+                    name
+                ),
+                service_durations:service_duration_id (
+                    services:service_id (
+                        title
+                    )
+                )
+            `, { count: 'exact' })
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+
+        // 应用技师过滤
+        if (shouldFilterSortOrder && allowedGirlIds) {
+            query = query.in('girl_id', allowedGirlIds)
+        }
+
+        // 获取总数
+        const { count } = await query
+
+        // 分页查询
+        const offset = (page - 1) * limit
+        const { data: orders, error } = await query
+            .range(offset, offset + limit - 1)
+
+        if (error) {
+            console.error('[用户预订历史] 查询失败:', error)
+            return { ok: false, error: '获取预订历史失败' }
+        }
+
+        // 格式化数据
+        const formattedOrders = orders.map((order: any) => ({
+            ...order,
+            girl: order.girls,
+            service_name: order.service_durations?.services?.title
+        }))
+
+        const total = count || 0
+        const totalPages = Math.ceil(total / limit)
+
+        return {
+            ok: true,
+            data: {
+                orders: formattedOrders,
+                total,
+                page,
+                limit,
+                totalPages
+            }
+        }
+    } catch (error) {
+        console.error('[用户预订历史] 异常:', error)
+        return { ok: false, error: error instanceof Error ? error.message : '获取预订历史异常' }
+    }
+}
+

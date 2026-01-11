@@ -29,11 +29,12 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Search, ChevronLeft, ChevronRight, Eye, Ban, CheckCircle, Shield, MoreVertical, Copy, Edit2, X, Send } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Eye, Ban, CheckCircle, Shield, MoreVertical, Copy, Edit2, X, Send, History } from 'lucide-react'
 import type { UserListItem, UserListParams } from '@/lib/features/users'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { UserDetailDrawer } from './UserDetailDrawer'
 import { SendNotificationDialog } from './SendNotificationDialog'
+import { UserBookingHistoryDialog } from './UserBookingHistoryDialog'
 import { toggleUserBan, toggleUserWhitelist, updateUserCreditScore } from '@/app/dashboard/users/actions'
 import { toast } from 'sonner'
 
@@ -105,6 +106,11 @@ export function UserTable({
     const [notificationUserId, setNotificationUserId] = useState<string>('')
     const [notificationUserName, setNotificationUserName] = useState<string>('')
 
+    // 预订历史对话框
+    const [bookingHistoryOpen, setBookingHistoryOpen] = useState(false)
+    const [bookingHistoryUserId, setBookingHistoryUserId] = useState<string | null>(null)
+    const [bookingHistoryUserName, setBookingHistoryUserName] = useState<string>('')
+
     // 操作加载状态
     const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
 
@@ -169,6 +175,13 @@ export function UserTable({
         setNotificationUserId(userId)
         setNotificationUserName(userName || userId)
         setNotificationDialogOpen(true)
+    }
+
+    // 打开预订历史对话框
+    const handleViewBookingHistory = (userId: string, userName?: string) => {
+        setBookingHistoryUserId(userId)
+        setBookingHistoryUserName(userName || '')
+        setBookingHistoryOpen(true)
     }
 
     // 切换封禁状态
@@ -549,6 +562,12 @@ export function UserTable({
                                                             </DropdownMenuTrigger>
                                                             <DropdownMenuContent align="end">
                                                                 <DropdownMenuItem
+                                                                    onClick={() => handleViewBookingHistory(user.id, user.display_name || user.username || user.email || undefined)}
+                                                                >
+                                                                    <History className="mr-2 h-4 w-4 text-purple-600" />
+                                                                    查看预订记录
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
                                                                     onClick={() => handleSendNotification(user.id, user.display_name || user.username || user.email || undefined)}
                                                                 >
                                                                     <Send className="mr-2 h-4 w-4 text-blue-600" />
@@ -641,6 +660,14 @@ export function UserTable({
                 onOpenChange={setNotificationDialogOpen}
                 userId={notificationUserId}
                 userName={notificationUserName}
+            />
+
+            {/* 预订历史对话框 */}
+            <UserBookingHistoryDialog
+                open={bookingHistoryOpen}
+                onOpenChange={setBookingHistoryOpen}
+                userId={bookingHistoryUserId}
+                userName={bookingHistoryUserName}
             />
         </>
     )

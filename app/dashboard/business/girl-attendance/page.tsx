@@ -1,24 +1,42 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Info } from "lucide-react"
+import { Search, Info, RefreshCw } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { GirlAttendanceTable } from "@/components/business/GirlAttendanceTable"
-import { getGirlAttendanceStats, getCities } from "./actions"
+import { getGirlAttendanceStats, getCities, getCurrentAdminInfo, updateTrustScoresByAttendance } from "./actions"
 import type { GirlAttendanceStats, City } from "@/lib/features/girl-attendance"
 
 export default function GirlAttendancePage() {
   const [data, setData] = useState<GirlAttendanceStats[]>([])
   const [cities, setCities] = useState<City[]>([])
   const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [search, setSearch] = useState('')
   const [cityId, setCityId] = useState<number | undefined>(undefined)
   const [sortBy, setSortBy] = useState<string>('booking_rate_percent')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  // 检查当前用户角色
+  useEffect(() => {
+    const checkRole = async () => {
+      try {
+        const result = await getCurrentAdminInfo()
+        if (result.ok) {
+          setIsSuperAdmin(result.data.role === 'superadmin')
+        }
+      } catch (error) {
+        console.error('检查用户角色失败:', error)
+      }
+    }
+    checkRole()
+  }, [])
 
   // 加载城市列表
   useEffect(() => {
@@ -92,14 +110,50 @@ export default function GirlAttendancePage() {
     return city.name.zh || city.name.en || city.name.th || `城市 ${city.id}`
   }
 
+  // 更新诚信分
+  const handleUpdateTrustScores = async () => {
+    if (!confirm('确定要根据考勤表现批量更新技师诚信分吗？\n\n此操作将基于最近30天的在线时长和预订率对所有已认证技师的诚信分进行调整。')) {
+      return
+    }
+
+    setUpdating(true)
+    try {
+      const result = await updateTrustScoresByAttendance()
+
+      if (result.ok) {
+        toast.success(`诚信分更新成功！已更新 ${result.data.updated_count} 位技师`)
+      } else {
+        toast.error(result.error || '更新诚信分失败')
+      }
+    } catch (error) {
+      console.error('更新诚信分失败:', error)
+      toast.error('更新诚信分失败')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6 p-4 md:px-8 md:py-6">
       {/* 页面标题 */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold">技师考勤统计</h1>
-        <p className="text-sm text-muted-foreground">
-          最近30天的技师在线时长、完成订单数和预订率统计
-        </p>
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">技师考勤统计</h1>
+          <p className="text-sm text-muted-foreground">
+            最近30天的技师在线时长、完成订单数和预订率统计
+          </p>
+        </div>
+        {isSuperAdmin && (
+          <Button
+            onClick={handleUpdateTrustScores}
+            disabled={updating}
+            variant="default"
+            className="mt-4 md:mt-0"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${updating ? 'animate-spin' : ''}`} />
+            {updating ? '更新中...' : '更新诚信分'}
+          </Button>
+        )}
       </div>
 
       {/* 说明提示 */}
