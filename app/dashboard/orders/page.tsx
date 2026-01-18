@@ -240,6 +240,8 @@ export default function OrdersPage() {
                     <SelectItem value="all">全部状态</SelectItem>
                     <SelectItem value="pending">待确认</SelectItem>
                     <SelectItem value="confirmed">已确认</SelectItem>
+                    <SelectItem value="en_route">在路上</SelectItem>
+                    <SelectItem value="arrived">已到达</SelectItem>
                     <SelectItem value="in_service">服务中</SelectItem>
                     <SelectItem value="completed">已完成</SelectItem>
                     <SelectItem value="cancelled">已取消</SelectItem>

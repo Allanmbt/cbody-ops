@@ -19,8 +19,9 @@ import {
   getServiceTitle,
   formatCurrency
 } from "@/lib/features/orders"
-import { ArrowUp } from "lucide-react"
+import { ArrowUp, Edit } from "lucide-react"
 import { OrderUpgradeServiceDialog } from "./OrderUpgradeServiceDialog"
+import { OrderStatusUpdateDialog } from "./OrderStatusUpdateDialog"
 
 interface OrderDetailDrawerProps {
   open: boolean
@@ -42,6 +43,7 @@ export function OrderDetailDrawer({
   onRefresh
 }: OrderDetailDrawerProps) {
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false)
+  const [statusUpdateDialogOpen, setStatusUpdateDialogOpen] = useState(false)
   const [settlementStatus, setSettlementStatus] = useState<SettlementStatus>({
     hasSettlement: false,
     settlementStatus: null,
@@ -110,6 +112,9 @@ export function OrderDetailDrawer({
 
   // 判断是否可以升级服务
   const canUpgrade = order.status === 'completed' && settlementStatus.canUpgrade
+
+  // 判断是否可以修改状态（confirmed, en_route, arrived 可以修改）
+  const canUpdateStatus = ['confirmed', 'en_route', 'arrived', 'pending', 'in_service'].includes(order.status)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -309,7 +314,7 @@ export function OrderDetailDrawer({
           )}
 
           {/* 操作按钮区域 */}
-          {canUpgrade && (
+          {(canUpgrade || canUpdateStatus) && (
             <>
               <Separator />
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -320,19 +325,43 @@ export function OrderDetailDrawer({
                 >
                   关闭
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={() => setUpgradeDialogOpen(true)}
-                >
-                  <ArrowUp className="mr-2 h-4 w-4" />
-                  升级服务
-                </Button>
+                {canUpdateStatus && (
+                  <Button
+                    variant="default"
+                    className="flex-1"
+                    onClick={() => setStatusUpdateDialogOpen(true)}
+                  >
+                    <Edit className="mr-2 h-4 w-4" />
+                    修改状态
+                  </Button>
+                )}
+                {canUpgrade && (
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => setUpgradeDialogOpen(true)}
+                  >
+                    <ArrowUp className="mr-2 h-4 w-4" />
+                    升级服务
+                  </Button>
+                )}
               </div>
             </>
           )}
         </div>
       </SheetContent>
+
+      {/* 状态修改对话框 */}
+      <OrderStatusUpdateDialog
+        open={statusUpdateDialogOpen}
+        onOpenChange={setStatusUpdateDialogOpen}
+        order={order}
+        onSuccess={() => {
+          if (onRefresh) {
+            onRefresh()
+          }
+        }}
+      />
 
       {/* 升级服务对话框 */}
       <OrderUpgradeServiceDialog

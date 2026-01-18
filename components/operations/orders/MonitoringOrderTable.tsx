@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { Eye, AlertTriangle, AlertCircle } from "lucide-react"
+import { Eye, AlertTriangle } from "lucide-react"
 import type { Order, OrderStatus } from "@/lib/features/orders"
 import {
   getOrderStatusText,
@@ -24,7 +24,6 @@ import {
   formatRelativeTime
 } from "@/lib/features/orders"
 import { OrderMonitoringDrawer } from "./OrderMonitoringDrawer"
-import { CancellationDrawer } from "@/components/orders/CancellationDrawer"
 
 interface MonitoringOrderTableProps {
   orders: Order[]
@@ -161,19 +160,10 @@ export function MonitoringOrderTable({
 }: MonitoringOrderTableProps) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [cancellationDrawerOpen, setCancellationDrawerOpen] = useState(false)
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
-  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | undefined>(undefined)
 
   const handleViewDetail = (order: Order) => {
     setSelectedOrder(order)
     setDrawerOpen(true)
-  }
-
-  const handleViewCancellation = (order: Order) => {
-    setSelectedOrderId(order.id)
-    setSelectedOrderNumber(order.order_number)
-    setCancellationDrawerOpen(true)
   }
 
   return (
@@ -297,16 +287,6 @@ export function MonitoringOrderTable({
                           <Eye className="h-4 w-4 mr-1" />
                           详情
                         </Button>
-                        {order.status === 'cancelled' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewCancellation(order)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <AlertCircle className="h-4 w-4" />
-                          </Button>
-                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -323,14 +303,6 @@ export function MonitoringOrderTable({
         onOpenChange={setDrawerOpen}
         order={selectedOrder}
         onRefresh={onRefresh}
-      />
-
-      {/* 取消原因抽屉 */}
-      <CancellationDrawer
-        open={cancellationDrawerOpen}
-        onOpenChange={setCancellationDrawerOpen}
-        orderId={selectedOrderId}
-        orderNumber={selectedOrderNumber}
       />
     </>
   )

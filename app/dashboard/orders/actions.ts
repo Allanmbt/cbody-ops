@@ -9,7 +9,8 @@ import {
 import type {
   ApiResponse,
   PaginatedResponse,
-  Order
+  Order,
+  OrderStatus
 } from "@/lib/features/orders"
 
 /**
@@ -254,28 +255,6 @@ export async function getOrderById(id: string): Promise<ApiResponse<Order>> {
 }
 
 /**
- * 订单取消记录类型定义
- */
-export interface OrderCancellation {
-  id: string
-  order_id: string
-  cancelled_at: string
-  cancelled_by_role: 'user' | 'therapist' | 'admin' | 'system'
-  cancelled_by_user_id: string | null
-  reason_code: string | null
-  reason_note: string | null
-  previous_status: string | null
-  created_at: string
-  cancelled_by_profile?: {
-    user_id: string
-    display_name: string | null
-    avatar_url: string | null
-    girl_number?: number | null
-    girl_name?: string | null
-  } | null
-}
-
-/**
  * 检查订单的结算状态
  */
 export async function checkOrderSettlementStatus(orderId: string): Promise<ApiResponse<{
@@ -303,34 +282,24 @@ export async function checkOrderSettlementStatus(orderId: string): Promise<ApiRe
           canUpgrade: settlement.settlement_status === 'pending'
         }
       }
-    } else {
-      return {
-        ok: true,
-        data: {
-          hasSettlement: false,
-          settlementStatus: null,
-          canUpgrade: false
-        }
+    }
+
+    return {
+      ok: true,
+      data: {
+        hasSettlement: false,
+        settlementStatus: null,
+        canUpgrade: false
       }
     }
   } catch (error) {
-    console.error('[检查结算状态] 失败:', error)
-    return {
-      ok: false,
-      error: "检查结算状态失败"
-    }
+    console.error('[结算状态] 检查失败:', error)
+    return { ok: false, error: "检查结算状态失败" }
   }
 }
 
 /**
  * 获取订单可调整的服务列表（订单管理专用）
- * 区别于订单监管：
- * 1. 只能对已完成订单（completed）进行调整
- * 2. 订单的结算记录必须存在且为待核验状态（settlement_status = 'pending'）
- * 3. 调整逻辑：
- *    - 可选择该技师提供的所有服务和时长（包括价格更低的）
- *    - 排除当前已选的服务时长组合
- * 4. 调整后需要同步更新 order_settlements 表中的相关提成和金额
  */
 export async function getUpgradableServicesForCompleted(orderId: string): Promise<{ ok: true; data: any[] } | { ok: false; error: string }> {
   try {
@@ -380,7 +349,7 @@ export async function getUpgradableServicesForCompleted(orderId: string): Promis
       return { ok: false, error: "订单已核验，无法升级服务" }
     }
 
-    // 4. 获取该技师绑定的所有服务（与订单监管逻辑相同）
+    // 4. 获取该技师绑定的所有服务
     const { data: girlServices, error: servicesError } = await supabase
       .from('admin_girl_services')
       .select(`
@@ -429,7 +398,7 @@ export async function getUpgradableServicesForCompleted(orderId: string): Promis
       return { ok: false, error: "技师未配置任何服务时长选项" }
     }
 
-    // 6. 筛选可调整的服务（允许选择技师提供的所有服务，包括价格更低的）
+    // 6. 筛选可调整的服务
     const adjustableServices = allDurations
       .map((d: any) => {
         const duration = d.service_durations
@@ -448,11 +417,9 @@ export async function getUpgradableServicesForCompleted(orderId: string): Promis
         }
       })
       .filter((s: any) => {
-        // 仅排除当前已选的服务时长组合
         return s.service_duration_id !== order.service_duration_id
       })
       .sort((a: any, b: any) => {
-        // 优先按服务ID排序，同一服务内按时长排序
         if (a.service_id !== b.service_id) {
           return a.service_id - b.service_id
         }
@@ -475,12 +442,6 @@ export async function getUpgradableServicesForCompleted(orderId: string): Promis
 
 /**
  * 执行已完成订单的服务调整（订单管理专用）
- * 与订单监管升级的区别：
- * 1. 订单状态必须是 completed
- * 2. 必须同步更新 order_settlements 表的金额和提成
- * 3. 结算状态必须保持为 pending
- * 4. 支持调整为技师提供的任何服务（包括价格更低的）
- * 5. 自动根据新服务重新计算提成比例
  */
 export async function upgradeCompletedOrderService(orderId: string, newServiceDurationId: number): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
   try {
@@ -570,7 +531,7 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
       return { ok: false, error: "订单已核验，无法调整服务" }
     }
 
-    // 4. 获取新服务时长和价格，包括服务名称和提成比例
+    // 4. 获取新服务时长和价格
     const { data: girlServiceDurationData, error: durationError } = await supabase
       .from('girl_service_durations')
       .select(`
@@ -613,18 +574,12 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
     const newServiceName = girlServiceDuration.admin_girl_services.services.title
     const newServiceCommissionRate = girlServiceDuration.admin_girl_services.services.commission_rate
 
-    // 5. 验证调整规则
-    // 允许选择技师提供的任何服务和时长（包括价格更低的）
-    // 已在列表筛选时通过技师服务绑定验证，无需额外验证
-
-    // 6. 计算新的金额
+    // 5. 计算新的金额
     const priceDifference = newPrice - order.service_price
     const newTotalAmount = order.total_amount + priceDifference
     const newServiceFee = order.service_fee + priceDifference
 
-    // 7. 计算新的结算数据
-    // 🔧 关键：始终使用新服务的提成比例（即使是相同服务的不同时长）
-    // 因为可能需要重新核算提成，确保结算准确
+    // 6. 计算新的结算数据
     const isServiceChanged = newServiceId !== order.service_id
     const finalServiceCommissionRate = newServiceCommissionRate !== null
       ? newServiceCommissionRate
@@ -633,7 +588,7 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
     const newPlatformShouldGet = newServiceFee * finalServiceCommissionRate + settlement.extra_fee * settlement.extra_commission_rate
     const newSettlementAmount = newPlatformShouldGet - settlement.customer_paid_to_platform
 
-    // 8. 更新订单信息
+    // 7. 更新订单信息
     const { error: updateOrderError } = await (supabase
       .from('orders') as any)
       .update({
@@ -653,7 +608,7 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
       return { ok: false, error: "更新订单失败" }
     }
 
-    // 9. 同步更新结算记录（始终更新提成比例以确保准确）
+    // 8. 同步更新结算记录
     const settlementUpdateData: any = {
       service_fee: newServiceFee,
       service_commission_rate: finalServiceCommissionRate,
@@ -698,78 +653,72 @@ export async function upgradeCompletedOrderService(orderId: string, newServiceDu
 }
 
 /**
- * 获取订单取消记录
+ * 更新订单状态
+ * 状态流转规则：
+ * - confirmed -> en_route -> arrived -> in_service -> completed
+ * - 不允许修改 completed 和 cancelled 状态
  */
-export async function getOrderCancellation(orderId: string): Promise<ApiResponse<OrderCancellation>> {
+export async function updateOrderStatus(
+  orderId: string,
+  newStatus: OrderStatus
+): Promise<ApiResponse<{ success: boolean }>> {
   try {
-    await requireAdmin(['superadmin', 'admin', 'support'])
+    await requireAdmin(['superadmin', 'admin'])
     const supabase = getSupabaseAdminClient()
 
-    const { data, error } = await supabase
-      .from('order_cancellations')
-      .select('*')
-      .eq('order_id', orderId)
-      .maybeSingle()
+    // 获取当前订单状态
+    const { data: order, error: fetchError } = await (supabase
+      .from('orders') as any)
+      .select('id, status, order_number')
+      .eq('id', orderId)
+      .single()
 
-    if (error) {
-      console.error('[取消记录] 查询失败:', error)
-      return { ok: false, error: `查询取消记录失败: ${error.message}` }
+    if (fetchError || !order) {
+      return { ok: false, error: '订单不存在' }
     }
 
-    if (!data) {
-      return { ok: false, error: "未找到取消记录" }
+    const currentStatus = order.status as OrderStatus
+
+    // 不允许修改已完成和已取消的订单
+    if (currentStatus === 'completed' || currentStatus === 'cancelled') {
+      return { ok: false, error: `${currentStatus === 'completed' ? '已完成' : '已取消'}的订单不能修改状态` }
     }
 
-    const cancellation = data as any
-
-    // 如果有取消人ID，查询取消人信息
-    let cancelledByProfile = null
-    if (cancellation.cancelled_by_user_id) {
-      // 先查询 user_profiles
-      const { data: profileData } = await supabase
-        .from('user_profiles')
-        .select('id, display_name, avatar_url')
-        .eq('id', cancellation.cancelled_by_user_id)
-        .maybeSingle()
-
-      if (profileData) {
-        cancelledByProfile = {
-          user_id: (profileData as any).id,
-          display_name: (profileData as any).display_name ?? null,
-          avatar_url: (profileData as any).avatar_url ?? null,
-        }
-
-        // 如果是技师取消，查询技师信息
-        if (cancellation.cancelled_by_role === 'therapist') {
-          const { data: girlData } = await supabase
-            .from('girls')
-            .select('user_id, girl_number, name, avatar_url')
-            .eq('user_id', cancellation.cancelled_by_user_id)
-            .maybeSingle()
-
-          if (girlData) {
-            cancelledByProfile = {
-              ...cancelledByProfile,
-              girl_number: (girlData as any).girl_number,
-              girl_name: (girlData as any).name,
-              avatar_url: (girlData as any).avatar_url || cancelledByProfile.avatar_url,
-            }
-          }
-        }
-      }
+    // 验证状态流转规则（移除取消逻辑）
+    const statusFlow: Record<OrderStatus, OrderStatus[]> = {
+      pending: ['confirmed'],
+      confirmed: ['en_route'],
+      en_route: ['arrived'],
+      arrived: ['in_service'],
+      in_service: ['completed'],
+      completed: [], // 已完成不能修改
+      cancelled: []  // 已取消不能修改
     }
 
-    const result: OrderCancellation = {
-      ...cancellation,
-      cancelled_by_profile: cancelledByProfile,
+    const allowedNextStatuses = statusFlow[currentStatus]
+    if (!allowedNextStatuses.includes(newStatus)) {
+      return { ok: false, error: `不能从"${currentStatus}"状态修改为"${newStatus}"状态` }
     }
 
-    return { ok: true, data: result }
+    // 更新订单状态
+    const { error: updateError } = await (supabase
+      .from('orders') as any)
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', orderId)
+
+    if (updateError) {
+      console.error('[订单状态更新] 失败:', updateError)
+      return { ok: false, error: '更新订单状态失败' }
+    }
+
+    console.log(`[订单状态更新] 订单 ${order.order_number} 状态从 ${currentStatus} 更新为 ${newStatus}`)
+
+    return { ok: true, data: { success: true } }
   } catch (error) {
-    console.error('[取消记录] 查询异常:', error)
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "查询取消记录异常",
-    }
+    console.error('[订单状态更新] 异常:', error)
+    return { ok: false, error: error instanceof Error ? error.message : '更新订单状态失败' }
   }
 }

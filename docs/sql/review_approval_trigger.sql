@@ -18,8 +18,8 @@ DECLARE
     v_approved_count INTEGER;
     v_sum_rating NUMERIC;
     v_bayesian_rating NUMERIC;
-    v_m CONSTANT NUMERIC := 4.5;  -- 先验平均分
-    v_c CONSTANT NUMERIC := 25;   -- 先验权重
+    v_m CONSTANT NUMERIC := 4.8;  -- 先验平均分（优化：从4.5提升到4.8，更容易达到高分）
+    v_c CONSTANT NUMERIC := 10;   -- 先验权重（优化：从25降低到10，减少虚拟评论影响）
 BEGIN
     -- ========================================
     -- 1. 状态锁定检查：已审核的评论不可再修改
@@ -130,8 +130,8 @@ DECLARE
     v_approved_count INTEGER;
     v_sum_rating NUMERIC;
     v_bayesian_rating NUMERIC;
-    v_m CONSTANT NUMERIC := 4.5;
-    v_c CONSTANT NUMERIC := 25;
+    v_m CONSTANT NUMERIC := 4.8;  -- 先验平均分（优化：从4.5提升到4.8，更容易达到高分）
+    v_c CONSTANT NUMERIC := 10;   -- 先验权重（优化：从25降低到10，减少虚拟评论影响）
 BEGIN
     -- 统计该技师已通过的评论
     SELECT 

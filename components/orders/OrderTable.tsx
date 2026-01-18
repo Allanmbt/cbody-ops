@@ -1,7 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { Eye, AlertCircle } from "lucide-react"
+import { Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -14,7 +13,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { CancellationDrawer } from "./CancellationDrawer"
 import type { Order } from "@/lib/features/orders"
 import {
   getOrderStatusText,
@@ -57,18 +55,7 @@ export function OrderTable({
   loading = false,
   onViewDetail
 }: OrderTableProps) {
-  const [cancellationDrawerOpen, setCancellationDrawerOpen] = useState(false)
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
-  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string>("")
-
-  const handleViewCancellation = (order: Order) => {
-    setSelectedOrderId(order.id)
-    setSelectedOrderNumber(order.order_number)
-    setCancellationDrawerOpen(true)
-  }
-
   return (
-    <>
     <div className="rounded-md border">
       <Table>
         <TableHeader>
@@ -159,25 +146,13 @@ export function OrderTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onViewDetail(order)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    {order.status === 'cancelled' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewCancellation(order)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <AlertCircle className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onViewDetail(order)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))
@@ -185,13 +160,5 @@ export function OrderTable({
         </TableBody>
       </Table>
     </div>
-
-    <CancellationDrawer
-      open={cancellationDrawerOpen}
-      onOpenChange={setCancellationDrawerOpen}
-      orderId={selectedOrderId}
-      orderNumber={selectedOrderNumber}
-    />
-    </>
   )
 }
