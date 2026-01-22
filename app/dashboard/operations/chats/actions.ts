@@ -172,9 +172,9 @@ export async function getChatThreads(filters: ChatThreadFilters = {}) {
             query = query.not('related_order', 'is', null)
         }
 
-        // ✅ 优化：搜索筛选（支持参与者名称/用户名 + 订单号）
+        // ✅ 优化：搜索筛选（支持参与者名称/用户名 + 订单号，允许空搜索）
         if (search) {
-            // 尝试搜索订单号（如果输入包含订单号特征）
+            // 搜索参与者信息和订单号
             query = query.or(`customer_display_name.ilike.%${search}%,customer_username.ilike.%${search}%,girl_name.ilike.%${search}%,girl_username.ilike.%${search}%,support_display_name.ilike.%${search}%,support_username.ilike.%${search}%,related_order->>order_number.ilike.%${search}%`)
         }
 

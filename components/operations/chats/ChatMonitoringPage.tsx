@@ -53,6 +53,9 @@ export function ChatMonitoringPage({
         limit: 50
     })
 
+    // 搜索输入框的临时值（未提交）
+    const [searchInput, setSearchInput] = useState('')
+
     // 加载统计数据
     const loadStats = async () => {
         setLoadingStats(true)
@@ -83,7 +86,7 @@ export function ChatMonitoringPage({
         isInitialMount.current = false
     }, [])
 
-    // 筛选条件变化时重新加载
+    // 筛选条件变化时重新加载（包含 filters.search，但只在点击搜索按钮时触发）
     useEffect(() => {
         if (isInitialMount.current) {
             return
@@ -101,6 +104,7 @@ export function ChatMonitoringPage({
 
     // 重置筛选
     const handleReset = () => {
+        setSearchInput('')
         setFilters({
             search: '',
             thread_type: 'all',
@@ -109,6 +113,21 @@ export function ChatMonitoringPage({
             page: 1,
             limit: 50
         })
+    }
+
+    // 处理搜索按钮点击
+    const handleSearch = () => {
+        const trimmedSearch = searchInput.trim()
+        
+        // 允许空搜索，直接更新筛选条件
+        setFilters({ ...filters, search: trimmedSearch, page: 1 })
+    }
+
+    // 处理回车键搜索
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            handleSearch()
+        }
     }
 
     return (
@@ -176,18 +195,24 @@ export function ChatMonitoringPage({
                     <div className="flex flex-col gap-4">
                         {/* 第一行：搜索和类型 */}
                         <div className="flex flex-col gap-4 sm:flex-row">
-                            <div className="flex-1">
-                                <Label htmlFor="search" className="sr-only">搜索</Label>
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        id="search"
-                                        placeholder="搜索参与者"
-                                        value={filters.search}
-                                        onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
-                                        className="pl-9"
-                                    />
+                            <div className="flex-1 flex gap-2">
+                                <div className="flex-1">
+                                    <Label htmlFor="search" className="sr-only">搜索</Label>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="search"
+                                            placeholder="搜索参与者或订单号"
+                                            value={searchInput}
+                                            onChange={(e) => setSearchInput(e.target.value)}
+                                            onKeyDown={handleSearchKeyDown}
+                                            className="pl-9"
+                                        />
+                                    </div>
                                 </div>
+                                <Button onClick={handleSearch} variant="default" size="default">
+                                    搜索
+                                </Button>
                             </div>
                             <Select
                                 value={filters.thread_type}

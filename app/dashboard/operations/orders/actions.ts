@@ -340,7 +340,7 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
       query = query.in('status', ['pending', 'confirmed', 'en_route', 'arrived', 'in_service'])
     }
 
-    // 搜索
+    // 搜索（允许空搜索）
     let girlIdsFromSearch: string[] = []
     if (search) {
       let girlSearchQuery = supabase
@@ -385,7 +385,7 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
     // 数据处理：订单列表
     let ordersWithUsers: any[] = ordersData || []
 
-    // 客户名称/电话搜索过滤（如果有搜索条件）
+    // 客户名称/电话搜索过滤（如果有搜索条件，允许空搜索）
     if (search && ordersData && ordersData.length > 0) {
       const searchLower = search.toLowerCase()
       ordersWithUsers = (ordersData as any[]).filter((order: any) => {
