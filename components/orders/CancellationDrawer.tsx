@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { formatRelativeTime } from "@/lib/features/orders"
-import { getOrderCancellation, type OrderCancellation } from "@/app/dashboard/orders/actions"
 import { toast } from "sonner"
 import { AlertCircle, User, Clock, FileText, Shield } from "lucide-react"
 
@@ -21,6 +20,26 @@ interface CancellationDrawerProps {
     onOpenChange: (open: boolean) => void
     orderId: string | null
     orderNumber?: string
+}
+
+// 临时类型定义
+interface OrderCancellation {
+    id: string
+    order_id: string
+    cancelled_at: string
+    cancelled_by_role: string
+    cancelled_by_user_id: string | null
+    reason_code: string | null
+    reason_note: string | null
+    previous_status: string | null
+    created_at: string
+    cancelled_by_profile?: {
+        user_id: string
+        display_name: string | null
+        avatar_url: string | null
+        girl_name?: string | null
+        girl_number?: number | null
+    } | null
 }
 
 // 取消方角色标签
@@ -99,16 +118,22 @@ export function CancellationDrawer({ open, onOpenChange, orderId, orderNumber }:
         if (!orderId) return
 
         setLoading(true)
-        const result = await getOrderCancellation(orderId)
+        // TODO: 实现 getOrderCancellation API
+        // const result = await getOrderCancellation(orderId)
         setLoading(false)
 
-        if (!result.ok) {
-            toast.error(result.error || "加载取消记录失败")
-            onOpenChange(false)
-            return
-        }
+        // 暂时显示未实现提示
+        toast.error("取消记录查询功能暂未实现")
+        onOpenChange(false)
+        return
 
-        setCancellation(result.data || null)
+        // if (!result.ok) {
+        //     toast.error(result.error || "加载取消记录失败")
+        //     onOpenChange(false)
+        //     return
+        // }
+
+        // setCancellation(result.data || null)
     }
 
     // 取消人信息
