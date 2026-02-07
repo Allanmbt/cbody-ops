@@ -116,7 +116,19 @@ export default function ChatCleanupPage() {
       return
     }
 
-    if (!confirm(`确定要清理无效线程吗？\n\n将删除：\n- ${stats.invalid_threads_count} 个无效线程（无已完成订单且超过3天）\n- 及其所有聊天消息和图片文件\n\n此操作不可逆，请谨慎操作！`)) {
+    const batchSize = 50
+    const willDeleteCount = Math.min(stats.invalid_threads_count, batchSize)
+    const remainingCount = Math.max(0, stats.invalid_threads_count - batchSize)
+
+    let confirmMessage = `确定要清理无效线程吗？\n\n`
+    if (stats.invalid_threads_count > batchSize) {
+      confirmMessage += `总共 ${stats.invalid_threads_count} 个无效线程\n本次将删除：${willDeleteCount} 个\n剩余：${remainingCount} 个（需要再次点击）\n\n`
+    } else {
+      confirmMessage += `将删除：${willDeleteCount} 个无效线程\n`
+    }
+    confirmMessage += `（无已完成订单且超过30天）\n及其所有聊天消息和图片文件\n\n此操作不可逆，请谨慎操作！`
+
+    if (!confirm(confirmMessage)) {
       return
     }
 
@@ -124,8 +136,18 @@ export default function ChatCleanupPage() {
     try {
       const result = await cleanupInvalidThreads()
       if (result.ok) {
-        toast.success(`清理成功！删除了 ${result.data.deleted_count} 个线程，${result.data.deleted_images_count} 张图片`)
-        loadStats() // 刷新统计
+        const deletedCount = result.data.deleted_count
+        const imagesCount = result.data.deleted_images_count
+        
+        // 刷新统计
+        await loadStats()
+        
+        // 显示成功消息
+        if (remainingCount > 0) {
+          toast.success(`本次删除了 ${deletedCount} 个线程，${imagesCount} 张图片。还剩 ${remainingCount} 个线程，请再次点击继续清理。`)
+        } else {
+          toast.success(`清理完成！删除了 ${deletedCount} 个线程，${imagesCount} 张图片`)
+        }
       } else {
         toast.error(result.error || '清理失败')
       }
@@ -183,7 +205,7 @@ export default function ChatCleanupPage() {
               无效线程统计
             </CardTitle>
             <CardDescription>
-              无已完成订单且超过3天的线程
+              无已完成订单且超过30天的线程
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -316,7 +338,7 @@ export default function ChatCleanupPage() {
               批量清理无效线程
             </CardTitle>
             <CardDescription>
-              删除无已完成订单且超过3天的线程及其所有数据
+              删除无已完成订单且超过30天的线程及其所有数据
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -366,7 +388,8 @@ export default function ChatCleanupPage() {
               <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
                 <li>删除线程会自动级联删除该线程的所有消息和已读记录</li>
                 <li>删除消息会同时删除存储桶中对应的图片文件</li>
-                <li>无效线程指：顾客与技师无任何已完成订单，且线程创建时间超过3天</li>
+                <li>无效线程指：顾客与技师无任何已完成订单，且线程创建时间超过30天</li>
+                <li><strong>批量清理每次最多删除50条</strong>，如有更多请多次点击（避免超时）</li>
                 <li>所有清理操作会记录审计日志，可在系统日志中查看</li>
                 <li>建议在系统负载较低时执行批量清理操作</li>
               </ul>

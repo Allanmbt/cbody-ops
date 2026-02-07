@@ -18,9 +18,9 @@ export async function getChatCleanupStats(): Promise<ApiResponse<ChatCleanupStat
     await requireAdmin(['superadmin'])
     const supabase = getSupabaseAdminClient()
 
-    // 统计无效线程数量（无已完成订单且超过3天）
-    const { data: invalidThreadsData } = await supabase.rpc('count_invalid_chat_threads')
-    const invalid_threads_count = invalidThreadsData || 0
+    // 统计无效线程数量（无已完成订单且超过30天）
+    const { data: invalidThreadsData } = await supabase.rpc('count_invalid_chat_threads', { days_threshold: 30 } as any)
+    const invalid_threads_count = invalidThreadsData ?? 0
 
     // 统计超过90天的消息数量
     const { count: oldMessagesCount } = await supabase
@@ -248,30 +248,29 @@ export async function cleanupOldMessages(): Promise<ApiResponse<BatchCleanupResu
 }
 
 /**
- * 批量清理无效线程（无已完成订单且超过3天）
+ * 批量清理无效线程（无已完成订单且超过30天）
+ * 每次最多删除50条，避免超时
  */
 export async function cleanupInvalidThreads(): Promise<ApiResponse<BatchCleanupResult>> {
   try {
     const admin = await requireAdmin(['superadmin'])
     const supabase = getSupabaseAdminClient()
 
-    // 获取无效线程ID列表
-    const { data: invalidThreads, error: threadsError } = await supabase
-      .from('chat_threads')
-      .select(`
-        id,
-        customer_id,
-        girl_id
-      `)
-      .eq('thread_type', 'c2g')
-      .lt('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+    // 使用优化的SQL查询：一次性获取所有无效线程ID
+    // 无效线程 = c2g类型 + 创建超过30天 + 该客人和该技师之间无已完成订单
+    const { data: invalidThreadsData, error: threadsError } = await supabase.rpc(
+      'get_invalid_chat_threads',
+      { days_threshold: 30 } as any
+    )
 
     if (threadsError) {
       console.error('[获取无效线程] 失败:', threadsError)
       return { ok: false, error: '获取无效线程失败' }
     }
 
-    if (!invalidThreads || invalidThreads.length === 0) {
+    const allThreadIds: string[] = (invalidThreadsData as { thread_id: string }[] | null)?.map(t => t.thread_id) || []
+
+    if (allThreadIds.length === 0) {
       return {
         ok: true,
         data: {
@@ -283,35 +282,14 @@ export async function cleanupInvalidThreads(): Promise<ApiResponse<BatchCleanupR
       }
     }
 
-    // 过滤出真正无效的线程（无已完成订单）
-    const threadIdsToDelete: string[] = []
+    // 🚀 每次只删除前50条，避免超时
+    const BATCH_SIZE = 50
+    const threadIdsToDelete = allThreadIds.slice(0, BATCH_SIZE)
+    const remainingCount = allThreadIds.length - threadIdsToDelete.length
 
-    for (const thread of (invalidThreads as { id: string; customer_id: string; girl_id: string }[])) {
-      const { count } = await supabase
-        .from('orders')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', thread.customer_id)
-        .eq('girl_id', thread.girl_id)
-        .eq('status', 'completed')
+    console.log(`[清理无效线程] 总共 ${allThreadIds.length} 个无效线程，本次删除 ${threadIdsToDelete.length} 个，剩余 ${remainingCount} 个`)
 
-      if (count === 0) {
-        threadIdsToDelete.push(thread.id)
-      }
-    }
-
-    if (threadIdsToDelete.length === 0) {
-      return {
-        ok: true,
-        data: {
-          success: true,
-          deleted_count: 0,
-          deleted_images_count: 0,
-          image_paths: []
-        }
-      }
-    }
-
-    // 收集这些线程的图片路径
+    // 收集这些线程的图片路径（用于统计）
     const { data: threadImages } = await supabase
       .from('chat_messages')
       .select('attachment_url, thread_id')
@@ -321,22 +299,7 @@ export async function cleanupInvalidThreads(): Promise<ApiResponse<BatchCleanupR
 
     const imagePaths: string[] = (threadImages as { attachment_url: string; thread_id: string }[] | null)?.map(img => img.attachment_url) || []
 
-    // 按线程ID删除存储桶文件夹
-    for (const threadId of threadIdsToDelete) {
-      try {
-        const { data: fileList } = await supabase.storage
-          .from('chat-images')
-          .list(threadId)
-
-        if (fileList && fileList.length > 0) {
-          const filesToDelete = fileList.map(file => `${threadId}/${file.name}`)
-          await supabase.storage.from('chat-images').remove(filesToDelete)
-        }
-      } catch (storageError) {
-        console.error(`[清理无效线程图片] 线程 ${threadId} 失败:`, storageError)
-      }
-    }
-
+    // 🚀 优化：先删除数据库，再异步删除存储桶（不阻塞）
     // 批量删除无效线程（会级联删除消息和已读记录）
     const { error: deleteError } = await supabase
       .from('chat_threads')
@@ -348,6 +311,27 @@ export async function cleanupInvalidThreads(): Promise<ApiResponse<BatchCleanupR
       return { ok: false, error: '清理无效线程失败' }
     }
 
+    // 🚀 异步删除存储桶文件（不等待完成，避免阻塞）
+    // 即使存储桶删除失败，数据库已经删除了，不影响用户体验
+    Promise.all(
+      threadIdsToDelete.map(async (threadId) => {
+        try {
+          const { data: fileList } = await supabase.storage
+            .from('chat-images')
+            .list(threadId)
+
+          if (fileList && fileList.length > 0) {
+            const filesToDelete = fileList.map(file => `${threadId}/${file.name}`)
+            await supabase.storage.from('chat-images').remove(filesToDelete)
+          }
+        } catch (storageError) {
+          console.error(`[清理无效线程图片] 线程 ${threadId} 失败:`, storageError)
+        }
+      })
+    ).catch(err => {
+      console.error('[批量删除存储桶文件] 异常:', err)
+    })
+
     // 记录审计日志
     await supabase.from('audit_logs').insert({
       admin_id: admin.id,
@@ -356,8 +340,10 @@ export async function cleanupInvalidThreads(): Promise<ApiResponse<BatchCleanupR
       target_id: null,
       payload: {
         deleted_threads: threadIdsToDelete.length,
+        total_invalid_threads: allThreadIds.length,
+        remaining_threads: remainingCount,
         deleted_images: imagePaths.length,
-        days_threshold: 3
+        days_threshold: 30
       },
       ip_address: null
     } as any)

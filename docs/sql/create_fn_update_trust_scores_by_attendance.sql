@@ -16,19 +16,20 @@ BEGIN
       g.trust_score +
       CASE
         -- 在线>=150小时的奖励规则
-        WHEN stats.online_seconds >= 540000 AND stats.booking_rate_percent >= 30 THEN 3
-        WHEN stats.online_seconds >= 540000 AND stats.booking_rate_percent >= 20 THEN 2
-        WHEN stats.online_seconds >= 540000 AND stats.booking_rate_percent >= 12 THEN 1
+        WHEN stats.online_seconds >= 540000 AND stats.booking_rate_percent >= 30 THEN 4
+        WHEN stats.online_seconds >= 540000 AND stats.booking_rate_percent >= 20 THEN 3
+        WHEN stats.online_seconds >= 540000 AND stats.booking_rate_percent >= 12 THEN 2
 
-        -- 在线>=100小时且<150小时的奖励规则
-        WHEN stats.online_seconds >= 360000 AND stats.online_seconds < 540000 AND stats.booking_rate_percent > 30 THEN 2
-        WHEN stats.online_seconds >= 360000 AND stats.online_seconds < 540000 AND stats.booking_rate_percent > 20 THEN 1
+        -- 在线>=80小时且<150小时的奖励规则
+        WHEN stats.online_seconds >= 288000 AND stats.online_seconds < 540000 AND stats.booking_rate_percent > 30 THEN 3
+        WHEN stats.online_seconds >= 288000 AND stats.online_seconds < 540000 AND stats.booking_rate_percent > 20 THEN 2
+        WHEN stats.online_seconds >= 288000 AND stats.online_seconds < 540000 AND stats.booking_rate_percent > 12 THEN 1
 
-        -- 在线>=50小时且<100小时的惩罚规则
-        WHEN stats.online_seconds >= 180000 AND stats.online_seconds < 360000 THEN -2
+        -- 在线>=50小时且<100小时的惩罚规则（已注释，暂不扣分）
+        -- WHEN stats.online_seconds >= 180000 AND stats.online_seconds < 360000 THEN -2
 
-        -- 在线<50小时的惩罚规则
-        WHEN stats.online_seconds < 180000 THEN -3
+        -- 在线<50小时的惩罚规则（已注释，暂不扣分）
+        -- WHEN stats.online_seconds < 180000 THEN -3
 
         ELSE 0
       END
