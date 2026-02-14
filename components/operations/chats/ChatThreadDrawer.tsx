@@ -207,6 +207,8 @@ export function ChatThreadDrawer({
                                                 </Badge>
                                                 <span className="text-xs text-muted-foreground">
                                                     {formatRelativeTime(message.created_at)}
+                                                    {' '}
+                                                    ({new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })})
                                                 </span>
                                             </div>
 
