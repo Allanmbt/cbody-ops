@@ -66,6 +66,10 @@ interface ServiceDurationsDrawerProps {
 const durationOptions = [
     { value: 30, label: '30分钟' },
     { value: 60, label: '1小时' },
+    { value: 65, label: '65分钟' },
+    { value: 70, label: '70分钟' },
+    { value: 75, label: '75分钟' },
+    { value: 80, label: '80分钟' },
     { value: 90, label: '1.5小时' },
     { value: 120, label: '2小时' },
     { value: 150, label: '2.5小时' },
