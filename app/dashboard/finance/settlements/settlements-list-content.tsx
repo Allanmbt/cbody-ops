@@ -51,7 +51,7 @@ import { format, subDays } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import Image from "next/image"
 
-type FiscalDateOption = 'today' | 'yesterday' | 'day_before_yesterday'
+type FiscalDateOption = 'today' | 'yesterday' | 'day_before_yesterday' | 'all'
 type SortField = 'girl_name' | 'created_at' | 'service_fee' | 'platform_should_get' | null
 type SortOrder = 'asc' | 'desc'
 
@@ -61,6 +61,10 @@ type SortOrder = 'asc' | 'desc'
  * 返回 UTC 时间的 ISO 字符串用于数据库查询
  */
 function getFiscalDateRange(option: FiscalDateOption) {
+    if (option === 'all') {
+        return { startISO: '2020-01-01T00:00:00.000Z', endISO: '2099-12-31T23:59:59.999Z' }
+    }
+
     // 泰国时区 UTC+7，6点对应 UTC 的前一天 23:00
     // 例如：泰国时间 2024-01-15 06:00 = UTC 2024-01-14 23:00
 
@@ -690,7 +694,7 @@ export function SettlementsListContent() {
             a.href = url
 
             // 文件名包含财务日期
-            const fiscalDateLabel = fiscalDate === 'today' ? '今日' : fiscalDate === 'yesterday' ? '昨日' : '前日'
+            const fiscalDateLabel = fiscalDate === 'today' ? '今日' : fiscalDate === 'yesterday' ? '昨日' : fiscalDate === 'day_before_yesterday' ? '前日' : '全部'
             a.download = `订单核验_${fiscalDateLabel}_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv`
             a.click()
             URL.revokeObjectURL(url)
@@ -728,14 +732,17 @@ export function SettlementsListContent() {
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="yesterday">
+                                <SelectItem value="yesterday" textValue={`昨天 ${format(subDays(new Date(), 1), 'MM-dd')} 06:00 - 今天 06:00`}>
                                     昨天 {format(subDays(new Date(), 1), 'MM-dd', { locale: zhCN })} 06:00 - 今天 06:00
                                 </SelectItem>
-                                <SelectItem value="today">
+                                <SelectItem value="today" textValue={`今天 ${format(new Date(), 'MM-dd')} 06:00 - 明天 06:00`}>
                                     今天 {format(new Date(), 'MM-dd', { locale: zhCN })} 06:00 - 明天 06:00
                                 </SelectItem>
-                                <SelectItem value="day_before_yesterday">
+                                <SelectItem value="day_before_yesterday" textValue={`前天 ${format(subDays(new Date(), 2), 'MM-dd')} 06:00 - 昨天 06:00`}>
                                     前天 {format(subDays(new Date(), 2), 'MM-dd', { locale: zhCN })} 06:00 - 昨天 06:00
+                                </SelectItem>
+                                <SelectItem value="all" textValue="查询全部">
+                                    查询全部
                                 </SelectItem>
                             </SelectContent>
                         </Select>
