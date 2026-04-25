@@ -110,7 +110,7 @@ async function UserDetailsContent({ userId }: { userId: string }) {
 export default async function UserDetailsPage({
     params,
 }: {
-    params: { id: string }
+    params: Promise<{ id: string }>
 }) {
     // 检查管理员权限
     const admin = await getCurrentAdmin()
@@ -123,7 +123,7 @@ export default async function UserDetailsPage({
         redirect('/dashboard')
     }
 
-    const userId = params.id
+    const { id: userId } = await params
 
     return (
         <div className="space-y-6">

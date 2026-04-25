@@ -8,15 +8,14 @@ export const metadata = {
 }
 
 interface PageProps {
-    params: {
-        id: string
-    }
+    params: Promise<{ id: string }>
 }
 
-export default function SettlementDetailPage({ params }: PageProps) {
+export default async function SettlementDetailPage({ params }: PageProps) {
+    const { id } = await params
     return (
         <Suspense fallback={<SettlementDetailSkeleton />}>
-            <SettlementDetailContent settlementId={params.id} />
+            <SettlementDetailContent settlementId={id} />
         </Suspense>
     )
 }

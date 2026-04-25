@@ -20,7 +20,8 @@ interface GooglePlacesInputProps {
 
 declare global {
   interface Window {
-    google?: typeof google
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    google?: any
     _gplacesLoaded?: boolean
   }
 }
@@ -55,11 +56,11 @@ export function GooglePlacesInput({
 }: GooglePlacesInputProps) {
   const [ready, setReady] = useState(false)
   const [query, setQuery] = useState("")
-  const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([])
+  const [predictions, setPredictions] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
-  const svcRef = useRef<google.maps.places.AutocompleteService | null>(null)
-  const detailRef = useRef<google.maps.places.PlacesService | null>(null)
+  const svcRef = useRef<any>(null)
+  const detailRef = useRef<any>(null)
   const mapDivRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -82,7 +83,7 @@ export function GooglePlacesInput({
       return
     }
     setLoading(true)
-    svcRef.current.getPlacePredictions({ input: value }, (results, status) => {
+    svcRef.current.getPlacePredictions({ input: value, componentRestrictions: { country: 'th' } }, (results: any, status: any) => {
       setLoading(false)
       if (status === window.google!.maps.places.PlacesServiceStatus.OK && results) {
         setPredictions(results)
@@ -101,14 +102,14 @@ export function GooglePlacesInput({
     debounceRef.current = setTimeout(() => search(value), 300)
   }
 
-  const handleSelect = (p: google.maps.places.AutocompletePrediction) => {
+  const handleSelect = (p: any) => {
     if (!detailRef.current) return
     setQuery(p.description)
     setOpen(false)
     setPredictions([])
     detailRef.current.getDetails(
       { placeId: p.place_id, fields: ["name", "formatted_address", "geometry", "place_id"] },
-      (place, status) => {
+      (place: any, status: any) => {
         if (status === window.google!.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
           onSelect({
             name: place.name || p.structured_formatting.main_text,

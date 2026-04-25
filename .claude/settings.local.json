@@ -7,7 +7,8 @@
       "Bash(rm:*)",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(node -e \"const d=require\\('./d:/github/cbody-ops/package.json'\\); const deps={...d.dependencies,...d.devDependencies}; Object.keys\\(deps\\).sort\\(\\).forEach\\(k=>console.log\\(k,deps[k]\\)\\)\")"
+      "Bash(node -e \"const d=require\\('./d:/github/cbody-ops/package.json'\\); const deps={...d.dependencies,...d.devDependencies}; Object.keys\\(deps\\).sort\\(\\).forEach\\(k=>console.log\\(k,deps[k]\\)\\)\")",
+      "Bash(npx next *)"
     ],
     "deny": [],
     "ask": []
