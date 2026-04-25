@@ -36,6 +36,7 @@ import {
   setTherapistCooldown,
   cancelTherapistCooldown,
   updateTherapistStatus,
+  updateTherapistBusyStatus,
   type TherapistWorkStats
 } from "@/app/dashboard/operations/therapists/actions"
 import { GoogleMapsLocation } from "./GoogleMapsLocation"
@@ -59,6 +60,15 @@ export function TherapistMonitoringDrawer({
   const [selectedCooldownHours, setSelectedCooldownHours] = useState<number>(24)
   const [settingCooldown, setSettingCooldown] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+
+  const BUSY_DURATION_OPTIONS = [
+    { label: "30 分钟", value: 30 },
+    { label: "60 分钟", value: 60 },
+    { label: "90 分钟", value: 90 },
+    { label: "2 小时", value: 120 },
+    { label: "2.5 小时", value: 150 },
+    { label: "3 小时", value: 180 },
+  ]
 
   useEffect(() => {
     if (open && therapist) {
@@ -109,7 +119,6 @@ export function TherapistMonitoringDrawer({
 
   const handleUpdateStatus = async (newStatus: 'available' | 'busy' | 'offline') => {
     if (!therapist) return
-
     setUpdatingStatus(true)
     const result = await updateTherapistStatus(therapist.id, newStatus)
     if (result.ok) {
@@ -119,6 +128,28 @@ export function TherapistMonitoringDrawer({
       toast.error(result.error || "更新状态失败")
     }
     setUpdatingStatus(false)
+  }
+
+  const handleBusyStatus = async (minutes: number) => {
+    if (!therapist) return
+    setUpdatingStatus(true)
+    const result = await updateTherapistBusyStatus(therapist.id, minutes)
+    if (result.ok) {
+      toast.success(minutes === 0 ? "已设为空闲" : `已设为忙碌 ${minutes} 分钟`)
+      onRefresh()
+    } else {
+      toast.error(result.error || "更新状态失败")
+    }
+    setUpdatingStatus(false)
+  }
+
+  const formatNextAvailable = (time: string | null) => {
+    if (!time) return ""
+    const diffMins = Math.floor((new Date(time).getTime() - Date.now()) / 60000)
+    if (diffMins <= 0) return "即将空闲"
+    if (diffMins < 60) return `${diffMins} 分钟后空闲`
+    const h = Math.floor(diffMins / 60), m = diffMins % 60
+    return m > 0 ? `${h} 小时 ${m} 分钟后空闲` : `${h} 小时后空闲`
   }
 
   if (!therapist) return null
@@ -212,38 +243,62 @@ export function TherapistMonitoringDrawer({
             <div>
               <h3 className="text-sm font-semibold mb-3">状态信息</h3>
               <dl className="space-y-2.5 text-sm">
-                <div className="flex justify-between items-center">
-                  <dt className="text-muted-foreground">当前状态</dt>
-                  <dd>
-                    <Select
-                      value={therapist.status}
-                      onValueChange={handleUpdateStatus}
-                      disabled={updatingStatus}
-                    >
-                      <SelectTrigger className="w-[140px] h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="available">
-                          <div className="flex items-center gap-2">
-                            <Circle className="h-3 w-3 fill-green-500 text-green-500" />
-                            在线
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="busy">
-                          <div className="flex items-center gap-2">
-                            <Circle className="h-3 w-3 fill-orange-500 text-orange-500" />
-                            忙碌
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="offline">
-                          <div className="flex items-center gap-2">
-                            <Circle className="h-3 w-3 fill-gray-400 text-gray-400" />
-                            离线
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                <div className="flex justify-between items-start">
+                  <dt className="text-muted-foreground pt-1">当前状态</dt>
+                  <dd className="flex flex-col items-end gap-2">
+                    {therapist.status === 'busy' ? (
+                      <div className="flex flex-col items-end gap-1">
+                        {therapist.next_available_time && (
+                          <span className="text-xs text-muted-foreground">
+                            {formatNextAvailable(therapist.next_available_time)}
+                          </span>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={updatingStatus}
+                          onClick={() => handleBusyStatus(0)}
+                          className="h-8"
+                        >
+                          {updatingStatus ? "更新中..." : "设为空闲"}
+                        </Button>
+                      </div>
+                    ) : therapist.status === 'available' ? (
+                      <Select
+                        disabled={updatingStatus}
+                        onValueChange={(v) => handleBusyStatus(parseInt(v))}
+                      >
+                        <SelectTrigger className="w-[130px] h-8">
+                          <SelectValue placeholder="设为忙碌..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BUSY_DURATION_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value.toString()}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      /* offline — keep original simple select */
+                      <Select
+                        value={therapist.status}
+                        onValueChange={handleUpdateStatus}
+                        disabled={updatingStatus}
+                      >
+                        <SelectTrigger className="w-[130px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="available">
+                            <div className="flex items-center gap-2"><Circle className="h-3 w-3 fill-green-500 text-green-500" />在线</div>
+                          </SelectItem>
+                          <SelectItem value="offline">
+                            <div className="flex items-center gap-2"><Circle className="h-3 w-3 fill-gray-400 text-gray-400" />离线</div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </dd>
                 </div>
                 <div className="flex justify-between">

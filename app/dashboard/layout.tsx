@@ -31,6 +31,7 @@ import {
   Menu,
   BarChart3,
   ClipboardList,
+  MapPin,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -149,18 +150,6 @@ function getSidebarGroups(translations: any): {
       ],
     },
     {
-      label: t(translations, 'nav.groups.cbody'),
-      items: [
-        {
-          key: "cbody",
-          title: t(translations, 'nav.items.cbodyManagement'),
-          icon: UserCog,
-          href: "/dashboard/cbody",
-          requiredRole: ['support'],
-        },
-      ],
-    },
-    {
       label: t(translations, 'nav.groups.operations'),
       items: [
         {
@@ -245,6 +234,13 @@ function getSidebarGroups(translations: any): {
           href: "/dashboard/business/girl-attendance",
           requiredRole: ['superadmin', 'admin'],
         },
+        {
+          key: "incall-locations",
+          title: t(translations, 'nav.items.incallLocations'),
+          icon: MapPin,
+          href: "/dashboard/business/incall-locations",
+          requiredRole: ['superadmin', 'admin'],
+        },
       ],
     },
     {
@@ -323,8 +319,6 @@ function getBreadcrumbFromPath(pathname: string, translations: any): Array<{ lab
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.management') })
   } else if (segments[1] === 'aloha') {
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.aloha') })
-  } else if (segments[1] === 'cbody') {
-    breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.cbody') })
   } else if (segments[1] === 'operations') {
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.operations') })
     if (segments[2] === 'orders') {
@@ -352,6 +346,8 @@ function getBreadcrumbFromPath(pathname: string, translations: any): Array<{ lab
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.business') })
     if (segments[2] === 'girl-attendance') {
       breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.girlAttendance') })
+    } else if (segments[2] === 'incall-locations') {
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.incallLocations') })
     }
   } else if (segments[1] === 'finance') {
     breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.finance'), href: "/dashboard/finance" })
@@ -527,11 +523,6 @@ function DashboardLayoutWithLocale({
       return false
     }
 
-    // 特殊处理：display_name 为 cbodyAdmin 的 support 角色只能访问 cbody 菜单
-    if (adminProfile.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
-      return false
-    }
-
     // 特殊处理：客服mumu只能访问运营管理的三个功能
     if (adminProfile.display_name === 'mumu' && adminProfile.role === 'support') {
       return false
@@ -549,16 +540,12 @@ function DashboardLayoutWithLocale({
       if (adminProfile?.display_name === 'AlohaAdmin' && adminProfile.role === 'support') {
         return item.key === 'aloha'
       }
-      // cbodyAdmin 特殊处理：只显示 cbody 菜单项
-      if (adminProfile?.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
-        return item.key === 'cbody'
-      }
       // 客服mumu特殊处理：只显示运营管理的订单监控、技师状态、会话监管
       if (adminProfile?.display_name === 'mumu' && adminProfile.role === 'support') {
         return ['operations-orders', 'operations-therapists', 'operations-chats'].includes(item.key)
       }
-      // 其他管理员隐藏 aloha 和 cbody 菜单项
-      if (item.key === 'aloha' || item.key === 'cbody') {
+      // 其他管理员隐藏 aloha 菜单项
+      if (item.key === 'aloha') {
         return false
       }
       return hasAccess(item.requiredRole)
@@ -646,11 +633,6 @@ function DashboardLayoutContent({
 
     // 特殊处理：display_name 为 AlohaAdmin 的 support 角色只能访问 aloha 菜单
     if (adminProfile.display_name === 'AlohaAdmin' && adminProfile.role === 'support') {
-      return false
-    }
-
-    // 特殊处理：display_name 为 cbodyAdmin 的 support 角色只能访问 cbody 菜单
-    if (adminProfile.display_name === 'cbodyAdmin' && adminProfile.role === 'support') {
       return false
     }
 

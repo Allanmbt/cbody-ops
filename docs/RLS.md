@@ -172,6 +172,28 @@ CREATE POLICY "Categories are manageable by admins"
 ```
 
 
+## incall_locations 表策略
+
+```sql
+-- 所有人（含未登录）可读已激活地址
+CREATE POLICY "incall_locations.select"
+  ON public.incall_locations
+  FOR SELECT
+  USING (is_active = true);
+
+-- 仅管理员可增删改
+CREATE POLICY "incall_locations.admin.all"
+  ON public.incall_locations
+  FOR ALL
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+-- 授权
+GRANT SELECT ON public.incall_locations TO authenticated, anon;
+GRANT INSERT, UPDATE, DELETE ON public.incall_locations TO authenticated;
+```
+
+
 ## girls表策略
 
 ### 读取权限

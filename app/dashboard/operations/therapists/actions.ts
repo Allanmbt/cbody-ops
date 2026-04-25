@@ -400,3 +400,51 @@ export async function updateTherapistStatus(
     return { ok: false, error: "更新状态异常" }
   }
 }
+
+export async function updateTherapistBusyStatus(
+  therapistId: string,
+  minutes: number // 0 = set available, >0 = set busy with next_available_time
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await requireAdmin(['superadmin', 'admin', 'support'], { allowMumuForOperations: true })
+    const supabase = getSupabaseAdminClient()
+
+    const { data: current, error: fetchErr } = await (supabase as any)
+      .from('girls_status')
+      .select('status')
+      .eq('girl_id', therapistId)
+      .single()
+
+    if (fetchErr || !current) return { ok: false, error: "技师不存在" }
+
+    const currentStatus = (current as any).status
+
+    if (currentStatus === 'offline') return { ok: false, error: "技师处于离线状态，无法操作" }
+
+    let updatePayload: Record<string, unknown>
+
+    if (minutes === 0) {
+      // → available
+      updatePayload = { status: 'available', next_available_time: null, updated_at: new Date().toISOString() }
+    } else {
+      // → busy with next_available_time
+      const nextAvailableTime = new Date(Date.now() + minutes * 60 * 1000)
+      updatePayload = { status: 'busy', next_available_time: nextAvailableTime.toISOString(), updated_at: new Date().toISOString() }
+    }
+
+    const { error: updateErr } = await (supabase as any)
+      .from('girls_status')
+      .update(updatePayload)
+      .eq('girl_id', therapistId)
+
+    if (updateErr) {
+      console.error('[技师忙碌状态] 更新失败:', updateErr)
+      return { ok: false, error: "更新状态失败" }
+    }
+
+    return { ok: true }
+  } catch (error) {
+    console.error('[技师忙碌状态] 操作异常:', error)
+    return { ok: false, error: "更新状态异常" }
+  }
+}

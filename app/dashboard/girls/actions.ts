@@ -23,8 +23,38 @@ import type {
     UserSearchResult
 } from "@/lib/features/girls"
 
-// 注意：所有函数现在使用 requireAdmin() 进行统一的权限验证
-// 不再需要单独的 checkAdminPermission 函数
+export type IncallLocationOption = {
+    id: string
+    name: string
+    address: string
+    city_name: string | null
+}
+
+export async function getActiveIncallLocations(): Promise<ApiResponse<IncallLocationOption[]>> {
+    try {
+        await requireAdmin(["superadmin", "admin"])
+        const supabase = getSupabaseAdminClient()
+        const { data, error } = await (supabase as any)
+            .from("incall_locations")
+            .select("id, name, address, city:cities(name)")
+            .eq("is_active", true)
+            .order("name", { ascending: true })
+
+        if (error) return { ok: false, error: "获取地址列表失败" }
+
+        return {
+            ok: true,
+            data: (data || []).map((r: any) => ({
+                id: r.id,
+                name: r.name,
+                address: r.address,
+                city_name: r.city?.name?.zh || r.city?.name?.en || null,
+            })),
+        }
+    } catch {
+        return { ok: false, error: "获取地址列表异常" }
+    }
+}
 
 /**
  * 技师管理统计数据

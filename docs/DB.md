@@ -61,6 +61,40 @@
 - INDEX idx_categories_sort (sort_order, id)
 - INDEX idx_categories_name_gin ON categories USING GIN(name)
 
+## incall_locations（到店地址表）
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | gen_random_uuid() | 主键 |
+| name | TEXT | 是 | - | 地点名称，如 "Thai Heaven Spa · Room 301" |
+| address | TEXT | 是 | - | 展示用详细地址 |
+| lat | DOUBLE PRECISION | 是 | - | 纬度（用于地图跳转） |
+| lng | DOUBLE PRECISION | 是 | - | 经度 |
+| place_id | TEXT | 否 | NULL | Google Place ID（优先，跳地图更精准） |
+| city_id | INTEGER | 否 | NULL | 城市ID，关联 cities(id) |
+| photos | TEXT[] | 是 | '{}' | 房间/环境图片 URL 列表（建议最多 9 张） |
+| meta | JSONB | 是 | '{}' | 扩展字段（楼层/门禁/停车/Wi-Fi 等） |
+| is_active | BOOLEAN | 是 | true | 是否激活，控制可见性 |
+| created_by | UUID | 否 | NULL | 创建人（管理员），关联 auth.users(id) |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_incall_locations_city (city_id) WHERE city_id IS NOT NULL
+- INDEX idx_incall_locations_active (is_active) WHERE is_active = true
+- INDEX idx_incall_locations_created_by (created_by) WHERE created_by IS NOT NULL
+
+**外键约束**：
+- FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE SET NULL
+- FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+
+**说明**：
+- 支持多名技师共用同一条地址记录（如同一门店的多名技师）
+- `meta` 字段预留扩展：`{"floor":"3F","entrance_note":"...","parking":"...","wifi":true}`
+- `photos` 存储 Supabase Storage 图片 URL 列表，建议最多 9 张
+- 地址的增删改由管理员在后台操作，技师不可自行修改
+
 ## girls（女孩基本信息表）
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
@@ -93,6 +127,8 @@
 | is_visible_to_thai | BOOLEAN | 否 | true | 泰国用户是否可见 |
 | sort_order | INTEGER | 否 | 999 | 排序优先级 |
 | withdrawal_info | JSONB | 否 | '{"payment_method":"bank","bank_name":"","account_holder":"","account_number":"","qr_code_url":"","updated_at":null}' | 技师提现收款信息 |
+| incall_enabled | BOOLEAN | 是 | false | 是否支持到店接待（Incall） |
+| incall_location_id | UUID | 否 | NULL | 关联到店地址ID，关联 incall_locations(id) |
 | previous_user_id | UUID | 否 | NULL | 注销留痕：最近一次绑定的用户ID（用于回收旧档） |
 | deleted_at | TIMESTAMPTZ | 否 | NULL | 软删除时间（账号注销/解绑时标记） |
 | deleted_reason | TEXT | 否 | NULL | 删除原因（如 user_requested） |
@@ -115,6 +151,8 @@
 - INDEX idx_girls_tags_gin ON girls USING GIN(tags)
 - INDEX idx_girls_deleted_at (deleted_at) WHERE deleted_at IS NOT NULL
 - INDEX idx_girls_previous_user (previous_user_id) WHERE previous_user_id IS NOT NULL
+- INDEX idx_girls_incall (incall_enabled) WHERE incall_enabled = true
+- INDEX idx_girls_incall_location (incall_location_id) WHERE incall_location_id IS NOT NULL
 
 **CHECK约束**：
 - CHECK (trust_score BETWEEN 0 AND 100);
@@ -122,6 +160,7 @@
 **外键约束**：
 - FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE SET NULL
 - FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+- FOREIGN KEY (incall_location_id) REFERENCES incall_locations(id) ON DELETE SET NULL
 
 **说明**：
 - 首次登录自动建档：通过 `ensure_girl_for_current_user()` RPC 创建最小记录（默认 `is_blocked=true`，`is_verified=false`），触发器 `handle_new_girl` 自动创建状态与结算账户。
@@ -583,6 +622,9 @@
 | completed_at | TIMESTAMPTZ | 否 | NULL | 订单完成时间（状态变为completed时自动记录） |
 | scheduled_start_at | TIMESTAMPTZ | 否 | NULL | 系统计算的预计开始服务时间（串行排队链自动计算） |
 | queue_position | INTEGER | 否 | NULL | 技师队列中的排序序号（从1开始，触发器自动维护） |
+| service_type | TEXT | 是 | 'outcall' | 服务类型：outcall（上门）/ incall（到店） |
+| incall_requested_at | TIMESTAMPTZ | 否 | NULL | 顾客意向预约时间（incall 专用，15 分钟为单位） |
+| incall_location_snapshot | JSONB | 否 | NULL | 到店地址快照（含 location_id/name/address/lat/lng/photos） |
 | created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
 | updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
 
@@ -606,6 +648,8 @@
 - INDEX idx_orders_booking_mode (booking_mode)
 - INDEX idx_orders_completed_at (completed_at DESC) WHERE completed_at IS NOT NULL
 - INDEX idx_orders_girl_status_scheduled (girl_id, status, scheduled_start_at)
+- INDEX idx_orders_service_type (service_type)
+- INDEX idx_orders_incall_requested (incall_requested_at) WHERE incall_requested_at IS NOT NULL
 
 **外键约束**：
 - FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE RESTRICT
@@ -623,6 +667,9 @@
 - CHECK (travel_fee >= 0)
 - CHECK (extra_fee >= 0)
 - CHECK (discount_amount >= 0)
+- CHECK (service_type IN ('outcall', 'incall'))
+- CHECK (service_type != 'incall' OR travel_fee = 0)
+- CHECK (service_type != 'outcall' OR incall_requested_at IS NULL)
 
 **排队系统说明**：
 - `scheduled_start_at` 和 `queue_position` 由 `maintain_girl_order_stats()` 触发器自动维护

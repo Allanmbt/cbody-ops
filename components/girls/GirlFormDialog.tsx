@@ -49,7 +49,9 @@ import {
     getCities,
     getCategories,
     searchUsers,
-    checkUsernameExists
+    checkUsernameExists,
+    getActiveIncallLocations,
+    type IncallLocationOption,
 } from "@/app/dashboard/girls/actions"
 import type { GirlWithStatus, UserSearchResult } from "@/lib/features/girls"
 import { GirlImageCropper } from "@/components/girls/GirlImageCropper"
@@ -82,6 +84,7 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
     const [loading, setLoading] = useState(false)
     const [cities, setCities] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
+    const [incallLocations, setIncallLocations] = useState<IncallLocationOption[]>([])
 
     // User ID绑定相关
     const [userQuery, setUserQuery] = useState('')
@@ -127,15 +130,18 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
             sort_order: 999,
             city_id: undefined as any,
             category_ids: [],
+            incall_enabled: false,
+            incall_location_id: null,
         }
     })
 
     // 加载城市和分类
     useEffect(() => {
         async function loadData() {
-            const [citiesResult, categoriesResult] = await Promise.all([
+            const [citiesResult, categoriesResult, incallResult] = await Promise.all([
                 getCities(),
-                getCategories()
+                getCategories(),
+                getActiveIncallLocations(),
             ])
 
             if (citiesResult.ok && citiesResult.data) {
@@ -144,6 +150,10 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
 
             if (categoriesResult.ok && categoriesResult.data) {
                 setCategories(categoriesResult.data)
+            }
+
+            if (incallResult.ok && incallResult.data) {
+                setIncallLocations(incallResult.data)
             }
         }
 
@@ -181,6 +191,8 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 sort_order: girl.sort_order,
                 city_id: girl.city_id ?? undefined,
                 category_ids: girl.category_ids || [],
+                incall_enabled: (girl as any).incall_enabled ?? false,
+                incall_location_id: (girl as any).incall_location_id ?? null,
             })
             setAvatarPreview(girl.avatar_url || '')
 
@@ -217,6 +229,8 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 sort_order: 999,
                 city_id: undefined as any,
                 category_ids: [],
+                incall_enabled: false,
+                incall_location_id: null,
             })
             setAvatarPreview('')
             setSelectedUser(null)
@@ -1234,6 +1248,73 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                                 </FormItem>
                                             )}
                                         />
+                                    </div>
+
+                                    {/* Incall 设置 */}
+                                    <div className="space-y-3 rounded-lg border p-3">
+                                        <p className="text-sm font-medium">到店接待（Incall）</p>
+                                        <FormField
+                                            control={form.control}
+                                            name="incall_enabled"
+                                            render={({ field }) => (
+                                                <FormItem className="flex flex-row items-center justify-between">
+                                                    <div className="space-y-0.5">
+                                                        <FormLabel>开启到店接待</FormLabel>
+                                                        <FormDescription className="text-xs">
+                                                            开启后顾客可选择到店预约
+                                                        </FormDescription>
+                                                    </div>
+                                                    <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={(v) => {
+                                                                field.onChange(v)
+                                                                if (!v) form.setValue("incall_location_id", null)
+                                                            }}
+                                                            disabled={loading}
+                                                        />
+                                                    </FormControl>
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        {form.watch("incall_enabled") && (
+                                            <FormField
+                                                control={form.control}
+                                                name="incall_location_id"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>绑定到店地址</FormLabel>
+                                                        <Select
+                                                            value={field.value || "none"}
+                                                            onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                                                            disabled={loading}
+                                                        >
+                                                            <FormControl>
+                                                                <SelectTrigger>
+                                                                    <SelectValue placeholder="选择地址（可选）" />
+                                                                </SelectTrigger>
+                                                            </FormControl>
+                                                            <SelectContent>
+                                                                <SelectItem value="none">不绑定</SelectItem>
+                                                                {incallLocations.map((loc) => (
+                                                                    <SelectItem key={loc.id} value={loc.id}>
+                                                                        <span className="font-medium">{loc.name}</span>
+                                                                        {loc.city_name && (
+                                                                            <span className="text-muted-foreground ml-1 text-xs">· {loc.city_name}</span>
+                                                                        )}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <FormDescription className="text-xs">
+                                                            {incallLocations.length === 0 ? "暂无可用地址，请先在到店地址管理中创建" : "选择该技师提供到店服务的地址"}
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                        )}
                                     </div>
                                 </TabsContent>
                             </Tabs>

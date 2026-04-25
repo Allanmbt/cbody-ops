@@ -66,6 +66,8 @@ export const girlFormSchema = z.object({
     sort_order: z.number().int("排序权重必须是整数").min(0).max(9999).default(999),
     city_id: z.number({ message: "请选择城市" }).int("请选择有效的城市"),
     category_ids: z.array(z.number().int()).min(1, "请至少选择一个分类"), // 多对多分类，至少选一个
+    incall_enabled: z.boolean().default(false),
+    incall_location_id: z.string().uuid().nullable().optional(),
 })
 
 export const girlStatusSchema = z.object({
