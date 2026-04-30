@@ -30,6 +30,7 @@ export interface MonitoringTherapistFilters {
   search?: string
   status?: ('available' | 'busy' | 'offline')[]
   city?: string
+  incall_enabled?: boolean
   only_abnormal?: boolean
   page?: number
   limit?: number
@@ -134,6 +135,7 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
       search,
       status,
       city,
+      incall_enabled,
       only_abnormal = false,
       page = 1,
       limit = 50
@@ -147,6 +149,43 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
     // 添加 sort_order 过滤
     if (shouldFilterSortOrder) {
       query = query.gte('sort_order', 998)
+    }
+
+    if (incall_enabled === true) {
+      let incallQuery = (supabase as any)
+        .from('girls')
+        .select('id')
+        .eq('is_blocked', false)
+        .eq('is_verified', true)
+        .eq('incall_enabled', true)
+        .not('incall_location_id', 'is', null)
+
+      if (shouldFilterSortOrder) {
+        incallQuery = incallQuery.gte('sort_order', 998)
+      }
+
+      const { data: incallRows, error: incallError } = await incallQuery
+
+      if (incallError) {
+        console.error('[技师监控] 到店筛选失败:', incallError)
+        return { ok: false, error: "筛选到店技师失败" }
+      }
+
+      const incallIds = (incallRows || []).map((row: any) => row.id)
+      if (incallIds.length === 0) {
+        return {
+          ok: true as const,
+          data: {
+            therapists: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 0
+          }
+        }
+      }
+
+      query = query.in('id', incallIds)
     }
 
     // ✅ 优化：状态筛选（直接在视图的 status 字段上）
@@ -193,10 +232,34 @@ export async function getMonitoringTherapists(filters: MonitoringTherapistFilter
       return { ok: false, error: `查询技师失败: ${error.message}` }
     }
 
-    // ✅ 优化：视图已包含所有数据（技师+状态+城市+订单），无需额外处理
+    const therapistIds = (therapistsData || []).map((t: any) => t.id)
+    let incallMap = new Map<string, { incall_enabled: boolean; incall_location_id: string | null }>()
+
+    if (therapistIds.length > 0) {
+      const { data: incallRows, error: incallError } = await (supabase as any)
+        .from('girls')
+        .select('id, incall_enabled, incall_location_id')
+        .in('id', therapistIds)
+
+      if (incallError) {
+        console.error('[技师监控] 获取到店标记失败:', incallError)
+      } else {
+        incallMap = new Map((incallRows || []).map((row: any) => [
+          row.id,
+          {
+            incall_enabled: row.incall_enabled === true,
+            incall_location_id: row.incall_location_id || null
+          }
+        ]))
+      }
+    }
+
+    // ✅ 优化：视图已包含主体数据，Incall 标记按当前页批量补齐
     // 数据已在数据库中排序，无需客户端排序
     const therapistsWithOrders = (therapistsData || []).map((t: any) => ({
       ...t,
+      incall_enabled: incallMap.get(t.id)?.incall_enabled ?? false,
+      incall_location_id: incallMap.get(t.id)?.incall_location_id ?? null,
       // 构建 city 对象（兼容前端）
       city: t.city_code ? {
         id: t.city_id,

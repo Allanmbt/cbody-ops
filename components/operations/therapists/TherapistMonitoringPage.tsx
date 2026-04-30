@@ -44,6 +44,7 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
     search: '',
     status: ['available', 'busy'],  // 默认显示在线和忙碌
     city: undefined,
+    incall_enabled: undefined,
     only_abnormal: false,
     page: 1,
     limit: 50
@@ -81,7 +82,6 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
   useEffect(() => {
     loadStats()
     isInitialMount.current = false
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // 筛选条件变化时重新加载
@@ -92,7 +92,7 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
     }
     loadTherapists()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.status, filters.city, filters.only_abnormal, filters.page])
+  }, [filters.status, filters.city, filters.incall_enabled, filters.only_abnormal, filters.page])
 
   // 当 filters.search 变化时重新加载（由搜索按钮触发）
   useEffect(() => {
@@ -117,6 +117,7 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
       search: '',
       status: ['available', 'busy'],
       city: undefined,
+      incall_enabled: undefined,
       only_abnormal: false,
       page: 1,
       limit: 50
@@ -252,6 +253,18 @@ export function TherapistMonitoringPage({ initialTherapists, initialTotal }: The
                   <SelectItem value="1">曼谷</SelectItem>
                   <SelectItem value="2">芭提雅</SelectItem>
                   <SelectItem value="3">普吉</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.incall_enabled ? 'enabled' : 'all'}
+                onValueChange={(value) => setFilters({ ...filters, incall_enabled: value === 'enabled' ? true : undefined, page: 1 })}
+              >
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="到店筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部显示</SelectItem>
+                  <SelectItem value="enabled">支持到店</SelectItem>
                 </SelectContent>
               </Select>
             </div>

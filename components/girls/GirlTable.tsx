@@ -18,7 +18,8 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, Image as ImageIcon } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, Image as ImageIcon, Store } from "lucide-react"
 import type { GirlWithStatus } from "@/lib/features/girls"
 
 interface GirlTableProps {
@@ -60,6 +61,10 @@ export function GirlTable({
     const getCategoriesDisplay = (girl: GirlWithStatus): string => {
         if (!girl.categories || girl.categories.length === 0) return '-'
         return girl.categories.map(cat => cat.name?.zh || cat.name?.en || cat.name?.th || '').filter(Boolean).join(', ')
+    }
+
+    const supportsIncall = (girl: GirlWithStatus): boolean => {
+        return girl.incall_enabled === true && !!girl.incall_location_id
     }
 
     // 业务审核状态（UI 层）：Pending / Approved / Deleted
@@ -190,7 +195,22 @@ export function GirlTable({
                             <TableCell className="font-medium">
                                 <div className="flex flex-col gap-1">
                                     <div>
-                                        <div className="font-medium">{getGirlName(girl)}</div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="font-medium">{getGirlName(girl)}</div>
+                                            {supportsIncall(girl) && (
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span
+                                                            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                            aria-label="支持到店"
+                                                        >
+                                                            <Store className="h-3 w-3" />
+                                                        </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>支持到店</TooltipContent>
+                                                </Tooltip>
+                                            )}
+                                        </div>
                                         <div className="text-xs text-muted-foreground">
                                             #{girl.girl_number} • {girl.username}
                                         </div>

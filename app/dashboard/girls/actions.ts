@@ -307,7 +307,7 @@ export async function getGirlsProfileList(params: GirlListParams): Promise<ApiRe
         await requireAdmin(['superadmin', 'admin', 'support'])
 
         const validatedParams = girlListParamsSchema.parse(params)
-        const { page, limit, search, city_id, category_id, is_blocked, review_status, sort_by, sort_order } = validatedParams
+        const { page, limit, search, city_id, category_id, is_blocked, review_status, incall_enabled, sort_by, sort_order } = validatedParams
 
         const supabase = getSupabaseAdminClient()
 
@@ -331,6 +331,10 @@ export async function getGirlsProfileList(params: GirlListParams): Promise<ApiRe
         // 城市筛选
         if (city_id) {
             baseQuery = baseQuery.eq('city_id', city_id)
+        }
+
+        if (incall_enabled === true) {
+            baseQuery = baseQuery.eq('incall_enabled', true).not('incall_location_id', 'is', null)
         }
 
         // 审核状态筛选（优先级高于单纯的 is_blocked 筛选）
@@ -454,7 +458,7 @@ export async function getGirls(params: GirlListParams): Promise<ApiResponse<Pagi
 
         // 验证参数
         const validatedParams = girlListParamsSchema.parse(params)
-        const { page, limit, search, city_id, category_id, status, is_verified, is_blocked, sort_by, sort_order } = validatedParams
+        const { page, limit, search, city_id, category_id, status, is_verified, is_blocked, incall_enabled, sort_by, sort_order } = validatedParams
 
         const supabase = getSupabaseAdminClient()
 
@@ -479,6 +483,10 @@ export async function getGirls(params: GirlListParams): Promise<ApiResponse<Pagi
         // 城市筛选
         if (city_id) {
             query = query.eq('city_id', city_id)
+        }
+
+        if (incall_enabled === true) {
+            query = query.eq('incall_enabled', true).not('incall_location_id', 'is', null)
         }
 
         // 认证状态筛选

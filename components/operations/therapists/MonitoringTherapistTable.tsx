@@ -13,7 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { Eye, Circle, MapPin, Clock, AlertTriangle } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Eye, Circle, Clock, AlertTriangle, Store } from "lucide-react"
 import { formatRelativeTime } from "@/lib/features/orders"
 import { TherapistMonitoringDrawer } from "./TherapistMonitoringDrawer"
 
@@ -85,6 +86,10 @@ function getOrderStatusText(status: string): string {
 function hasCooldown(therapist: any): boolean {
   if (!therapist.cooldown_until_at) return false
   return new Date(therapist.cooldown_until_at) > new Date()
+}
+
+function supportsIncall(therapist: any): boolean {
+  return therapist.incall_enabled === true && !!therapist.incall_location_id
 }
 
 function formatNextAvailableTime(nextTime?: string | null): string {
@@ -175,7 +180,22 @@ export function MonitoringTherapistTable({
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
-                          <span className="text-sm font-medium">{therapist.name}</span>
+                          <span className="flex items-center gap-1.5 text-sm font-medium">
+                            {therapist.name}
+                            {supportsIncall(therapist) && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    aria-label="支持到店"
+                                  >
+                                    <Store className="h-3 w-3" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>支持到店</TooltipContent>
+                              </Tooltip>
+                            )}
+                          </span>
                           <span className="text-xs text-muted-foreground">#{therapist.girl_number}</span>
                         </div>
                       </div>

@@ -49,6 +49,7 @@ export default function GirlsPage() {
         is_verified: undefined,
         is_blocked: undefined,
         review_status: 'approved',
+        incall_enabled: undefined,
         sort_by: 'sort_order',
         sort_order: 'asc'
     })
@@ -154,6 +155,7 @@ export default function GirlsPage() {
             is_verified: undefined,
             is_blocked: undefined,
             review_status: 'approved' as const,
+            incall_enabled: undefined,
             sort_by: 'sort_order' as const,
             sort_order: 'asc' as const
         }
@@ -325,6 +327,19 @@ export default function GirlsPage() {
                                                 {category.name.zh || category.name.en || category.name.th}
                                             </SelectItem>
                                         ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Select
+                                    value={filters.incall_enabled ? 'enabled' : 'all'}
+                                    onValueChange={(value) => handleFilter('incall_enabled', value === 'enabled' ? true : undefined)}
+                                >
+                                    <SelectTrigger className="w-[140px]">
+                                        <SelectValue placeholder="到店筛选" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">全部显示</SelectItem>
+                                        <SelectItem value="enabled">支持到店</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

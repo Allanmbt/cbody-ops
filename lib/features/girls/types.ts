@@ -44,6 +44,8 @@ export interface Girl {
     previous_user_id?: string | null
     deleted_at?: string | null
     deleted_reason?: string | null
+    incall_enabled?: boolean
+    incall_location_id?: string | null
 }
 
 export interface GirlStatus {
