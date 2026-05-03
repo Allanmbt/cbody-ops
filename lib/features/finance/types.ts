@@ -35,6 +35,7 @@ export interface OrderSettlement {
     notes: string | null
     settlement_status: 'pending' | 'settled' | 'rejected'
     settled_at: string | null
+    rejected_at: string | null
     reject_reason: string | null
     created_at: string
     updated_at: string

@@ -1154,12 +1154,15 @@ export async function rejectOrderSettlement(data: {
         type RejectionUpdate = {
             settlement_status: string
             reject_reason: string
+            rejected_at: string
             updated_at: string
         }
+        const rejectedAt = new Date().toISOString()
         const updateData: RejectionUpdate = {
             settlement_status: 'rejected',
             reject_reason: data.reject_reason,
-            updated_at: new Date().toISOString()
+            rejected_at: rejectedAt,
+            updated_at: rejectedAt
         }
 
         const { error: updateError } = await supabase
