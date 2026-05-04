@@ -385,6 +385,28 @@
 **外键约束**：
 - FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
 
+## add_time_packages（固定加钟套餐表）
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | gen_random_uuid() | 主键 |
+| duration_minutes | INTEGER | 是 | - | 加钟时长（30/60/120/360分钟） |
+| commission_thb | DECIMAL(10,2) | 是 | - | 平台固定加钟佣金（THB） |
+| is_active | BOOLEAN | 否 | true | 是否启用该加钟套餐 |
+| sort_order | INTEGER | 否 | 100 | 排序权重 |
+| notes | TEXT | 否 | NULL | 备注说明 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- UNIQUE INDEX ux_add_time_packages_duration (duration_minutes)
+- INDEX idx_add_time_packages_active (sort_order, duration_minutes) WHERE is_active = true
+
+**CHECK约束**：
+- CHECK (duration_minutes IN (30, 60, 120, 360))
+- CHECK (commission_thb >= 0)
+
 ## admin_girl_services（管理员为技师绑定服务表）
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
@@ -684,6 +706,50 @@
 
 ---
 
+## order_time_extensions（订单加钟记录表）
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | gen_random_uuid() | 主键 |
+| order_id | UUID | 是 | - | 订单ID，关联orders表 |
+| girl_id | UUID | 是 | - | 技师ID，关联girls表 |
+| package_id | UUID | 是 | - | 加钟套餐ID，关联add_time_packages表 |
+| duration_minutes | INTEGER | 是 | - | 本次加钟分钟数 |
+| commission_thb_snapshot | DECIMAL(10,2) | 是 | - | 报备当时的加钟佣金快照（THB） |
+| reported_at | TIMESTAMPTZ | 是 | NOW() | 报备时间 |
+| base_service_duration_before | INTEGER | 是 | - | 加钟前原始服务时长（分钟） |
+| service_duration_after | INTEGER | 是 | - | 加钟后服务时长（分钟） |
+| settlement_status | TEXT | 是 | 'reported' | 结算状态：reported/settled/rejected |
+| reviewed_at | TIMESTAMPTZ | 否 | NULL | 审核时间 |
+| reviewed_by | UUID | 否 | NULL | 审核人ID，关联auth.users表 |
+| notes | TEXT | 否 | NULL | 备注说明 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_order_time_ext_order (order_id, reported_at DESC)
+- INDEX idx_order_time_ext_girl_status (girl_id, settlement_status, reported_at DESC)
+- INDEX idx_order_time_ext_reported (reported_at DESC) WHERE settlement_status = 'reported'
+
+**外键约束**：
+- FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+- FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE RESTRICT
+- FOREIGN KEY (package_id) REFERENCES add_time_packages(id) ON DELETE RESTRICT
+- FOREIGN KEY (reviewed_by) REFERENCES auth.users(id) ON DELETE SET NULL
+
+**CHECK约束**：
+- CHECK (duration_minutes IN (30, 60, 120, 360))
+- CHECK (commission_thb_snapshot >= 0)
+- CHECK (settlement_status IN ('reported', 'settled', 'rejected'))
+- CHECK (service_duration_after = base_service_duration_before + duration_minutes)
+
+**说明**：
+- 记录每一笔加钟报备，支持一个订单多次加钟
+- `commission_thb_snapshot` 为报备时的固定平台佣金快照，避免后续套餐价格变更影响历史记录
+- `base_service_duration_before` 与 `service_duration_after` 用于还原每次加钟前后时长变化
+- `settlement_status` 用于后续结算归档：默认 `reported`，审核通过后可标记为 `settled`，驳回则为 `rejected`
+
 ## order_cancellations（订单取消记录表）
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
@@ -854,6 +920,9 @@
 | service_commission_rate | DECIMAL(5,4) | 是 | - | 服务提成比例快照（0.4=40%） |
 | extra_commission_rate | DECIMAL(5,4) | 是 | - | 额外费用提成比例快照（0.2=20%） |
 | platform_should_get | DECIMAL(10,2) | 是 | - | 平台应得抽成（THB）=service_fee×service_rate+extra_fee×extra_rate |
+| add_time_count | INTEGER | 是 | 0 | 加钟次数汇总 |
+| add_time_duration_minutes | INTEGER | 是 | 0 | 加钟时长汇总（分钟） |
+| add_time_commission_thb | DECIMAL(10,2) | 是 | 0 | 加钟固定佣金汇总（THB） |
 | customer_paid_to_platform | DECIMAL(10,2) | 是 | 0 | 顾客以 THB 直接支付到平台账户的金额（如泰铢银行转账、信用卡） |
 | actual_paid_amount | DECIMAL(10,2) | 否 | NULL | 平台收款码代收的原币种金额（通常为人民币） |
 | settlement_amount | DECIMAL(10,2) | 是 | - | 净差额（THB）=platform_should_get-customer_paid_to_platform，仅用于展示 |
@@ -890,12 +959,16 @@
 - CHECK (extra_commission_rate >= 0 AND extra_commission_rate <= 1)
 - CHECK (service_fee >= 0 AND extra_fee >= 0)
 - CHECK (platform_should_get >= 0 AND customer_paid_to_platform >= 0)
+- CHECK (add_time_count >= 0)
+- CHECK (add_time_duration_minutes >= 0)
+- CHECK (add_time_commission_thb >= 0)
 
 **说明**：
 - 订单完成时自动创建记录并计算
 - 订单取消时，如有平台代收款则自动创建（status='pending'），供管理员核验
 - **字段语义**：
   - `platform_should_get`（THB）：平台应得抽成，核验通过时累加到 `girl_settlement_accounts.balance`
+  - `add_time_count` / `add_time_duration_minutes` / `add_time_commission_thb`：订单加钟汇总信息，用于展示和结算归档
   - `customer_paid_to_platform`（THB）：顾客以泰铢直接支付到平台账户的金额
   - `actual_paid_amount`（RMB）：平台收款码代收的原币种金额，核验通过时累加到 `girl_settlement_accounts.platform_collected_rmb_balance`
   - `settlement_amount`（THB）：净差额，仅用于展示，不直接用于更新账户余额
@@ -904,7 +977,7 @@
   - `settled`：核验通过，钱归技师，触发余额更新
   - `rejected`：核验拒绝，需要退款给客户或技师退回
 - **核验逻辑**（`settlement_status` 从 `pending` → `settled` 时）：
-  - 订单抽成记账：将 `platform_should_get` 累加到 `girl_settlement_accounts.balance`（THB 欠款）
+  - 订单抽成记账：将 `platform_should_get`（包含加钟固定佣金汇总）累加到 `girl_settlement_accounts.balance`（THB 欠款）
   - 平台代收记账：若 `payment_method` in ('wechat','alipay') 且 `actual_paid_amount > 0`，将 `actual_paid_amount` 累加到 `girl_settlement_accounts.platform_collected_rmb_balance`（RMB）
 - **拒绝逻辑**（`settlement_status` 从 `pending` → `rejected` 时）：
   - 不更新账户余额

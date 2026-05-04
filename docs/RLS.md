@@ -451,6 +451,31 @@ with check ((auth.jwt()->>'role') in ('admin','superadmin'));
 
 ```
 
+## add_time_packages表策略
+
+### 加钟套餐（技师端可读启用套餐）
+```sql
+ALTER TABLE public.add_time_packages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "add_time_packages.girl.select"
+  ON public.add_time_packages
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.girls g
+      WHERE g.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "add_time_packages.admin.all"
+  ON public.add_time_packages
+  FOR ALL
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+GRANT SELECT ON public.add_time_packages TO authenticated;
+```
+
 ## admin_girl_services表策略
 
 ### 管理员技师服务绑定
@@ -1389,6 +1414,27 @@ CREATE POLICY "order_settlements.admin.all"
   WITH CHECK (public.is_admin());
 
 GRANT SELECT ON public.order_settlements TO authenticated;
+```
+
+---
+
+## order_time_extensions 订单加钟记录表策略
+
+```sql
+ALTER TABLE public.order_time_extensions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "order_time_extensions.girl.select"
+  ON public.order_time_extensions
+  FOR SELECT
+  USING (public.is_current_user_girl(girl_id));
+
+CREATE POLICY "order_time_extensions.admin.all"
+  ON public.order_time_extensions
+  FOR ALL
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+GRANT SELECT ON public.order_time_extensions TO authenticated;
 ```
 
 ---
