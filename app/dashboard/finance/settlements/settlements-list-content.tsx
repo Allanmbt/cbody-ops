@@ -50,6 +50,12 @@ import { formatCurrency } from "@/lib/utils"
 import { format, subDays } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import Image from "next/image"
+import {
+    AddTimeDetailsList,
+    AddTimeSummaryText,
+    OrderTypeIcon,
+    OrderTypeBadge,
+} from "@/components/orders/OrderMetaBadges"
 
 type FiscalDateOption = 'today' | 'yesterday' | 'day_before_yesterday' | 'all'
 type SortField = 'girl_name' | 'created_at' | 'service_fee' | 'platform_should_get' | null
@@ -209,6 +215,8 @@ export function SettlementsListContent() {
     // 筛选
     const [statusFilter, setStatusFilter] = useState<string>('all')
     const [platformCollectedFilter, setPlatformCollectedFilter] = useState<string>('all')
+    const [serviceTypeFilter, setServiceTypeFilter] = useState<string>('all')
+    const [addTimeFilter, setAddTimeFilter] = useState<string>('all')
 
     // 排序
     const [sortField, setSortField] = useState<SortField>(null)
@@ -316,7 +324,7 @@ export function SettlementsListContent() {
     // 筛选条件变化时重置到第一页
     useEffect(() => {
         setPage(1)
-    }, [searchInput, statusFilter, platformCollectedFilter])
+    }, [searchInput, statusFilter, platformCollectedFilter, serviceTypeFilter, addTimeFilter])
 
     // 刷新按钮：同时刷新统计和列表
     function handleRefresh() {
@@ -358,6 +366,12 @@ export function SettlementsListContent() {
             ? <ArrowUp className="size-3 ml-1" />
             : <ArrowDown className="size-3 ml-1" />
     }
+
+    const getAddTimeSummary = (settlement: OrderSettlementWithDetails) => ({
+        count: Number((settlement as any).add_time_count || 0),
+        duration_minutes: Number((settlement as any).add_time_duration_minutes || 0),
+        commission_thb: Number((settlement as any).add_time_commission_thb || 0),
+    })
 
     async function loadSettlementDetail(settlementId: string) {
         try {
@@ -426,6 +440,20 @@ export function SettlementsListContent() {
                     return false
                 }
                 if (platformCollectedFilter === 'no' && hasCollection) {
+                    return false
+                }
+            }
+
+            if (serviceTypeFilter !== 'all' && settlement.orders?.service_type !== serviceTypeFilter) {
+                return false
+            }
+
+            if (addTimeFilter !== 'all') {
+                const hasAddTime = getAddTimeSummary(settlement).count > 0
+                if (addTimeFilter === 'yes' && !hasAddTime) {
+                    return false
+                }
+                if (addTimeFilter === 'no' && hasAddTime) {
                     return false
                 }
             }
@@ -875,6 +903,28 @@ export function SettlementsListContent() {
                                 <SelectItem value="no">无代收</SelectItem>
                             </SelectContent>
                         </Select>
+
+                        <Select value={serviceTypeFilter} onValueChange={setServiceTypeFilter}>
+                            <SelectTrigger className="w-[130px]">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">全部类型</SelectItem>
+                                <SelectItem value="outcall">上门</SelectItem>
+                                <SelectItem value="incall">到店</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        <Select value={addTimeFilter} onValueChange={setAddTimeFilter}>
+                            <SelectTrigger className="w-[130px]">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">全部加钟</SelectItem>
+                                <SelectItem value="yes">有加钟</SelectItem>
+                                <SelectItem value="no">无加钟</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </CardContent>
             </Card>
@@ -959,6 +1009,7 @@ export function SettlementsListContent() {
                                             {paginatedSettlements.map((settlement) => {
                                                 const isPending = settlement.settlement_status === 'pending'
                                                 const hasActualPaid = (settlement as any).actual_paid_amount
+                                                const addTimeSummary = getAddTimeSummary(settlement)
 
                                                 return (
                                                     <TableRow key={settlement.id}>
@@ -972,6 +1023,7 @@ export function SettlementsListContent() {
                                                         <TableCell className="font-medium">
                                                             <div className="flex items-center gap-2">
                                                                 <span>{settlement.orders?.order_number || '-'}</span>
+                                                                <OrderTypeIcon serviceType={settlement.orders?.service_type} />
                                                                 {settlement.orders?.order_number && (
                                                                     <Button
                                                                         variant="ghost"
@@ -1010,7 +1062,10 @@ export function SettlementsListContent() {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right font-medium">
-                                                            {formatCurrency(settlement.platform_should_get)}
+                                                            <div className="flex flex-col items-end gap-0.5">
+                                                                <span>{formatCurrency(settlement.platform_should_get)}</span>
+                                                                <AddTimeSummaryText summary={addTimeSummary} />
+                                                            </div>
                                                         </TableCell>
                                                         <TableCell className="text-right">
                                                             {hasActualPaid ? (
@@ -1138,6 +1193,12 @@ export function SettlementsListContent() {
                                     <Label className="text-xs text-muted-foreground">技师</Label>
                                     <p className="font-medium">{selectedSettlement.girls?.name} (#{selectedSettlement.girls?.girl_number})</p>
                                 </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">订单类型</Label>
+                                    <div>
+                                        <OrderTypeBadge serviceType={selectedSettlement.orders?.service_type} />
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -1158,6 +1219,24 @@ export function SettlementsListContent() {
                             </div>
 
                             <Separator />
+
+                            {getAddTimeSummary(selectedSettlement).count > 0 && (
+                                <>
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-sm font-medium">加钟明细</Label>
+                                            <Badge variant="outline">
+                                                <AddTimeSummaryText summary={getAddTimeSummary(selectedSettlement)} />
+                                            </Badge>
+                                        </div>
+                                        <AddTimeDetailsList items={(selectedSettlement as any).time_extensions} />
+                                        <p className="text-xs text-muted-foreground">
+                                            加钟佣金仅作核验参考，不自动改写平台应得金额。
+                                        </p>
+                                    </div>
+                                    <Separator />
+                                </>
+                            )}
 
                             {/* 平台代收款记录 */}
                             {paymentDataLoading ? (

@@ -13,6 +13,38 @@ import type {
   OrderStatus
 } from "@/lib/features/orders"
 
+async function fetchOrderTimeExtensions(supabase: any, orderIds: string[]) {
+  if (orderIds.length === 0) return new Map<string, any[]>()
+
+  const { data, error } = await supabase
+    .from('order_time_extensions')
+    .select('*')
+    .in('order_id', orderIds)
+    .neq('settlement_status', 'rejected')
+    .order('reported_at', { ascending: false })
+
+  if (error) {
+    console.error('[订单加钟] 获取明细失败:', error)
+    return new Map<string, any[]>()
+  }
+
+  const map = new Map<string, any[]>()
+  for (const item of data || []) {
+    const list = map.get(item.order_id) || []
+    list.push(item)
+    map.set(item.order_id, list)
+  }
+  return map
+}
+
+function buildAddTimeSummary(items: any[] = []) {
+  return {
+    count: items.length,
+    duration_minutes: items.reduce((sum, item) => sum + Number(item.duration_minutes || 0), 0),
+    commission_thb: items.reduce((sum, item) => sum + Number(item.commission_thb_snapshot || 0), 0),
+  }
+}
+
 /**
  * 订单管理统计数据（轻量级）
  */
@@ -89,7 +121,7 @@ export async function getOrders(params: OrderListParams): Promise<ApiResponse<Pa
 
     // 验证参数
     const validatedParams = orderListParamsSchema.parse(params)
-    const { page, limit, search, status, start_date, end_date, sort_by, sort_order } = validatedParams
+    const { page, limit, search, status, service_type, has_add_time, start_date, end_date, sort_by, sort_order } = validatedParams
     console.log('[订单查询] 查询参数:', validatedParams)
 
     const supabase = getSupabaseAdminClient()
@@ -144,6 +176,18 @@ export async function getOrders(params: OrderListParams): Promise<ApiResponse<Pa
       console.log('[订单查询] 添加状态筛选:', status)
     }
 
+    if (service_type) {
+      query = query.eq('service_type', service_type)
+      console.log('[订单查询] 添加订单类型筛选:', service_type)
+    }
+
+    if (has_add_time !== undefined) {
+      query = has_add_time
+        ? query.gt('add_time_count', 0)
+        : query.eq('add_time_count', 0)
+      console.log('[订单查询] 添加加钟筛选:', has_add_time)
+    }
+
     // 时间范围筛选
     if (start_date) {
       query = query.gte('created_at', start_date)
@@ -174,17 +218,35 @@ export async function getOrders(params: OrderListParams): Promise<ApiResponse<Pa
     }
 
     // ✅ 优化：视图已包含所有关联数据，直接使用即可
-    const ordersWithUsers = (ordersData || []).map((order: any) => ({
-      ...order,
-      // 如果有 user_profile，转换为 user 格式
-      user: order.user_profile ? {
-        id: order.user_profile.id,
-        email: null, // 视图中没有 email，如需要可以添加
-        raw_user_meta_data: {
-          username: order.user_profile.display_name
-        }
-      } : null
-    }))
+    const orderIds = (ordersData || []).map((order: any) => order.id).filter(Boolean)
+    const extensionsMap = await fetchOrderTimeExtensions(supabase, orderIds)
+
+    const ordersWithUsers = (ordersData || []).map((order: any) => {
+      const extensions = extensionsMap.get(order.id) || []
+      const summaryFromView = {
+        count: Number(order.add_time_count || 0),
+        duration_minutes: Number(order.add_time_duration_minutes || 0),
+        commission_thb: Number(order.add_time_commission_thb || 0),
+      }
+      const addTimeSummary = summaryFromView.count > 0 ? summaryFromView : buildAddTimeSummary(extensions)
+
+      return {
+        ...order,
+        service_type: order.service_type || 'outcall',
+        incall_requested_at: order.incall_requested_at || null,
+        incall_location_snapshot: order.incall_location_snapshot || null,
+        add_time_summary: addTimeSummary,
+        time_extensions: extensions,
+        // 如果有 user_profile，转换为 user 格式
+        user: order.user_profile ? {
+          id: order.user_profile.id,
+          email: null, // 视图中没有 email，如需要可以添加
+          raw_user_meta_data: {
+            username: order.user_profile.display_name
+          }
+        } : null
+      }
+    })
 
     const actualTotal = count || 0
     const totalPages = Math.ceil(actualTotal / limit)
@@ -233,11 +295,21 @@ export async function getOrderById(id: string): Promise<ApiResponse<Order>> {
 
     // 获取用户信息
     let orderWithUser: any = orderData
+    const extensionsMap = await fetchOrderTimeExtensions(supabase, [id])
+    const timeExtensions = extensionsMap.get(id) || []
+    orderWithUser = {
+      ...(orderData as any),
+      service_type: (orderData as any).service_type || 'outcall',
+      incall_requested_at: (orderData as any).incall_requested_at || null,
+      incall_location_snapshot: (orderData as any).incall_location_snapshot || null,
+      add_time_summary: buildAddTimeSummary(timeExtensions),
+      time_extensions: timeExtensions,
+    }
     if (orderData && (orderData as any).user_id) {
       const { data: userData } = await supabase.auth.admin.getUserById((orderData as any).user_id)
       if (userData?.user) {
         orderWithUser = {
-          ...(orderData as any),
+          ...orderWithUser,
           user: {
             id: userData.user.id,
             email: userData.user.email ?? null,

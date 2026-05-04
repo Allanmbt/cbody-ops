@@ -18,6 +18,9 @@ SELECT
   os.service_commission_rate,
   os.extra_commission_rate,
   os.platform_should_get,
+  os.add_time_count,
+  os.add_time_duration_minutes,
+  os.add_time_commission_thb,
   os.customer_paid_to_platform,
   os.settlement_amount,
   os.actual_paid_amount,
@@ -36,6 +39,9 @@ SELECT
   o.order_number,
   o.status AS order_status,
   o.completed_at AS order_completed_at,
+  o.service_type,
+  o.incall_requested_at,
+  o.incall_location_snapshot,
 
   -- 技师信息
   g.girl_number,

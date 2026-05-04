@@ -22,6 +22,7 @@ import {
   formatCurrency,
   formatRelativeTime
 } from "@/lib/features/orders"
+import { AddTimeSummaryText, OrderTypeIcon } from "@/components/orders/OrderMetaBadges"
 
 interface OrderTableProps {
   orders: Order[]
@@ -90,9 +91,12 @@ export function OrderTable({
             orders.map((order) => (
               <TableRow key={order.id}>
                 <TableCell className="font-medium">
-                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                    {order.order_number}
-                  </code>
+                  <div className="flex items-center gap-1.5">
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                      {order.order_number}
+                    </code>
+                    <OrderTypeIcon serviceType={order.service_type} />
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -122,6 +126,7 @@ export function OrderTable({
                     <div className="text-xs text-muted-foreground">
                       {order.service_duration} 分钟
                     </div>
+                    <AddTimeSummaryText summary={order.add_time_summary} compact />
                   </div>
                 </TableCell>
                 <TableCell className="text-right font-medium">

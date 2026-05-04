@@ -42,6 +42,11 @@ import { format } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import { getOrderSettlementDetail, updateOrderSettlementPayment, markSettlementAsSettled } from "@/lib/features/finance/actions"
 import type { OrderSettlementWithDetails } from "@/lib/features/finance"
+import {
+    AddTimeDetailsList,
+    AddTimeSummaryText,
+    OrderTypeBadge,
+} from "@/components/orders/OrderMetaBadges"
 
 interface SettlementDetailContentProps {
     settlementId: string
@@ -163,6 +168,12 @@ export function SettlementDetailContent({ settlementId }: SettlementDetailConten
         return labels[method] || method
     }
 
+    const getAddTimeSummary = (item: OrderSettlementWithDetails) => ({
+        count: Number((item as any).add_time_count || 0),
+        duration_minutes: Number((item as any).add_time_duration_minutes || 0),
+        commission_thb: Number((item as any).add_time_commission_thb || 0),
+    })
+
     return (
         <div className="flex flex-col gap-6">
             {/* 返回按钮 */}
@@ -211,6 +222,12 @@ export function SettlementDetailContent({ settlementId }: SettlementDetailConten
                                     <p className="text-sm text-muted-foreground">订单号</p>
                                     <p className="font-medium">{settlement.orders?.order_number || '-'}</p>
                                 </div>
+                                <div>
+                                    <p className="text-sm text-muted-foreground">订单类型</p>
+                                    <div className="mt-1">
+                                        <OrderTypeBadge serviceType={settlement.orders?.service_type} />
+                                    </div>
+                                </div>
                                 <Separator />
                                 <div>
                                     <p className="text-sm text-muted-foreground">服务内容</p>
@@ -235,6 +252,12 @@ export function SettlementDetailContent({ settlementId }: SettlementDetailConten
                                     <p className="text-sm text-muted-foreground">完成时间</p>
                                     <p className="text-sm">{settlement.orders?.completed_at ? format(new Date(settlement.orders.completed_at), 'PPpp', { locale: zhCN }) : '-'}</p>
                                 </div>
+                                {settlement.orders?.service_type === 'incall' && settlement.orders?.incall_requested_at && (
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">到店意向时间</p>
+                                        <p className="text-sm">{format(new Date(settlement.orders.incall_requested_at), 'PPpp', { locale: zhCN })}</p>
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
 
@@ -299,6 +322,23 @@ export function SettlementDetailContent({ settlementId }: SettlementDetailConten
                                     <p className="font-medium">{settlement.extra_commission_rate}%</p>
                                 </div>
                             </div>
+                            {getAddTimeSummary(settlement).count > 0 && (
+                                <>
+                                    <Separator />
+                                    <div className="space-y-3">
+                                        <div>
+                                            <p className="text-sm text-muted-foreground">加钟佣金参考</p>
+                                            <p className="font-medium">
+                                                <AddTimeSummaryText summary={getAddTimeSummary(settlement)} />
+                                            </p>
+                                        </div>
+                                        <AddTimeDetailsList items={(settlement as any).time_extensions} />
+                                        <p className="text-xs text-muted-foreground">
+                                            加钟佣金仅作核验参考，不自动改写平台应得金额。
+                                        </p>
+                                    </div>
+                                </>
+                            )}
                             <Separator />
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div>

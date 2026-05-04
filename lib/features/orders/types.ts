@@ -20,6 +20,43 @@ export type BookingMode =
   | 'flex'         // 指定时间段
 
 /**
+ * 服务类型
+ */
+export type OrderServiceType =
+  | 'outcall'      // 上门
+  | 'incall'       // 到店
+
+/**
+ * 加钟汇总
+ */
+export interface AddTimeSummary {
+  count: number
+  duration_minutes: number
+  commission_thb: number
+}
+
+/**
+ * 订单加钟明细
+ */
+export interface OrderTimeExtension {
+  id: string
+  order_id: string
+  girl_id: string
+  package_id: string
+  duration_minutes: number
+  commission_thb_snapshot: number
+  reported_at: string
+  base_service_duration_before: number
+  service_duration_after: number
+  settlement_status: 'reported' | 'settled' | 'rejected'
+  reviewed_at: string | null
+  reviewed_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
  * 多语言文本
  */
 export interface MultiLangText {
@@ -61,8 +98,13 @@ export interface Order {
   completed_at: string | null
   scheduled_start_at: string | null
   queue_position: number | null
+  service_type: OrderServiceType
+  incall_requested_at: string | null
+  incall_location_snapshot: Record<string, any> | null
   created_at: string
   updated_at: string
+  add_time_summary?: AddTimeSummary
+  time_extensions?: OrderTimeExtension[]
 
   // 关联数据
   user?: {
@@ -100,6 +142,8 @@ export interface OrderListParams {
   limit: number
   search?: string
   status?: OrderStatus
+  service_type?: OrderServiceType
+  has_add_time?: boolean
   start_date?: string
   end_date?: string
   sort_by?: 'created_at' | 'scheduled_start_at' | 'total_amount'

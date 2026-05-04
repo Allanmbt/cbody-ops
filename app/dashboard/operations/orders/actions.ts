@@ -22,12 +22,46 @@ export interface OrderStats {
 export interface MonitoringOrderFilters {
   search?: string
   status?: OrderStatus[]
+  service_type?: 'outcall' | 'incall'
+  has_add_time?: boolean
   time_range?: 'today' | 'yesterday' | '3days' | '7days' | 'custom'
   start_date?: string
   end_date?: string
   only_abnormal?: boolean
   page?: number
   limit?: number
+}
+
+async function fetchOrderTimeExtensions(supabase: any, orderIds: string[]) {
+  if (orderIds.length === 0) return new Map<string, any[]>()
+
+  const { data, error } = await supabase
+    .from('order_time_extensions')
+    .select('*')
+    .in('order_id', orderIds)
+    .neq('settlement_status', 'rejected')
+    .order('reported_at', { ascending: false })
+
+  if (error) {
+    console.error('[订单监控-加钟] 获取明细失败:', error)
+    return new Map<string, any[]>()
+  }
+
+  const map = new Map<string, any[]>()
+  for (const item of data || []) {
+    const list = map.get(item.order_id) || []
+    list.push(item)
+    map.set(item.order_id, list)
+  }
+  return map
+}
+
+function buildAddTimeSummary(items: any[] = []) {
+  return {
+    count: items.length,
+    duration_minutes: items.reduce((sum, item) => sum + Number(item.duration_minutes || 0), 0),
+    commission_thb: items.reduce((sum, item) => sum + Number(item.commission_thb_snapshot || 0), 0),
+  }
 }
 
 /**
@@ -229,6 +263,8 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
     const {
       search,
       status,
+      service_type,
+      has_add_time,
       time_range = 'today',
       start_date,
       end_date,
@@ -340,6 +376,37 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
       query = query.in('status', ['pending', 'confirmed', 'en_route', 'arrived', 'in_service'])
     }
 
+    if (service_type) {
+      query = query.eq('service_type', service_type)
+    }
+
+    if (has_add_time === true) {
+      const { data: addTimeRows, error: addTimeError } = await supabase
+        .from('order_time_extensions')
+        .select('order_id')
+        .neq('settlement_status', 'rejected')
+
+      if (addTimeError) {
+        console.error('[订单监控-加钟] 筛选失败:', addTimeError)
+        return { ok: false as const, error: "筛选加钟订单失败" }
+      }
+
+      const addTimeOrderIds = Array.from(new Set((addTimeRows || []).map((row: any) => row.order_id).filter(Boolean)))
+      if (addTimeOrderIds.length === 0) {
+        return {
+          ok: true as const,
+          data: {
+            orders: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 0
+          }
+        }
+      }
+      query = query.in('id', addTimeOrderIds)
+    }
+
     // 搜索（允许空搜索）
     let girlIdsFromSearch: string[] = []
     if (search) {
@@ -382,8 +449,25 @@ export async function getMonitoringOrders(filters: MonitoringOrderFilters = {}) 
       return { ok: false as const, error: "查询订单失败" }
     }
 
+    const orderIds = (ordersData || []).map((order: any) => order.id).filter(Boolean)
+    const extensionsMap = await fetchOrderTimeExtensions(supabase, orderIds)
+
     // 数据处理：订单列表
-    let ordersWithUsers: any[] = ordersData || []
+    let ordersWithUsers: any[] = (ordersData || []).map((order: any) => {
+      const extensions = extensionsMap.get(order.id) || []
+      return {
+        ...order,
+        service_type: order.service_type || 'outcall',
+        incall_requested_at: order.incall_requested_at || null,
+        incall_location_snapshot: order.incall_location_snapshot || null,
+        add_time_summary: buildAddTimeSummary(extensions),
+        time_extensions: extensions,
+      }
+    })
+
+    if (has_add_time === false) {
+      ordersWithUsers = ordersWithUsers.filter((order) => (order.add_time_summary?.count || 0) === 0)
+    }
 
     // 客户名称/电话搜索过滤（如果有搜索条件，允许空搜索）
     if (search && ordersData && ordersData.length > 0) {

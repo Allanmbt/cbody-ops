@@ -26,6 +26,9 @@ export interface OrderSettlement {
     service_commission_rate: number
     extra_commission_rate: number
     platform_should_get: number
+    add_time_count: number
+    add_time_duration_minutes: number
+    add_time_commission_thb: number
     customer_paid_to_platform: number
     actual_paid_amount: number | null
     settlement_amount: number
@@ -96,6 +99,9 @@ export interface OrderSettlementWithDetails extends OrderSettlement {
         service_duration: number
         total_amount: number
         completed_at: string | null
+        service_type?: 'outcall' | 'incall'
+        incall_requested_at?: string | null
+        incall_location_snapshot?: Record<string, any> | null
     }
     girls: {
         id: string
@@ -103,6 +109,23 @@ export interface OrderSettlementWithDetails extends OrderSettlement {
         name: string
         username: string
     }
+    time_extensions?: Array<{
+        id: string
+        order_id: string
+        girl_id: string
+        package_id: string
+        duration_minutes: number
+        commission_thb_snapshot: number
+        reported_at: string
+        base_service_duration_before: number
+        service_duration_after: number
+        settlement_status: 'reported' | 'settled' | 'rejected'
+        reviewed_at: string | null
+        reviewed_by: string | null
+        notes: string | null
+        created_at: string
+        updated_at: string
+    }>
 }
 
 export interface SettlementTransactionWithDetails extends SettlementTransaction {
@@ -172,6 +195,8 @@ export interface SettlementListFilters {
     search?: string
     // 平台代收筛选
     platform_collected?: 'all' | 'collected' | 'not_collected'
+    service_type?: 'all' | 'outcall' | 'incall'
+    has_add_time?: 'all' | 'yes' | 'no'
     // 排序
     sort_by?: 'girl_name' | 'created_at' | 'service_fee' | 'platform_should_get'
     sort_order?: 'asc' | 'desc'

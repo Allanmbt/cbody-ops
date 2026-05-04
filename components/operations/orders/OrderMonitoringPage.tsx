@@ -39,6 +39,8 @@ export function OrderMonitoringPage({ initialStats, initialOrders, initialTotal 
   const [filters, setFilters] = useState<MonitoringOrderFilters>({
     search: '',
     status: [],
+    service_type: undefined,
+    has_add_time: undefined,
     time_range: 'today',
     only_abnormal: false,
     page: 1,
@@ -96,6 +98,8 @@ export function OrderMonitoringPage({ initialStats, initialOrders, initialTotal 
     setFilters({
       search: '',
       status: [],
+      service_type: undefined,
+      has_add_time: undefined,
       time_range: 'today',
       only_abnormal: false,
       page: 1,
@@ -253,6 +257,19 @@ export function OrderMonitoringPage({ initialStats, initialOrders, initialTotal 
                   <SelectItem value="7days">近7天</SelectItem>
                 </SelectContent>
               </Select>
+              <Select
+                value={filters.service_type || 'all'}
+                onValueChange={(value: any) => setFilters({ ...filters, service_type: value === 'all' ? undefined : value, page: 1 })}
+              >
+                <SelectTrigger className="w-full sm:w-[140px]">
+                  <SelectValue placeholder="订单类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部类型</SelectItem>
+                  <SelectItem value="outcall">上门</SelectItem>
+                  <SelectItem value="incall">到店</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 第二行：状态筛选 */}
@@ -296,6 +313,14 @@ export function OrderMonitoringPage({ initialStats, initialOrders, initialTotal 
                 <label htmlFor="status-cancelled" className="text-sm font-medium">已取消</label>
               </div>
               <div className="flex items-center space-x-2 ml-auto">
+                <Checkbox
+                  id="has-add-time"
+                  checked={filters.has_add_time === true}
+                  onCheckedChange={(checked) => setFilters({ ...filters, has_add_time: checked ? true : undefined, page: 1 })}
+                />
+                <label htmlFor="has-add-time" className="text-sm font-medium">有加钟</label>
+              </div>
+              <div className="flex items-center space-x-2">
                 <Checkbox
                   id="only-abnormal"
                   checked={filters.only_abnormal}

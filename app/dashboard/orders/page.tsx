@@ -35,6 +35,8 @@ export default function OrdersPage() {
     limit: 20,
     search: '',
     status: undefined,
+    service_type: undefined,
+    has_add_time: undefined,
     start_date: undefined,
     end_date: undefined,
     sort_by: 'created_at',
@@ -89,6 +91,26 @@ export default function OrdersPage() {
     const newFilters = {
       ...filters,
       status: value === 'all' ? undefined : (value as OrderStatus),
+      page: 1
+    }
+    setFilters(newFilters)
+    loadOrders(newFilters)
+  }
+
+  const handleServiceTypeFilter = (value: string) => {
+    const newFilters = {
+      ...filters,
+      service_type: value === 'all' ? undefined : (value as 'outcall' | 'incall'),
+      page: 1
+    }
+    setFilters(newFilters)
+    loadOrders(newFilters)
+  }
+
+  const handleAddTimeFilter = (value: string) => {
+    const newFilters = {
+      ...filters,
+      has_add_time: value === 'all' ? undefined : value === 'yes',
       page: 1
     }
     setFilters(newFilters)
@@ -157,6 +179,8 @@ export default function OrdersPage() {
       limit: 20,
       search: '',
       status: undefined,
+      service_type: undefined,
+      has_add_time: undefined,
       start_date: undefined,
       end_date: undefined,
       sort_by: 'created_at',
@@ -245,6 +269,32 @@ export default function OrdersPage() {
                     <SelectItem value="in_service">服务中</SelectItem>
                     <SelectItem value="completed">已完成</SelectItem>
                     <SelectItem value="cancelled">已取消</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="w-full md:w-36">
+                <Select defaultValue="all" onValueChange={handleServiceTypeFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="订单类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部类型</SelectItem>
+                    <SelectItem value="outcall">上门</SelectItem>
+                    <SelectItem value="incall">到店</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="w-full md:w-36">
+                <Select defaultValue="all" onValueChange={handleAddTimeFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="加钟" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部订单</SelectItem>
+                    <SelectItem value="yes">有加钟</SelectItem>
+                    <SelectItem value="no">无加钟</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

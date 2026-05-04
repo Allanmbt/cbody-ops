@@ -21,6 +21,30 @@ import type {
 import type { PaginationParams, UpdateDepositData, ApproveTransactionData, RejectTransactionData, UpdateSettlementPaymentData, MarkSettlementAsSettledData } from "./validations"
 import { updateDepositSchema, approveTransactionSchema, rejectTransactionSchema, updateSettlementPaymentSchema, markSettlementAsSettledSchema } from "./validations"
 
+async function fetchOrderTimeExtensions(supabase: any, orderIds: string[]) {
+    if (orderIds.length === 0) return new Map<string, any[]>()
+
+    const { data, error } = await supabase
+        .from('order_time_extensions')
+        .select('*')
+        .in('order_id', orderIds)
+        .neq('settlement_status', 'rejected')
+        .order('reported_at', { ascending: false })
+
+    if (error) {
+        console.error('[财务-加钟] 获取明细失败:', error)
+        return new Map<string, any[]>()
+    }
+
+    const map = new Map<string, any[]>()
+    for (const item of data || []) {
+        const list = map.get(item.order_id) || []
+        list.push(item)
+        map.set(item.order_id, list)
+    }
+    return map
+}
+
 // ==================== 统计数据 ====================
 
 /**
@@ -419,6 +443,16 @@ export async function getGirlOrderSettlements(
             }
         }
 
+        if (filters.service_type && filters.service_type !== 'all') {
+            query = query.eq('service_type', filters.service_type)
+        }
+
+        if (filters.has_add_time && filters.has_add_time !== 'all') {
+            query = filters.has_add_time === 'yes'
+                ? query.gt('add_time_count', 0)
+                : query.eq('add_time_count', 0)
+        }
+
         // 按结算记录创建时间筛选（财务日筛选）
         // 使用 order_settlements.created_at 而非 orders.completed_at
         // 原因：取消订单的 completed_at 为 NULL，但仍需在财务日显示
@@ -478,6 +512,9 @@ export async function getGirlOrderSettlements(
             service_commission_rate: row.service_commission_rate,
             extra_commission_rate: row.extra_commission_rate,
             platform_should_get: row.platform_should_get,
+            add_time_count: Number(row.add_time_count || 0),
+            add_time_duration_minutes: Number(row.add_time_duration_minutes || 0),
+            add_time_commission_thb: Number(row.add_time_commission_thb || 0),
             customer_paid_to_platform: row.customer_paid_to_platform,
             settlement_amount: row.settlement_amount,
             actual_paid_amount: row.actual_paid_amount,
@@ -496,6 +533,9 @@ export async function getGirlOrderSettlements(
                 order_number: row.order_number,
                 status: row.order_status,
                 completed_at: row.order_completed_at,
+                service_type: row.service_type || 'outcall',
+                incall_requested_at: row.incall_requested_at || null,
+                incall_location_snapshot: row.incall_location_snapshot || null,
             } : null,
             girls: row.girl_number ? {
                 id: row.girl_id,
@@ -912,7 +952,10 @@ export async function getOrderSettlementDetail(
                     service_name,
                     service_duration,
                     total_amount,
-                    completed_at
+                    completed_at,
+                    service_type,
+                    incall_requested_at,
+                    incall_location_snapshot
                 ),
                 girls!inner (
                     id,
@@ -935,7 +978,16 @@ export async function getOrderSettlementDetail(
             return { ok: false, error: '订单结算记录不存在' }
         }
 
-        return { ok: true, data: data as OrderSettlementWithDetails }
+        const extensionsMap = await fetchOrderTimeExtensions(supabase, [(data as any).order_id])
+        const result = {
+            ...(data as any),
+            add_time_count: Number((data as any).add_time_count || 0),
+            add_time_duration_minutes: Number((data as any).add_time_duration_minutes || 0),
+            add_time_commission_thb: Number((data as any).add_time_commission_thb || 0),
+            time_extensions: extensionsMap.get((data as any).order_id) || [],
+        }
+
+        return { ok: true, data: result as OrderSettlementWithDetails }
     } catch (error) {
         console.error('[getOrderSettlementDetail] 获取结算详情失败:', error)
         return {

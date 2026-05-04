@@ -23,6 +23,14 @@ import { MapPin, Clock, User, Phone, Copy, Check, ArrowUp } from "lucide-react"
 import { toast } from "sonner"
 import { useState } from "react"
 import { UpgradeServiceDialog } from "./UpgradeServiceDialog"
+import {
+  AddTimeDetailsList,
+  AddTimeSummaryText,
+  hasAddTime,
+  isIncallOrder,
+  MapLinkButton,
+  OrderTypeBadge,
+} from "@/components/orders/OrderMetaBadges"
 
 interface OrderMonitoringDrawerProps {
   open: boolean
@@ -71,6 +79,12 @@ export function OrderMonitoringDrawer({
 
   const contactName = (order.address_snapshot as any)?.contact?.n
   const contactPhone = (order.address_snapshot as any)?.contact?.p
+  const isIncall = isIncallOrder(order.service_type)
+  const incallLocation = order.incall_location_snapshot as any
+  const addTimeSummary = order.add_time_summary
+  const baseDuration = hasAddTime(addTimeSummary)
+    ? (order.time_extensions || []).reduce((min, item) => Math.min(min, Number(item.base_service_duration_before || order.service_duration)), order.service_duration)
+    : order.service_duration
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -86,9 +100,12 @@ export function OrderMonitoringDrawer({
           {/* 订单状态 */}
           <div>
             <h3 className="text-sm font-semibold mb-3">订单状态</h3>
-            <Badge variant={getOrderStatusVariant(order.status)} className="text-base px-3 py-1">
-              {getOrderStatusText(order.status)}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={getOrderStatusVariant(order.status)} className="text-base px-3 py-1">
+                {getOrderStatusText(order.status)}
+              </Badge>
+              <OrderTypeBadge serviceType={order.service_type} />
+            </div>
           </div>
 
           <Separator />
@@ -170,6 +187,20 @@ export function OrderMonitoringDrawer({
                 <dt className="text-muted-foreground">服务时长</dt>
                 <dd className="font-medium">{order.service_duration} 分钟</dd>
               </div>
+              {hasAddTime(addTimeSummary) && (
+                <>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">原始时长</dt>
+                    <dd className="font-medium">{baseDuration} 分钟</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">加钟汇总</dt>
+                    <dd className="text-right">
+                      <AddTimeSummaryText summary={addTimeSummary} />
+                    </dd>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">预约模式</dt>
                 <dd className="font-medium">
@@ -196,6 +227,12 @@ export function OrderMonitoringDrawer({
                 <div className="flex justify-between gap-2">
                   <dt className="text-muted-foreground">预约时间</dt>
                   <dd className="font-medium">{formatDateTime(order.scheduled_start_at)}</dd>
+                </div>
+              )}
+              {isIncall && order.incall_requested_at && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">到店意向时间</dt>
+                  <dd className="font-medium">{formatDateTime(order.incall_requested_at)}</dd>
                 </div>
               )}
               {order.estimated_arrival_at && (
@@ -261,8 +298,47 @@ export function OrderMonitoringDrawer({
             </dl>
           </div>
 
+          {hasAddTime(addTimeSummary) && (
+            <>
+              <Separator />
+              <div>
+                <h3 className="text-sm font-semibold mb-3">加钟信息</h3>
+                <AddTimeDetailsList items={order.time_extensions} />
+              </div>
+            </>
+          )}
+
           {/* 地点信息 */}
-          {(order.address_snapshot as any)?.addr && (
+          {isIncall ? (
+            incallLocation && Object.keys(incallLocation).length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      到店信息
+                    </h3>
+                    <MapLinkButton location={incallLocation} />
+                  </div>
+                  <dl className="space-y-2.5 text-sm">
+                    {incallLocation.name && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-muted-foreground shrink-0">地点名称</dt>
+                        <dd className="font-medium text-right break-words">{incallLocation.name}</dd>
+                      </div>
+                    )}
+                    {(incallLocation.address || incallLocation.addr) && (
+                      <div>
+                        <dt className="text-muted-foreground mb-1.5">到店地址</dt>
+                        <dd className="font-medium break-words leading-relaxed">{incallLocation.address || incallLocation.addr}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+              </>
+            )
+          ) : (order.address_snapshot as any)?.addr && (
             <>
               <Separator />
               <div>

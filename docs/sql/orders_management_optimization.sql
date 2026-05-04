@@ -70,8 +70,14 @@ SELECT
   o.completed_at,
   o.scheduled_start_at,
   o.queue_position,
+  o.service_type,
+  o.incall_requested_at,
+  o.incall_location_snapshot,
   o.created_at,
   o.updated_at,
+  COALESCE(ate.add_time_count, 0) AS add_time_count,
+  COALESCE(ate.add_time_duration_minutes, 0) AS add_time_duration_minutes,
+  COALESCE(ate.add_time_commission_thb, 0) AS add_time_commission_thb,
   
   -- 技师信息
   json_build_object(
@@ -106,7 +112,17 @@ FROM orders o
 LEFT JOIN girls g ON o.girl_id = g.id
 LEFT JOIN services s ON o.service_id = s.id
 LEFT JOIN service_durations sd ON o.service_duration_id = sd.id
-LEFT JOIN user_profiles up ON o.user_id = up.id;
+LEFT JOIN user_profiles up ON o.user_id = up.id
+LEFT JOIN (
+  SELECT
+    order_id,
+    COUNT(*)::INTEGER AS add_time_count,
+    COALESCE(SUM(duration_minutes), 0)::INTEGER AS add_time_duration_minutes,
+    COALESCE(SUM(commission_thb_snapshot), 0)::DECIMAL(10,2) AS add_time_commission_thb
+  FROM order_time_extensions
+  WHERE settlement_status != 'rejected'
+  GROUP BY order_id
+) ate ON ate.order_id = o.id;
 
 -- 3. 创建索引加速查询
 -- 订单号索引（唯一）

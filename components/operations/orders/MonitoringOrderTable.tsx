@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { Eye, AlertTriangle } from "lucide-react"
-import type { Order, OrderStatus } from "@/lib/features/orders"
+import type { Order } from "@/lib/features/orders"
 import {
   getOrderStatusText,
   getOrderStatusVariant,
@@ -24,6 +24,7 @@ import {
   formatRelativeTime
 } from "@/lib/features/orders"
 import { OrderMonitoringDrawer } from "./OrderMonitoringDrawer"
+import { AddTimeSummaryText, isIncallOrder, OrderTypeIcon } from "@/components/orders/OrderMetaBadges"
 
 interface MonitoringOrderTableProps {
   orders: Order[]
@@ -103,6 +104,13 @@ function detectAbnormal(order: Order): { isAbnormal: boolean; reason?: string } 
  */
 function getProgressInfo(order: Order): string {
   const { isAbnormal, reason } = detectAbnormal(order)
+  const isIncall = isIncallOrder(order.service_type)
+  const formatShortTime = (dateStr: string) => new Date(dateStr).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 
   switch (order.status) {
     case 'pending':
@@ -112,9 +120,15 @@ function getProgressInfo(order: Order): string {
       return '等待确认'
 
     case 'confirmed':
+      if (isIncall && order.incall_requested_at) {
+        return `到店意向 ${formatShortTime(order.incall_requested_at)}`
+      }
       return '技师已确认'
 
     case 'en_route':
+      if (isIncall && order.incall_requested_at) {
+        return `到店意向 ${formatShortTime(order.incall_requested_at)}`
+      }
       if (order.estimated_arrival_at) {
         const eta = formatRelativeTime(order.estimated_arrival_at)
         if (isAbnormal) {
@@ -207,12 +221,15 @@ export function MonitoringOrderTable({
                   <TableRow key={order.id} className={isAbnormal ? 'bg-destructive/5' : ''}>
                     {/* 订单号 */}
                     <TableCell>
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                        {order.order_number}
-                      </code>
-                      {isAbnormal && (
-                        <AlertTriangle className="inline-block ml-1 h-3 w-3 text-destructive" />
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                          {order.order_number}
+                        </code>
+                        <OrderTypeIcon serviceType={order.service_type} />
+                        {isAbnormal && (
+                          <AlertTriangle className="h-3 w-3 text-destructive" />
+                        )}
+                      </div>
                     </TableCell>
 
                     {/* 状态 */}
@@ -256,6 +273,7 @@ export function MonitoringOrderTable({
                         <span className="text-xs text-muted-foreground">
                           {order.service_duration} 分钟
                         </span>
+                        <AddTimeSummaryText summary={order.add_time_summary} compact />
                       </div>
                     </TableCell>
 

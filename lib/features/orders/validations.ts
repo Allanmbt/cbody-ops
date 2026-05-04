@@ -16,6 +16,8 @@ export const orderListParamsSchema = z.object({
     'completed',
     'cancelled'
   ]).optional(),
+  service_type: z.enum(['outcall', 'incall']).optional(),
+  has_add_time: z.boolean().optional(),
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   sort_by: z.enum(['created_at', 'scheduled_start_at', 'total_amount']).default('created_at'),
