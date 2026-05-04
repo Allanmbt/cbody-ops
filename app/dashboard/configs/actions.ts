@@ -3,14 +3,61 @@
 import { getSupabaseAdminClient } from "@/lib/supabase"
 import { requireAdmin } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
-import { fareParamsSchema, bankAccountsConfigSchema } from "@/lib/features/configs"
-import type { AppConfig, FareParamsConfig, BankAccountsConfig } from "@/lib/features/configs"
+import { logAuditAction } from "@/lib/audit"
+import { fareParamsSchema, bankAccountsConfigSchema, quickRepliesConfigSchema } from "@/lib/features/configs"
+import type { AppConfig, FareParamsConfig, BankAccountsConfig, QuickRepliesConfig } from "@/lib/features/configs"
 
 // 通用返回类型
 type ActionResult<T = any> = {
   ok: boolean
   data?: T
   error?: string
+}
+
+const QUICK_REPLIES_DEFAULT_CONFIG: QuickRepliesConfig = {
+  categories: [],
+  items: [],
+}
+
+function normalizeQuickRepliesConfig(config: QuickRepliesConfig): QuickRepliesConfig {
+  const categories = [...config.categories]
+    .map((category) => ({
+      ...category,
+      code: category.code.trim(),
+      label: {
+        en: category.label.en,
+        zh: category.label.zh,
+        th: category.label.th,
+      },
+    }))
+    .sort((a, b) => a.sort_order - b.sort_order || a.code.localeCompare(b.code))
+
+  const categoryOrderMap = new Map(categories.map((category, index) => [category.code, index]))
+
+  const items = [...config.items]
+    .map((item) => ({
+      ...item,
+      id: item.id.trim(),
+      category_code: item.category_code.trim(),
+      text: {
+        en: item.text.en,
+        zh: item.text.zh,
+        th: item.text.th,
+      },
+    }))
+    .sort((a, b) => {
+      const categoryCompare =
+        (categoryOrderMap.get(a.category_code) ?? Number.MAX_SAFE_INTEGER) -
+        (categoryOrderMap.get(b.category_code) ?? Number.MAX_SAFE_INTEGER)
+      if (categoryCompare !== 0) return categoryCompare
+
+      if (a.rank_weight !== b.rank_weight) return b.rank_weight - a.rank_weight
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+
+      return a.id.localeCompare(b.id)
+    })
+
+  return { categories, items }
 }
 
 /**
@@ -192,6 +239,116 @@ export async function updateBankAccountsConfig(
     return { ok: true }
   } catch (error) {
     console.error("[Configs] 更新银行卡配置异常:", error)
+    return { ok: false, error: "系统错误" }
+  }
+}
+
+/**
+ * 获取快捷回复配置
+ */
+export async function getQuickRepliesConfig(): Promise<ActionResult<AppConfig>> {
+  try {
+    await requireAdmin(['superadmin', 'admin'])
+    const supabase = getSupabaseAdminClient()
+
+    const { data, error } = await supabase
+      .from("app_configs")
+      .select("*")
+      .eq("namespace", "chat")
+      .eq("config_key", "quick_replies")
+      .eq("scope", "global")
+      .is("scope_id", null)
+      .is("locale", null)
+      .eq("dtype", "json")
+      .eq("is_active", true)
+      .single()
+
+    if (data) {
+      return { ok: true, data }
+    }
+
+    if (error && error.code !== "PGRST116") {
+      console.error("[Configs] 获取快捷回复配置失败:", error)
+      return { ok: false, error: "获取快捷回复配置失败" }
+    }
+
+    const { data: created, error: createError } = await (supabase as any)
+      .from("app_configs")
+      .insert({
+        namespace: "chat",
+        config_key: "quick_replies",
+        scope: "global",
+        scope_id: null,
+        locale: null,
+        dtype: "json",
+        value_json: QUICK_REPLIES_DEFAULT_CONFIG,
+        is_active: true,
+      })
+      .select("*")
+      .single()
+
+    if (createError || !created) {
+      console.error("[Configs] 创建快捷回复配置失败:", createError)
+      return { ok: false, error: "创建快捷回复配置失败" }
+    }
+
+    return { ok: true, data: created }
+  } catch (error) {
+    console.error("[Configs] 获取快捷回复配置异常:", error)
+    return { ok: false, error: "系统错误" }
+  }
+}
+
+/**
+ * 更新快捷回复配置
+ */
+export async function updateQuickRepliesConfig(
+  configId: string,
+  quickRepliesConfig: QuickRepliesConfig
+): Promise<ActionResult> {
+  try {
+    const admin = await requireAdmin(['superadmin', 'admin'])
+    const supabase = getSupabaseAdminClient()
+
+    const validation = quickRepliesConfigSchema.safeParse(quickRepliesConfig)
+    if (!validation.success) {
+      const errors = validation.error.issues.map((issue) => issue.message).join(", ")
+      return { ok: false, error: `数据验证失败: ${errors}` }
+    }
+
+    const normalizedConfig = normalizeQuickRepliesConfig(validation.data)
+
+    const { error: updateError } = await (supabase as any)
+      .from("app_configs")
+      .update({
+        value_json: normalizedConfig,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", configId)
+
+    if (updateError) {
+      console.error("[Configs] 更新快捷回复配置失败:", updateError)
+      return { ok: false, error: "更新快捷回复配置失败" }
+    }
+
+    await logAuditAction({
+      actor_id: admin.id,
+      action: "update_quick_replies_config",
+      target: `app_configs:${configId}`,
+      payload: {
+        namespace: "chat",
+        config_key: "quick_replies",
+        category_count: normalizedConfig.categories.length,
+        item_count: normalizedConfig.items.length,
+      },
+    })
+
+    revalidatePath("/dashboard/configs")
+    revalidatePath("/dashboard/configs/quick-replies")
+
+    return { ok: true }
+  } catch (error) {
+    console.error("[Configs] 更新快捷回复配置异常:", error)
     return { ok: false, error: "系统错误" }
   }
 }

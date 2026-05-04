@@ -34,6 +34,71 @@ export const updateConfigSchema = z.object({
   description: z.string().optional(),
 })
 
+const trimmedRequiredString = z.string().trim().min(1, "不能为空")
+
+export const localizedTextSchema = z.object({
+  en: z.string(),
+  zh: z.string(),
+  th: z.string(),
+})
+
+export const quickReplyCategorySchema = z.object({
+  code: trimmedRequiredString,
+  label: localizedTextSchema,
+  sort_order: z.number().int("分类排序必须为整数"),
+  is_active: z.boolean(),
+})
+
+export const quickReplyItemSchema = z.object({
+  id: trimmedRequiredString,
+  category_code: trimmedRequiredString,
+  text: localizedTextSchema,
+  sort_order: z.number().int("回复排序必须为整数"),
+  rank_weight: z.number().int("置顶权重必须为整数"),
+  is_active: z.boolean(),
+})
+
+export const quickRepliesConfigSchema = z.object({
+  categories: z.array(quickReplyCategorySchema),
+  items: z.array(quickReplyItemSchema),
+}).superRefine((value, ctx) => {
+  const categoryCodes = new Set<string>()
+  const itemIds = new Set<string>()
+
+  value.categories.forEach((category, index) => {
+    if (categoryCodes.has(category.code)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `分类标识重复: ${category.code}`,
+        path: ["categories", index, "code"],
+      })
+      return
+    }
+
+    categoryCodes.add(category.code)
+  })
+
+  value.items.forEach((item, index) => {
+    if (itemIds.has(item.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `快捷回复标识重复: ${item.id}`,
+        path: ["items", index, "id"],
+      })
+    } else {
+      itemIds.add(item.id)
+    }
+
+    if (!categoryCodes.has(item.category_code)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `所属分类不存在: ${item.category_code}`,
+        path: ["items", index, "category_code"],
+      })
+    }
+  })
+})
+
 // 银行卡账户验证模式
 export const bankAccountSchema = z.object({
   id: z.string().min(1, "银行账户ID不能为空"),

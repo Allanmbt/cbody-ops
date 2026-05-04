@@ -80,6 +80,37 @@ export interface UpdateConfigParams {
   description?: string
 }
 
+// 通用三语文本
+export interface LocalizedText {
+  en: string
+  zh: string
+  th: string
+}
+
+// 快捷回复分类
+export interface QuickReplyCategory {
+  code: string
+  label: LocalizedText
+  sort_order: number
+  is_active: boolean
+}
+
+// 快捷回复项
+export interface QuickReplyItem {
+  id: string
+  category_code: string
+  text: LocalizedText
+  sort_order: number
+  rank_weight: number
+  is_active: boolean
+}
+
+// 快捷回复配置（存储在 app_configs.value_json 中）
+export interface QuickRepliesConfig {
+  categories: QuickReplyCategory[]
+  items: QuickReplyItem[]
+}
+
 // 银行卡账户配置
 export interface BankAccount {
   id: string

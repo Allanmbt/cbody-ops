@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { ChevronRight, DollarSign, Map, Bell, Globe, Trash2 } from "lucide-react"
+import { ChevronRight, DollarSign, Bell, Globe, MessageSquare, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { getConfigsList } from "./actions"
 import type { AppConfig } from "@/lib/features/configs"
@@ -55,6 +55,16 @@ const configCards: ConfigCard[] = [
     badge: "超级管理员",
     namespace: "system",
     config_key: "chat_cleanup",
+  },
+  {
+    key: "quick-replies",
+    title: "快捷回复配置",
+    description: "维护聊天快捷回复分类、三语内容、排序权重和启停状态",
+    icon: <MessageSquare className="size-8" />,
+    href: "/dashboard/configs/quick-replies",
+    badge: "已启用",
+    namespace: "chat",
+    config_key: "quick_replies",
   },
   {
     key: "notification",
