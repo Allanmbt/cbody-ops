@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,15 +20,17 @@ export function RejectedMediaList() {
     const { admin, loading: adminLoading } = useCurrentAdmin()
     const [mediaList, setMediaList] = useState<MediaListItem[]>([])
     const [loading, setLoading] = useState(true)
+    const [searchInput, setSearchInput] = useState('')
     const [search, setSearch] = useState('')
     const [kindFilter, setKindFilter] = useState<string>('')
+    const [appliedKindFilter, setAppliedKindFilter] = useState<string>('')
     const [selectedMedia, setSelectedMedia] = useState<MediaListItem | null>(null)
     const [page, setPage] = useState(1)
     const [total, setTotal] = useState(0)
 
     const limit = 20
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         if (!admin?.id || adminLoading) {
             return
         }
@@ -38,7 +40,7 @@ export function RejectedMediaList() {
             const result = await getMediaList({
                 status: 'rejected',
                 search: search || undefined,
-                kind: kindFilter || undefined,
+                kind: appliedKindFilter || undefined,
                 page,
                 limit,
                 sort_by: 'reviewed_at',
@@ -52,14 +54,26 @@ export function RejectedMediaList() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [admin?.id, adminLoading, page, search, appliedKindFilter])
 
     useEffect(() => {
-        fetchData()
-    }, [admin?.id, adminLoading, page, search, kindFilter])
+        void fetchData()
+    }, [fetchData])
+
+    const handleSearch = () => {
+        setPage(1)
+        setSearch(searchInput.trim())
+        setAppliedKindFilter(kindFilter)
+    }
+
+    const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') {
+            handleSearch()
+        }
+    }
 
     const handleRestore = async (id: string) => {
-        if (!confirm('确定要恢复这个媒体为待审核状态吗？')) {
+        if (!confirm('确定要将这个媒体恢复为待审核状态吗？')) {
             return
         }
 
@@ -70,19 +84,20 @@ export function RejectedMediaList() {
 
         try {
             const result = await restoreToPending(id)
-            if (result.success) {
-                toast.success('已恢复为待审核状态')
-                fetchData()
-            } else {
+            if (!result.success) {
                 toast.error(result.error || '恢复失败')
+                return
             }
-        } catch (error) {
+
+            toast.success('已恢复为待审核状态')
+            fetchData()
+        } catch {
             toast.error('恢复失败')
         }
     }
 
     const handleDelete = async (id: string) => {
-        if (!confirm('确定要彻底删除这个媒体吗？此操作不可恢复！')) {
+        if (!confirm('确定要彻底删除这个媒体吗？此操作不可恢复。')) {
             return
         }
 
@@ -93,13 +108,14 @@ export function RejectedMediaList() {
 
         try {
             const result = await deleteMedia({ id })
-            if (result.success) {
-                toast.success('删除成功')
-                fetchData()
-            } else {
+            if (!result.success) {
                 toast.error(result.error || '删除失败')
+                return
             }
-        } catch (error) {
+
+            toast.success('删除成功')
+            fetchData()
+        } catch {
             toast.error('删除失败')
         }
     }
@@ -123,17 +139,25 @@ export function RejectedMediaList() {
                 <CardTitle>驳回箱</CardTitle>
             </CardHeader>
             <CardContent>
-                <div className="flex gap-4 mb-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="搜索技师名称 / 工号 / 用户名..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="pl-8"
-                        />
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <div className="flex max-w-md min-w-[220px] flex-1 gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                placeholder="搜索技师名称 / 工号 / 用户名..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={handleSearchKeyDown}
+                                className="pl-10"
+                            />
+                        </div>
+                        <Button onClick={handleSearch} size="default" className="cursor-pointer">
+                            <Search className="mr-2 h-4 w-4" />
+                            搜索
+                        </Button>
                     </div>
-                    <Select value={kindFilter || "all"} onValueChange={(value) => setKindFilter(value === "all" ? "" : value)}>
+
+                    <Select value={kindFilter || 'all'} onValueChange={(value) => setKindFilter(value === 'all' ? '' : value)}>
                         <SelectTrigger className="w-[150px]">
                             <SelectValue placeholder="媒体类型" />
                         </SelectTrigger>
@@ -170,7 +194,7 @@ export function RejectedMediaList() {
                                 </TableRow>
                             ) : mediaList.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                                         暂无已驳回媒体
                                     </TableCell>
                                 </TableRow>
@@ -178,14 +202,11 @@ export function RejectedMediaList() {
                                 mediaList.map((media) => (
                                     <TableRow key={media.id}>
                                         <TableCell>
-                                            <MediaThumbnail
-                                                media={media}
-                                                onClick={() => setSelectedMedia(media)}
-                                            />
+                                            <MediaThumbnail media={media} onClick={() => setSelectedMedia(media)} />
                                         </TableCell>
                                         <TableCell>
                                             <div>
-                                                <div className="font-medium">{media.girl_name}</div>
+                                                <div className="font-medium">{media.girl_name || '--'}</div>
                                                 <div className="text-sm text-muted-foreground">
                                                     {media.girl_number ? `#${media.girl_number}` : ''}
                                                     {media.girl_number && media.girl_username ? ' • ' : ''}
@@ -196,32 +217,20 @@ export function RejectedMediaList() {
                                         <TableCell>{getKindBadge(media.kind)}</TableCell>
                                         <TableCell>
                                             <div className="max-w-xs">
-                                                <p className="text-sm line-clamp-2">{media.reject_reason || '--'}</p>
+                                                <p className="line-clamp-2 text-sm">{media.reject_reason || '--'}</p>
                                             </div>
                                         </TableCell>
                                         <TableCell>{media.reviewer_name || '--'}</TableCell>
                                         <TableCell>{media.reviewed_at ? new Date(media.reviewed_at).toLocaleString() : '--'}</TableCell>
                                         <TableCell className="text-right">
-                                            <div className="flex gap-2 justify-end">
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => setSelectedMedia(media)}
-                                                >
+                                            <div className="flex justify-end gap-2">
+                                                <Button size="sm" variant="ghost" onClick={() => setSelectedMedia(media)} className="cursor-pointer">
                                                     <Eye className="h-4 w-4" />
                                                 </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => handleRestore(media.id)}
-                                                >
+                                                <Button size="sm" variant="ghost" onClick={() => handleRestore(media.id)} className="cursor-pointer">
                                                     <RotateCcw className="h-4 w-4" />
                                                 </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => handleDelete(media.id)}
-                                                >
+                                                <Button size="sm" variant="ghost" onClick={() => handleDelete(media.id)} className="cursor-pointer">
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
                                             </div>
@@ -234,7 +243,7 @@ export function RejectedMediaList() {
                 </div>
 
                 {total > 0 && (
-                    <div className="flex items-center justify-between mt-4">
+                    <div className="mt-4 flex items-center justify-between">
                         <div className="text-sm text-muted-foreground">
                             显示 {(page - 1) * limit + 1} - {Math.min(page * limit, total)} 条，共 {total} 条
                         </div>
@@ -247,9 +256,7 @@ export function RejectedMediaList() {
                             >
                                 上一页
                             </Button>
-                            <div className="text-sm text-muted-foreground">
-                                第 {page} 页
-                            </div>
+                            <div className="text-sm text-muted-foreground">第 {page} 页</div>
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -263,7 +270,6 @@ export function RejectedMediaList() {
                 )}
             </CardContent>
 
-            {/* 媒体预览 */}
             <MediaPreview
                 media={selectedMedia}
                 open={!!selectedMedia}

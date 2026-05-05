@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,9 +8,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Search, CheckCircle2, XCircle, Eye, Trash2 } from 'lucide-react'
+import { Search, CheckCircle2, XCircle, Eye } from 'lucide-react'
 import { toast } from 'sonner'
-import { getMediaList, approveMedia, rejectMedia, batchApproveMedia, batchRejectMedia } from '@/app/dashboard/media/actions'
+import { getMediaList, rejectMedia, batchApproveMedia, batchRejectMedia } from '@/app/dashboard/media/actions'
 import { MediaPreview } from '@/components/media/MediaPreview'
 import { MediaThumbnail } from '@/components/media/MediaThumbnail'
 import { RejectDialog } from '@/components/media/RejectDialog'
@@ -25,8 +25,10 @@ export function PendingMediaList() {
     const [mediaList, setMediaList] = useState<MediaListItem[]>([])
     const [loading, setLoading] = useState(true)
     const [selectedIds, setSelectedIds] = useState<string[]>([])
+    const [searchInput, setSearchInput] = useState('')
     const [search, setSearch] = useState('')
     const [kindFilter, setKindFilter] = useState<string>('')
+    const [appliedKindFilter, setAppliedKindFilter] = useState<string>('')
     const [selectedMedia, setSelectedMedia] = useState<MediaListItem | null>(null)
     const [rejectingId, setRejectingId] = useState<string | null>(null)
     const [showBatchApprove, setShowBatchApprove] = useState(false)
@@ -36,7 +38,7 @@ export function PendingMediaList() {
 
     const limit = 20
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         if (!admin?.id || adminLoading) {
             return
         }
@@ -46,57 +48,53 @@ export function PendingMediaList() {
             const result = await getMediaList({
                 status: 'pending',
                 search: search || undefined,
-                kind: kindFilter || undefined,
+                kind: appliedKindFilter || undefined,
                 page,
                 limit
             })
             setMediaList(result.data)
             setTotal(result.total)
+            setSelectedIds([])
         } catch (error) {
             console.error('Failed to fetch media list:', error)
             toast.error('获取媒体列表失败')
         } finally {
             setLoading(false)
         }
-    }
+    }, [admin?.id, adminLoading, page, search, appliedKindFilter])
 
     useEffect(() => {
-        fetchData()
-    }, [admin?.id, adminLoading, page, search, kindFilter])
+        void fetchData()
+    }, [fetchData])
+
+    const handleSearch = () => {
+        setPage(1)
+        setSearch(searchInput.trim())
+        setAppliedKindFilter(kindFilter)
+    }
+
+    const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') {
+            handleSearch()
+        }
+    }
 
     const handleSelectAll = () => {
         if (selectedIds.length === mediaList.length) {
             setSelectedIds([])
-        } else {
-            setSelectedIds(mediaList.map(m => m.id))
+            return
         }
+
+        setSelectedIds(mediaList.map((item) => item.id))
     }
 
     const handleSelect = (id: string) => {
         if (selectedIds.includes(id)) {
-            setSelectedIds(selectedIds.filter(i => i !== id))
-        } else {
-            setSelectedIds([...selectedIds, id])
-        }
-    }
-
-    const handleApprove = async (id: string, minUserLevel: number = 0) => {
-        if (!admin?.id) {
-            toast.error('未找到管理员信息')
+            setSelectedIds(selectedIds.filter((item) => item !== id))
             return
         }
 
-        try {
-            const result = await approveMedia({ id, min_user_level: minUserLevel })
-            if (result.success) {
-                toast.success('审核通过')
-                fetchData()
-            } else {
-                toast.error(result.error || '审核失败')
-            }
-        } catch (error) {
-            toast.error('审核失败')
-        }
+        setSelectedIds([...selectedIds, id])
     }
 
     const handleBatchApprove = async (minUserLevel: number) => {
@@ -107,15 +105,16 @@ export function PendingMediaList() {
 
         try {
             const result = await batchApproveMedia({ ids: selectedIds, min_user_level: minUserLevel })
-            if (result.success) {
-                toast.success(`批量审核通过 ${selectedIds.length} 个媒体`)
-                setSelectedIds([])
-                setShowBatchApprove(false)
-                fetchData()
-            } else {
+            if (!result.success) {
                 toast.error(result.error || '批量审核失败')
+                return
             }
-        } catch (error) {
+
+            toast.success(`已批量通过 ${selectedIds.length} 个媒体`)
+            setSelectedIds([])
+            setShowBatchApprove(false)
+            fetchData()
+        } catch {
             toast.error('批量审核失败')
         }
     }
@@ -128,15 +127,16 @@ export function PendingMediaList() {
 
         try {
             const result = await batchRejectMedia({ ids: selectedIds, reason })
-            if (result.success) {
-                toast.success(`批量驳回 ${selectedIds.length} 个媒体`)
-                setSelectedIds([])
-                setShowBatchReject(false)
-                fetchData()
-            } else {
+            if (!result.success) {
                 toast.error(result.error || '批量驳回失败')
+                return
             }
-        } catch (error) {
+
+            toast.success(`已批量驳回 ${selectedIds.length} 个媒体`)
+            setSelectedIds([])
+            setShowBatchReject(false)
+            fetchData()
+        } catch {
             toast.error('批量驳回失败')
         }
     }
@@ -149,14 +149,15 @@ export function PendingMediaList() {
 
         try {
             const result = await rejectMedia({ id, reason })
-            if (result.success) {
-                toast.success('已驳回')
-                setRejectingId(null)
-                fetchData()
-            } else {
+            if (!result.success) {
                 toast.error(result.error || '驳回失败')
+                return
             }
-        } catch (error) {
+
+            toast.success('已驳回媒体')
+            setRejectingId(null)
+            fetchData()
+        } catch {
             toast.error('驳回失败')
         }
     }
@@ -175,19 +176,19 @@ export function PendingMediaList() {
     }
 
     const formatDuration = (seconds?: number) => {
-        if (!seconds || seconds <= 0) return '--'
+        if (!seconds || seconds <= 0) {
+            return '--'
+        }
 
-        // Cloudflare Stream duration 为秒数（可能是小数），这里取整更适合展示
         const totalSeconds = Math.round(seconds)
         const minutes = Math.floor(totalSeconds / 60)
         const remainSeconds = totalSeconds % 60
 
         if (minutes === 0) {
-            return `${totalSeconds}秒`
+            return `${totalSeconds} 秒`
         }
 
-        const mmss = `${minutes}:${remainSeconds.toString().padStart(2, '0')}`
-        return `${minutes}分${remainSeconds}秒 (${mmss})`
+        return `${minutes}:${remainSeconds.toString().padStart(2, '0')}`
     }
 
     return (
@@ -198,11 +199,11 @@ export function PendingMediaList() {
                     {selectedIds.length > 0 && (
                         <div className="flex gap-2">
                             <Button size="sm" onClick={() => setShowBatchApprove(true)} className="cursor-pointer">
-                                <CheckCircle2 className="h-4 w-4 mr-1" />
+                                <CheckCircle2 className="mr-1 h-4 w-4" />
                                 批量通过 ({selectedIds.length})
                             </Button>
                             <Button size="sm" variant="destructive" onClick={() => setShowBatchReject(true)} className="cursor-pointer">
-                                <XCircle className="h-4 w-4 mr-1" />
+                                <XCircle className="mr-1 h-4 w-4" />
                                 批量驳回 ({selectedIds.length})
                             </Button>
                         </div>
@@ -210,18 +211,25 @@ export function PendingMediaList() {
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                {/* 过滤器 */}
-                <div className="flex gap-4 mb-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="搜索技师名称 / 工号 / 用户名..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="pl-8"
-                        />
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <div className="flex max-w-md min-w-[220px] flex-1 gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                placeholder="搜索技师名称 / 工号 / 用户名..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={handleSearchKeyDown}
+                                className="pl-10"
+                            />
+                        </div>
+                        <Button onClick={handleSearch} size="default" className="cursor-pointer">
+                            <Search className="mr-2 h-4 w-4" />
+                            搜索
+                        </Button>
                     </div>
-                    <Select value={kindFilter || "all"} onValueChange={(value) => setKindFilter(value === "all" ? "" : value)}>
+
+                    <Select value={kindFilter || 'all'} onValueChange={(value) => setKindFilter(value === 'all' ? '' : value)}>
                         <SelectTrigger className="w-[150px]">
                             <SelectValue placeholder="媒体类型" />
                         </SelectTrigger>
@@ -234,7 +242,6 @@ export function PendingMediaList() {
                     </Select>
                 </div>
 
-                {/* 表格 */}
                 <div className="rounded-md border">
                     <Table>
                         <TableHeader>
@@ -264,7 +271,7 @@ export function PendingMediaList() {
                                 </TableRow>
                             ) : mediaList.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                                         暂无待审核媒体
                                     </TableCell>
                                 </TableRow>
@@ -278,14 +285,11 @@ export function PendingMediaList() {
                                             />
                                         </TableCell>
                                         <TableCell>
-                                            <MediaThumbnail
-                                                media={media}
-                                                onClick={() => setSelectedMedia(media)}
-                                            />
+                                            <MediaThumbnail media={media} onClick={() => setSelectedMedia(media)} />
                                         </TableCell>
                                         <TableCell>
                                             <div>
-                                                <div className="font-medium">{media.girl_name}</div>
+                                                <div className="font-medium">{media.girl_name || '--'}</div>
                                                 <div className="text-sm text-muted-foreground">
                                                     {media.girl_number ? `#${media.girl_number}` : ''}
                                                     {media.girl_number && media.girl_username ? ' • ' : ''}
@@ -314,9 +318,8 @@ export function PendingMediaList() {
                     </Table>
                 </div>
 
-                {/* 分页：遵循 UI-GUIDE 管理列表规范 */}
                 {total > 0 && (
-                    <div className="flex items-center justify-between mt-4">
+                    <div className="mt-4 flex items-center justify-between">
                         <div className="text-sm text-muted-foreground">
                             显示 {(page - 1) * limit + 1} - {Math.min(page * limit, total)} 条，共 {total} 条
                         </div>
@@ -329,9 +332,7 @@ export function PendingMediaList() {
                             >
                                 上一页
                             </Button>
-                            <div className="text-sm text-muted-foreground">
-                                第 {page} 页
-                            </div>
+                            <div className="text-sm text-muted-foreground">第 {page} 页</div>
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -345,14 +346,12 @@ export function PendingMediaList() {
                 )}
             </CardContent>
 
-            {/* 媒体预览 */}
             <MediaPreview
                 media={selectedMedia}
                 open={!!selectedMedia}
                 onOpenChange={(open) => !open && setSelectedMedia(null)}
             />
 
-            {/* 驳回对话框 */}
             {rejectingId && (
                 <RejectDialog
                     open={!!rejectingId}
@@ -361,7 +360,6 @@ export function PendingMediaList() {
                 />
             )}
 
-            {/* 批量通过对话框 */}
             <BatchApproveDialog
                 open={showBatchApprove}
                 onClose={() => setShowBatchApprove(false)}
@@ -369,7 +367,6 @@ export function PendingMediaList() {
                 count={selectedIds.length}
             />
 
-            {/* 批量驳回对话框 */}
             <BatchRejectDialog
                 open={showBatchReject}
                 onClose={() => setShowBatchReject(false)}

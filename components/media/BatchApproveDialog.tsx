@@ -21,54 +21,55 @@ interface BatchApproveDialogProps {
     count: number
 }
 
+const LEVEL_OPTIONS = [
+    { value: '0', label: '0 - 公开' },
+    { value: '1', label: '1 - 注册会员' },
+    { value: '2', label: '2 - 已消费会员' },
+    { value: '3', label: '3 - VIP3' },
+    { value: '4', label: '4 - VIP4' },
+    { value: '5', label: '5 - VIP5' },
+    { value: '6', label: '6 - VIP6' },
+    { value: '7', label: '7 - VIP7' },
+    { value: '8', label: '8 - VIP8' },
+    { value: '9', label: '9 - VIP9' },
+]
+
 export function BatchApproveDialog({ open, onClose, onConfirm, count }: BatchApproveDialogProps) {
-    const [minUserLevel, setMinUserLevel] = useState(0)
+    const [minUserLevel, setMinUserLevel] = useState('0')
     const [isLoading, setIsLoading] = useState(false)
 
     const handleConfirm = async () => {
         setIsLoading(true)
         try {
-            await onConfirm(minUserLevel)
+            await onConfirm(Number(minUserLevel))
         } finally {
             setIsLoading(false)
         }
     }
 
     return (
-        <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+        <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>批量审核通过</DialogTitle>
-                    <DialogDescription>
-                        将批量通过 {count} 个媒体
-                    </DialogDescription>
+                    <DialogDescription>将批量通过 {count} 个媒体。</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                     <div className="space-y-2">
                         <Label htmlFor="level">会员可见等级</Label>
-                        <Select
-                            value={minUserLevel.toString()}
-                            onValueChange={(value) => setMinUserLevel(parseInt(value))}
-                        >
+                        <Select value={minUserLevel} onValueChange={setMinUserLevel}>
                             <SelectTrigger id="level">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="0">0 - 公开</SelectItem>
-                                <SelectItem value="1">1 - 注册会员</SelectItem>
-                                <SelectItem value="2">2 - 已消费会员</SelectItem>
-                                <SelectItem value="3">3 - VIP3</SelectItem>
-                                <SelectItem value="4">4 - VIP4</SelectItem>
-                                <SelectItem value="5">5 - VIP5</SelectItem>
-                                <SelectItem value="6">6 - VIP6</SelectItem>
-                                <SelectItem value="7">7 - VIP7</SelectItem>
-                                <SelectItem value="8">8 - VIP8</SelectItem>
-                                <SelectItem value="9">9 - VIP9</SelectItem>
+                                {LEVEL_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
-                        <p className="text-xs text-muted-foreground">
-                            设置可查看该媒体的最低会员等级
-                        </p>
+                        <p className="text-xs text-muted-foreground">设置查看该媒体所需的最低会员等级。</p>
                     </div>
                 </div>
                 <DialogFooter>
@@ -76,7 +77,7 @@ export function BatchApproveDialog({ open, onClose, onConfirm, count }: BatchApp
                         取消
                     </Button>
                     <Button onClick={handleConfirm} disabled={isLoading} className="cursor-pointer">
-                        {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {isLoading ? '处理中...' : '确认通过'}
                     </Button>
                 </DialogFooter>

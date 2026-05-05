@@ -10,8 +10,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Loader2 } from 'lucide-react'
 
 interface BatchRejectDialogProps {
@@ -26,12 +26,14 @@ export function BatchRejectDialog({ open, onClose, onConfirm, count }: BatchReje
     const [isLoading, setIsLoading] = useState(false)
 
     const handleConfirm = async () => {
-        if (!reason.trim()) {
+        const trimmedReason = reason.trim()
+        if (!trimmedReason) {
             return
         }
+
         setIsLoading(true)
         try {
-            await onConfirm(reason)
+            await onConfirm(trimmedReason)
             setReason('')
         } finally {
             setIsLoading(false)
@@ -39,13 +41,11 @@ export function BatchRejectDialog({ open, onClose, onConfirm, count }: BatchReje
     }
 
     return (
-        <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+        <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>批量驳回</DialogTitle>
-                    <DialogDescription>
-                        将批量驳回 {count} 个媒体
-                    </DialogDescription>
+                    <DialogDescription>将批量驳回 {count} 个媒体。</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                     <div className="space-y-2">
@@ -58,9 +58,7 @@ export function BatchRejectDialog({ open, onClose, onConfirm, count }: BatchReje
                             rows={4}
                             maxLength={500}
                         />
-                        <p className="text-xs text-muted-foreground">
-                            {reason.length}/500 字符
-                        </p>
+                        <p className="text-xs text-muted-foreground">{reason.length}/500 字</p>
                     </div>
                 </div>
                 <DialogFooter>
@@ -73,7 +71,7 @@ export function BatchRejectDialog({ open, onClose, onConfirm, count }: BatchReje
                         disabled={!reason.trim() || isLoading}
                         className="cursor-pointer"
                     >
-                        {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {isLoading ? '处理中...' : '确认驳回'}
                     </Button>
                 </DialogFooter>

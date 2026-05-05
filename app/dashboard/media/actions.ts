@@ -3,11 +3,11 @@
 import { getSupabaseAdminClient } from '@/lib/supabase'
 import { requireAdmin } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
-import type { AdminProfile } from '@/lib/types/admin'
 import {
     approveMediaSchema,
     rejectMediaSchema,
     batchApproveMediaSchema,
+    batchUpdateMediaLevelSchema,
     batchRejectMediaSchema,
     deleteMediaSchema,
     reorderMediaSchema,
@@ -914,6 +914,64 @@ export async function updateMediaLevel(data: { id: string; min_user_level: numbe
 /**
  * 恢复为待审核状态（从驳回箱恢复）
  */
+export async function batchUpdateMediaLevel(data: unknown): Promise<{
+    success: boolean
+    updatedCount?: number
+    skippedCount?: number
+    error?: string
+}> {
+    try {
+        const admin = await requireAdmin(['superadmin', 'admin'])
+        console.log('[Media Actions] Batch updating media level, admin:', admin.id)
+
+        const supabase = getSupabaseAdminClient()
+        const validated = batchUpdateMediaLevelSchema.parse(data)
+        const { ids, min_user_level } = validated
+
+        const { data: existingMedia, error: fetchError } = await (supabase as any)
+            .from('girls_media')
+            .select('id, status')
+            .in('id', ids)
+
+        if (fetchError) {
+            console.error('Error fetching media for batch level update:', fetchError)
+            return { success: false, error: `获取媒体失败: ${fetchError.message}` }
+        }
+
+        const approvedIds = (existingMedia || [])
+            .filter((item: any) => item.status === 'approved')
+            .map((item: any) => item.id)
+
+        if (approvedIds.length === 0) {
+            return { success: false, error: '选中的媒体均不是已发布状态，无法批量修改可见等级' }
+        }
+
+        const { error: updateError } = await (supabase as any)
+            .from('girls_media')
+            .update({
+                min_user_level,
+                updated_at: new Date().toISOString()
+            })
+            .in('id', approvedIds)
+            .eq('status', 'approved')
+
+        if (updateError) {
+            console.error('Error batch updating media level:', updateError)
+            return { success: false, error: `批量修改失败: ${updateError.message}` }
+        }
+
+        revalidatePath('/dashboard/media')
+        return {
+            success: true,
+            updatedCount: approvedIds.length,
+            skippedCount: ids.length - approvedIds.length
+        }
+    } catch (error) {
+        console.error('Error in batchUpdateMediaLevel:', error)
+        return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+}
+
 export async function restoreToPending(id: string): Promise<{ success: boolean; error?: string }> {
     try {
         // 验证管理员权限（只有管理员和超级管理员可以恢复媒体）

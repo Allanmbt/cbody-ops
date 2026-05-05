@@ -3,7 +3,6 @@
 export type MediaKind = 'image' | 'video' | 'live_photo'
 export type MediaStatus = 'pending' | 'approved' | 'rejected'
 
-// 媒体元数据
 export interface MediaMeta {
     mime?: string
     size?: number
@@ -20,7 +19,6 @@ export interface MediaMeta {
     }
 }
 
-// 媒体记录
 export interface GirlMedia {
     id: string
     girl_id: string
@@ -40,7 +38,6 @@ export interface GirlMedia {
     updated_at: string
 }
 
-// 媒体列表项（包含技师信息）
 export interface MediaListItem extends GirlMedia {
     girl_name?: string
     girl_username?: string
@@ -48,7 +45,6 @@ export interface MediaListItem extends GirlMedia {
     reviewer_name?: string
 }
 
-// 媒体列表查询参数
 export interface MediaListParams {
     status?: MediaStatus
     girl_id?: string
@@ -56,14 +52,13 @@ export interface MediaListParams {
     min_user_level?: number
     date_from?: string
     date_to?: string
-    search?: string // 技师名称搜索
+    search?: string
     sort_by?: 'created_at' | 'reviewed_at' | 'sort_order'
     sort_order?: 'asc' | 'desc'
     page?: number
     limit?: number
 }
 
-// 审核操作数据
 export interface ApproveMediaData {
     id: string
     min_user_level: number
@@ -79,6 +74,11 @@ export interface BatchApproveData {
     min_user_level: number
 }
 
+export interface BatchUpdateMediaLevelData {
+    ids: string[]
+    min_user_level: number
+}
+
 export interface BatchRejectData {
     ids: string[]
     reason: string
@@ -88,7 +88,6 @@ export interface DeleteMediaData {
     id: string
 }
 
-// 重排序数据
 export interface ReorderMediaData {
     girl_id: string
     items: Array<{
@@ -97,20 +96,17 @@ export interface ReorderMediaData {
     }>
 }
 
-// 签名 URL 请求
 export interface SignUrlRequest {
     key: string
     type: 'main' | 'thumb'
-    expires_in?: number // 秒数，默认3600（1小时）
+    expires_in?: number
 }
 
-// 签名 URL 响应
 export interface SignUrlResponse {
     url: string
     expires_at: string
 }
 
-// 分页响应
 export interface PaginatedMediaResponse {
     data: MediaListItem[]
     total: number
@@ -120,7 +116,6 @@ export interface PaginatedMediaResponse {
     has_prev: boolean
 }
 
-// 媒体统计
 export interface MediaStats {
     pending_count: number
     approved_count: number
@@ -128,11 +123,11 @@ export interface MediaStats {
     total_count: number
 }
 
-// 审计日志操作类型
 export type MediaOperationType =
     | 'approve_media'
     | 'reject_media'
     | 'delete_media'
     | 'batch_approve_media'
+    | 'batch_update_media_level'
     | 'batch_reject_media'
     | 'reorder_media'

@@ -1,18 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Search, Eye, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
-import { getMediaList, deleteMedia, updateMediaLevel } from '@/app/dashboard/media/actions'
+import { getMediaList, deleteMedia, updateMediaLevel, batchUpdateMediaLevel } from '@/app/dashboard/media/actions'
 import { MediaPreview } from '@/components/media/MediaPreview'
 import { MediaThumbnail } from '@/components/media/MediaThumbnail'
 import { UpdateLevelDialog } from '@/components/media/UpdateLevelDialog'
+import { BatchUpdateLevelDialog } from '@/components/media/BatchUpdateLevelDialog'
 import type { MediaListItem } from '@/lib/features/media'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { LoadingSpinner } from '@/components/ui/loading'
@@ -21,17 +23,22 @@ export function ApprovedMediaList() {
     const { admin, loading: adminLoading } = useCurrentAdmin()
     const [mediaList, setMediaList] = useState<MediaListItem[]>([])
     const [loading, setLoading] = useState(true)
+    const [selectedIds, setSelectedIds] = useState<string[]>([])
+    const [searchInput, setSearchInput] = useState('')
     const [search, setSearch] = useState('')
     const [kindFilter, setKindFilter] = useState<string>('')
     const [levelFilter, setLevelFilter] = useState<string>('')
+    const [appliedKindFilter, setAppliedKindFilter] = useState<string>('')
+    const [appliedLevelFilter, setAppliedLevelFilter] = useState<string>('')
     const [selectedMedia, setSelectedMedia] = useState<MediaListItem | null>(null)
     const [editingMedia, setEditingMedia] = useState<MediaListItem | null>(null)
+    const [showBatchUpdateLevel, setShowBatchUpdateLevel] = useState(false)
     const [page, setPage] = useState(1)
     const [total, setTotal] = useState(0)
 
     const limit = 20
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         if (!admin?.id || adminLoading) {
             return
         }
@@ -41,8 +48,8 @@ export function ApprovedMediaList() {
             const result = await getMediaList({
                 status: 'approved',
                 search: search || undefined,
-                kind: kindFilter || undefined,
-                min_user_level: levelFilter ? parseInt(levelFilter) : undefined,
+                kind: appliedKindFilter || undefined,
+                min_user_level: appliedLevelFilter ? Number(appliedLevelFilter) : undefined,
                 page,
                 limit,
                 sort_by: 'sort_order',
@@ -50,17 +57,49 @@ export function ApprovedMediaList() {
             })
             setMediaList(result.data)
             setTotal(result.total)
+            setSelectedIds([])
         } catch (error) {
             console.error('Failed to fetch media list:', error)
             toast.error('获取媒体列表失败')
         } finally {
             setLoading(false)
         }
-    }
+    }, [admin?.id, adminLoading, page, search, appliedKindFilter, appliedLevelFilter])
 
     useEffect(() => {
-        fetchData()
-    }, [admin?.id, adminLoading, page, search, kindFilter, levelFilter])
+        void fetchData()
+    }, [fetchData])
+
+    const handleSearch = () => {
+        setPage(1)
+        setSearch(searchInput.trim())
+        setAppliedKindFilter(kindFilter)
+        setAppliedLevelFilter(levelFilter)
+    }
+
+    const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') {
+            handleSearch()
+        }
+    }
+
+    const handleSelectAll = () => {
+        if (selectedIds.length === mediaList.length) {
+            setSelectedIds([])
+            return
+        }
+
+        setSelectedIds(mediaList.map((item) => item.id))
+    }
+
+    const handleSelect = (id: string) => {
+        if (selectedIds.includes(id)) {
+            setSelectedIds(selectedIds.filter((item) => item !== id))
+            return
+        }
+
+        setSelectedIds([...selectedIds, id])
+    }
 
     const handleDelete = async (id: string) => {
         if (!confirm('确定要删除这个媒体吗？')) {
@@ -74,13 +113,14 @@ export function ApprovedMediaList() {
 
         try {
             const result = await deleteMedia({ id })
-            if (result.success) {
-                toast.success('删除成功')
-                fetchData()
-            } else {
+            if (!result.success) {
                 toast.error(result.error || '删除失败')
+                return
             }
-        } catch (error) {
+
+            toast.success('删除成功')
+            fetchData()
+        } catch {
             toast.error('删除失败')
         }
     }
@@ -96,15 +136,50 @@ export function ApprovedMediaList() {
                 id: editingMedia.id,
                 min_user_level: level
             })
-            if (result.success) {
-                toast.success('等级修改成功')
-                setEditingMedia(null)
-                fetchData()
-            } else {
+            if (!result.success) {
                 toast.error(result.error || '修改失败')
+                return
             }
-        } catch (error) {
+
+            toast.success('可见等级修改成功')
+            setEditingMedia(null)
+            fetchData()
+        } catch {
             toast.error('修改失败')
+        }
+    }
+
+    const handleBatchUpdateLevel = async (level: number) => {
+        if (!admin?.id) {
+            toast.error('未找到管理员信息')
+            return
+        }
+
+        try {
+            const result = await batchUpdateMediaLevel({
+                ids: selectedIds,
+                min_user_level: level
+            })
+
+            if (!result.success) {
+                toast.error(result.error || '批量修改失败')
+                return
+            }
+
+            const updatedCount = result.updatedCount || 0
+            const skippedCount = result.skippedCount || 0
+
+            if (skippedCount > 0) {
+                toast.success(`已修改 ${updatedCount} 条，跳过 ${skippedCount} 条非已发布媒体`)
+            } else {
+                toast.success(`已批量修改 ${updatedCount} 条媒体的可见等级`)
+            }
+
+            setSelectedIds([])
+            setShowBatchUpdateLevel(false)
+            fetchData()
+        } catch {
+            toast.error('批量修改失败')
         }
     }
 
@@ -134,26 +209,43 @@ export function ApprovedMediaList() {
             8: '8 - VIP8',
             9: '9 - VIP9',
         }
+
         return <Badge variant="secondary">{levelNames[level] || `L${level}`}</Badge>
     }
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle>已发布媒体库</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                    <span>已发布媒体库</span>
+                    {selectedIds.length > 0 && (
+                        <Button size="sm" onClick={() => setShowBatchUpdateLevel(true)} className="cursor-pointer">
+                            <Edit className="mr-1 h-4 w-4" />
+                            批量修改等级 ({selectedIds.length})
+                        </Button>
+                    )}
+                </CardTitle>
             </CardHeader>
             <CardContent>
-                <div className="flex gap-4 mb-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="搜索技师名称 / 工号 / 用户名..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="pl-8"
-                        />
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <div className="flex max-w-md min-w-[220px] flex-1 gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                placeholder="搜索技师名称 / 工号 / 用户名..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={handleSearchKeyDown}
+                                className="pl-10"
+                            />
+                        </div>
+                        <Button onClick={handleSearch} size="default" className="cursor-pointer">
+                            <Search className="mr-2 h-4 w-4" />
+                            搜索
+                        </Button>
                     </div>
-                    <Select value={kindFilter || "all"} onValueChange={(value) => setKindFilter(value === "all" ? "" : value)}>
+
+                    <Select value={kindFilter || 'all'} onValueChange={(value) => setKindFilter(value === 'all' ? '' : value)}>
                         <SelectTrigger className="w-[150px]">
                             <SelectValue placeholder="媒体类型" />
                         </SelectTrigger>
@@ -164,7 +256,8 @@ export function ApprovedMediaList() {
                             <SelectItem value="live_photo">实况照片</SelectItem>
                         </SelectContent>
                     </Select>
-                    <Select value={levelFilter || "all"} onValueChange={(value) => setLevelFilter(value === "all" ? "" : value)}>
+
+                    <Select value={levelFilter || 'all'} onValueChange={(value) => setLevelFilter(value === 'all' ? '' : value)}>
                         <SelectTrigger className="w-[150px]">
                             <SelectValue placeholder="会员等级" />
                         </SelectTrigger>
@@ -188,6 +281,12 @@ export function ApprovedMediaList() {
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead className="w-[50px]">
+                                    <Checkbox
+                                        checked={selectedIds.length === mediaList.length && mediaList.length > 0}
+                                        onCheckedChange={handleSelectAll}
+                                    />
+                                </TableHead>
                                 <TableHead>缩略图</TableHead>
                                 <TableHead>技师</TableHead>
                                 <TableHead>类型</TableHead>
@@ -200,7 +299,7 @@ export function ApprovedMediaList() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="py-8">
+                                    <TableCell colSpan={8} className="py-8">
                                         <div className="flex items-center justify-center">
                                             <LoadingSpinner />
                                         </div>
@@ -208,7 +307,7 @@ export function ApprovedMediaList() {
                                 </TableRow>
                             ) : mediaList.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                                         暂无已发布媒体
                                     </TableCell>
                                 </TableRow>
@@ -216,14 +315,17 @@ export function ApprovedMediaList() {
                                 mediaList.map((media) => (
                                     <TableRow key={media.id}>
                                         <TableCell>
-                                            <MediaThumbnail
-                                                media={media}
-                                                onClick={() => setSelectedMedia(media)}
+                                            <Checkbox
+                                                checked={selectedIds.includes(media.id)}
+                                                onCheckedChange={() => handleSelect(media.id)}
                                             />
                                         </TableCell>
                                         <TableCell>
+                                            <MediaThumbnail media={media} onClick={() => setSelectedMedia(media)} />
+                                        </TableCell>
+                                        <TableCell>
                                             <div>
-                                                <div className="font-medium">{media.girl_name}</div>
+                                                <div className="font-medium">{media.girl_name || '--'}</div>
                                                 <div className="text-sm text-muted-foreground">
                                                     {media.girl_number ? `#${media.girl_number}` : ''}
                                                     {media.girl_number && media.girl_username ? ' • ' : ''}
@@ -236,7 +338,7 @@ export function ApprovedMediaList() {
                                         <TableCell>{media.reviewer_name || '--'}</TableCell>
                                         <TableCell>{media.reviewed_at ? new Date(media.reviewed_at).toLocaleString() : '--'}</TableCell>
                                         <TableCell className="text-right">
-                                            <div className="flex gap-2 justify-end">
+                                            <div className="flex justify-end gap-2">
                                                 <Button
                                                     size="sm"
                                                     variant="ghost"
@@ -274,7 +376,7 @@ export function ApprovedMediaList() {
                 </div>
 
                 {total > 0 && (
-                    <div className="flex items-center justify-between mt-4">
+                    <div className="mt-4 flex items-center justify-between">
                         <div className="text-sm text-muted-foreground">
                             显示 {(page - 1) * limit + 1} - {Math.min(page * limit, total)} 条，共 {total} 条
                         </div>
@@ -287,9 +389,7 @@ export function ApprovedMediaList() {
                             >
                                 上一页
                             </Button>
-                            <div className="text-sm text-muted-foreground">
-                                第 {page} 页
-                            </div>
+                            <div className="text-sm text-muted-foreground">第 {page} 页</div>
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -303,14 +403,12 @@ export function ApprovedMediaList() {
                 )}
             </CardContent>
 
-            {/* 媒体预览 */}
             <MediaPreview
                 media={selectedMedia}
                 open={!!selectedMedia}
                 onOpenChange={(open) => !open && setSelectedMedia(null)}
             />
 
-            {/* 修改等级对话框 */}
             {editingMedia && (
                 <UpdateLevelDialog
                     open={!!editingMedia}
@@ -319,6 +417,13 @@ export function ApprovedMediaList() {
                     onConfirm={handleUpdateLevel}
                 />
             )}
+
+            <BatchUpdateLevelDialog
+                open={showBatchUpdateLevel}
+                count={selectedIds.length}
+                onClose={() => setShowBatchUpdateLevel(false)}
+                onConfirm={handleBatchUpdateLevel}
+            />
         </Card>
     )
 }
