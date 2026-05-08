@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { THAILAND_BANKS } from "@/types/banks"
 
 // 车费计价配置验证模式
 export const fareParamsSchema = z.object({
@@ -109,6 +110,24 @@ export const bankAccountSchema = z.object({
   qr_code_url: z.string().url("无效的二维码URL"),
   is_active: z.boolean(),
   sort_order: z.number().int().min(1, "排序必须为正整数"),
+}).superRefine((value, ctx) => {
+  const bank = THAILAND_BANKS.find((item) => item.code === value.code)
+  if (!bank) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `银行 code 不存在: ${value.code}`,
+      path: ["code"],
+    })
+    return
+  }
+
+  if (value.bank_name !== bank.name) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `银行名称必须为: ${bank.name}`,
+      path: ["bank_name"],
+    })
+  }
 })
 
 // 银行卡配置验证模式
