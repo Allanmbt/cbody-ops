@@ -42,7 +42,15 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { X, Upload, Search, Loader2, XCircle } from "lucide-react"
-import { girlFormSchema, type GirlFormData } from "@/lib/features/girls"
+import {
+    GIRL_TAG_OPTIONS,
+    buildGirlTagsFromIds,
+    girlFormSchema,
+    hasGirlTagContent,
+    matchGirlTagIds,
+    type GirlFormData,
+    type LanguageContent,
+} from "@/lib/features/girls"
 import {
     createGirl,
     updateGirl,
@@ -101,6 +109,9 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
     const [avatarPreview, setAvatarPreview] = useState<string>("")
     const [showAvatarCropper, setShowAvatarCropper] = useState(false)
     const [avatarToProcess, setAvatarToProcess] = useState<File | null>(null)
+    const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
+    const [tagsTouched, setTagsTouched] = useState(false)
+    const [hasLegacyTags, setHasLegacyTags] = useState(false)
 
     const form = useForm<GirlFormData>({
         resolver: zodResolver(girlFormSchema) as any,
@@ -118,6 +129,7 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
             gender: 0,
             languages: [],
             tags: { en: '', zh: '', th: '' },
+            tags_catalog_touched: false,
             badge: null,
             rating: 0,
             total_sales: 0,
@@ -165,6 +177,9 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
     // 设置表单默认值
     useEffect(() => {
         if (girl && open) {
+            const currentTags = girl.tags || { en: '', zh: '', th: '' }
+            const matchedTagIds = matchGirlTagIds(currentTags)
+
             form.reset({
                 user_id: girl.user_id || null,
                 telegram_id: girl.telegram_id || null,
@@ -178,7 +193,8 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 measurements: girl.measurements || null,
                 gender: girl.gender,
                 languages: (girl.languages || []) as any,
-                tags: girl.tags,
+                tags: currentTags,
+                tags_catalog_touched: false,
                 badge: girl.badge || null,
                 rating: girl.rating || 0,
                 total_sales: girl.total_sales || 0,
@@ -195,6 +211,9 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 incall_location_id: (girl as any).incall_location_id ?? null,
             })
             setAvatarPreview(girl.avatar_url || '')
+            setSelectedTagIds(matchedTagIds || [])
+            setTagsTouched(false)
+            setHasLegacyTags(matchedTagIds === null && hasGirlTagContent(currentTags))
 
             // 如果有user_id，加载用户信息用于显示
             if (girl.user_id) {
@@ -217,6 +236,7 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                 gender: 0,
                 languages: [],
                 tags: { en: '', zh: '', th: '' },
+                tags_catalog_touched: false,
                 badge: null,
                 rating: 0,
                 total_sales: 0,
@@ -234,6 +254,9 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
             })
             setAvatarPreview('')
             setSelectedUser(null)
+            setSelectedTagIds([])
+            setTagsTouched(false)
+            setHasLegacyTags(false)
         }
     }, [girl, open, form])
 
@@ -481,6 +504,33 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
         } else {
             form.setValue('category_ids', [...currentCategories, categoryId])
         }
+    }
+
+    // 切换固定特点标签；首次触碰后才会替换历史自由标签。
+    const toggleGirlTag = (tagId: number) => {
+        const isSelected = selectedTagIds.includes(tagId)
+
+        if (!isSelected && selectedTagIds.length >= 4) {
+            toast.error("特点标签最多选择 4 个")
+            return
+        }
+
+        const nextTagIds = isSelected
+            ? selectedTagIds.filter((id) => id !== tagId)
+            : [...selectedTagIds, tagId]
+        const nextTags = buildGirlTagsFromIds(nextTagIds) as LanguageContent
+
+        setSelectedTagIds(nextTagIds)
+        setTagsTouched(true)
+        setHasLegacyTags(false)
+        form.setValue('tags_catalog_touched', true, {
+            shouldDirty: true,
+        })
+        form.setValue('tags', nextTags, {
+            shouldDirty: true,
+            shouldTouch: true,
+            shouldValidate: true,
+        })
     }
 
     return (
@@ -896,87 +946,48 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                         </Tabs>
                                     </div>
 
-                                    {/* 多语言标签 */}
+                                    {/* 特点标签 */}
                                     <div className="space-y-2">
                                         <FormLabel className="text-base">
-                                            个人标签 <span className="text-white">*</span>
+                                            个人标签
                                         </FormLabel>
                                         <p className="text-xs text-muted-foreground mb-2">
-                                            填写技师的特点标签，用逗号分隔（例如：友好,专业,经验丰富）
+                                            固定标签可选填；选择时请选 2-4 个。泰文仅在后台显示编号，保存时不写入编号。
                                         </p>
-                                        <Tabs defaultValue="zh" className="w-full">
-                                            <TabsList className="grid w-full grid-cols-3">
-                                                <TabsTrigger value="zh">中文</TabsTrigger>
-                                                <TabsTrigger value="en">English</TabsTrigger>
-                                                <TabsTrigger value="th">ไทย</TabsTrigger>
-                                            </TabsList>
+                                        <FormField
+                                            control={form.control}
+                                            name="tags"
+                                            render={() => (
+                                                <FormItem>
+                                                    <div className="flex flex-wrap gap-2 p-3 border rounded-md min-h-[72px] bg-muted/30">
+                                                        {GIRL_TAG_OPTIONS.map((option) => {
+                                                            const isSelected = selectedTagIds.includes(option.id)
 
-                                            <TabsContent value="zh">
-                                                <FormField
-                                                    control={form.control}
-                                                    name="tags.zh"
-                                                    render={({ field }) => (
-                                                        <FormItem>
-                                                            <FormControl>
-                                                                <Input
-                                                                    placeholder="例如：友好,专业,经验丰富,热情"
-                                                                    {...field}
-                                                                    disabled={loading}
-                                                                />
-                                                            </FormControl>
-                                                            <FormDescription className="text-xs">
-                                                                {field.value ? `已输入标签: ${field.value}` : '请填写中文标签'}
-                                                            </FormDescription>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                            </TabsContent>
-
-                                            <TabsContent value="en">
-                                                <FormField
-                                                    control={form.control}
-                                                    name="tags.en"
-                                                    render={({ field }) => (
-                                                        <FormItem>
-                                                            <FormControl>
-                                                                <Input
-                                                                    placeholder="e.g.: Friendly, Professional, Experienced"
-                                                                    {...field}
-                                                                    disabled={loading}
-                                                                />
-                                                            </FormControl>
-                                                            <FormDescription className="text-xs">
-                                                                {field.value ? `Tags: ${field.value}` : 'Please enter English tags'}
-                                                            </FormDescription>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                            </TabsContent>
-
-                                            <TabsContent value="th">
-                                                <FormField
-                                                    control={form.control}
-                                                    name="tags.th"
-                                                    render={({ field }) => (
-                                                        <FormItem>
-                                                            <FormControl>
-                                                                <Input
-                                                                    placeholder="เช่น: เป็นกันเอง, มืออาชีพ, มีประสบการณ์"
-                                                                    {...field}
-                                                                    disabled={loading}
-                                                                />
-                                                            </FormControl>
-                                                            <FormDescription className="text-xs">
-                                                                {field.value ? `แท็ก: ${field.value}` : 'กรุณากรอกแท็ก'}
-                                                            </FormDescription>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                            </TabsContent>
-                                        </Tabs>
+                                                            return (
+                                                                <Badge
+                                                                    key={option.id}
+                                                                    variant={isSelected ? "default" : "outline"}
+                                                                    className="cursor-pointer whitespace-normal text-left leading-5"
+                                                                    onClick={() => toggleGirlTag(option.id)}
+                                                                >
+                                                                    {option.zh} / {option.en} / {option.id}. {option.th}
+                                                                    {isSelected && <X className="ml-1 h-3 w-3 shrink-0" />}
+                                                                </Badge>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                    <FormDescription className="text-xs">
+                                                        {hasLegacyTags && !tagsTouched
+                                                            ? '当前为旧版标签；未重新选择时将按原值保留。'
+                                                            : selectedTagIds.length > 0
+                                                                ? `已选择 ${selectedTagIds.length} 个特点标签`
+                                                                : '当前未选择特点标签'
+                                                        }
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
                                     </div>
 
                                     {/* 物理信息 */}

@@ -576,6 +576,7 @@ export async function createGirl(formData: GirlFormData): Promise<ApiResponse<Gi
 
         // 准备插入数据（排除category_ids，单独处理）
         const { category_ids, ...girlData } = validatedData
+        delete (girlData as Partial<GirlFormData>).tags_catalog_touched
 
         // 创建技师（girl_number由触发器自动生成）
         const { data, error } = await (supabase as any)
@@ -632,6 +633,7 @@ export async function updateGirl(id: string, formData: GirlFormData): Promise<Ap
 
         // 准备更新数据
         const { category_ids, ...girlData } = validatedData
+        delete (girlData as Partial<GirlFormData>).tags_catalog_touched
 
         // 更新技师
         const { data, error } = await (supabase as any)

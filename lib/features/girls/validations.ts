@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { matchGirlTagIds } from "./tags"
 
 // 必填的多语言内容验证（例如：profile）
 const languageContentSchema = z.object({
@@ -21,8 +22,8 @@ const languageContentSchema = z.object({
     }
 )
 
-// 可选的多语言内容验证（例如：tags），允许空字符串
-const optionalLanguageContentSchema = z.object({
+// 标签字段继续兼容历史自由文本；是否执行固定标签校验由表单触碰状态决定。
+const tagsContentSchema = z.object({
     en: z.string().optional(),
     zh: z.string().optional(),
     th: z.string().optional(),
@@ -50,7 +51,8 @@ export const girlFormSchema = z.object({
     measurements: z.string().max(15, "三围不能超过15个字符").nullable().optional().or(z.literal("")),
     gender: z.union([z.literal(0), z.literal(1)], { message: "请选择性别" }),
     languages: languagesSchema,
-    tags: languageContentSchema,
+    tags: tagsContentSchema,
+    tags_catalog_touched: z.boolean().default(false),
     badge: z.enum(['new', 'hot', 'top_rated']).nullable().optional(),
     rating: z.number().min(0).max(5).default(0),
     total_sales: z.number().int().min(0).default(0),
@@ -68,6 +70,19 @@ export const girlFormSchema = z.object({
     category_ids: z.array(z.number().int()).min(1, "请至少选择一个分类"), // 多对多分类，至少选一个
     incall_enabled: z.boolean().default(false),
     incall_location_id: z.string().uuid().nullable().optional(),
+}).superRefine((data, ctx) => {
+    if (!data.tags_catalog_touched) {
+        return
+    }
+
+    const matchedTagIds = matchGirlTagIds(data.tags)
+    if (matchedTagIds === null || matchedTagIds.length === 1 || matchedTagIds.length > 4) {
+        ctx.addIssue({
+            code: "custom",
+            path: ["tags"],
+            message: "特点标签可不选；选择时请选 2-4 个",
+        })
+    }
 })
 
 export const girlStatusSchema = z.object({
