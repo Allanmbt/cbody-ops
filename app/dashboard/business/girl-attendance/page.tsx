@@ -1,44 +1,51 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Search, Info, RefreshCw } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useCallback, useEffect, useState } from "react"
+import { Info, RefreshCw, Search } from "lucide-react"
+import { toast } from "sonner"
+
+import { getCities, getCurrentAdminInfo, getGirlAttendanceStats, updateTrustScoresByAttendance } from "./actions"
+import { GirlAttendanceTable } from "@/components/business/GirlAttendanceTable"
+import { GirlPerformanceDialog } from "@/components/business/GirlPerformanceDialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
-import { GirlAttendanceTable } from "@/components/business/GirlAttendanceTable"
-import { getGirlAttendanceStats, getCities, getCurrentAdminInfo, updateTrustScoresByAttendance } from "./actions"
-import type { GirlAttendanceStats, City } from "@/lib/features/girl-attendance"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import type { City, GirlAttendanceStats } from "@/lib/features/girl-attendance"
+import { getGirlAttendanceCopy } from "@/lib/features/girl-attendance/copy"
+import { useLocale } from "@/lib/i18n/LocaleProvider"
 
 export default function GirlAttendancePage() {
+  const { locale } = useLocale()
+  const copy = getGirlAttendanceCopy(locale)
   const [data, setData] = useState<GirlAttendanceStats[]>([])
   const [cities, setCities] = useState<City[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState("")
   const [cityId, setCityId] = useState<number | undefined>(undefined)
-  const [sortBy, setSortBy] = useState<string>('booking_rate_percent')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [sortBy, setSortBy] = useState<string>("booking_rate_percent")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
+  const [selectedGirl, setSelectedGirl] = useState<GirlAttendanceStats | null>(null)
+  const [performanceOpen, setPerformanceOpen] = useState(false)
 
-  // 检查当前用户角色
   useEffect(() => {
     const checkRole = async () => {
       try {
         const result = await getCurrentAdminInfo()
         if (result.ok) {
-          setIsSuperAdmin(result.data.role === 'superadmin')
+          setIsSuperAdmin(result.data.role === "superadmin")
         }
       } catch (error) {
-        console.error('检查用户角色失败:', error)
+        console.error(copy.adminRoleError, error)
       }
     }
-    checkRole()
-  }, [])
 
-  // 加载城市列表
+    checkRole()
+  }, [copy.adminRoleError])
+
   useEffect(() => {
     const loadCities = async () => {
       try {
@@ -47,87 +54,93 @@ export default function GirlAttendancePage() {
           setCities(result.data)
         }
       } catch (error) {
-        console.error('加载城市列表失败:', error)
+        console.error(copy.loadCitiesError, error)
       }
     }
-    loadCities()
-  }, [])
 
-  // 加载数据
-  const loadData = async () => {
+    loadCities()
+  }, [copy.loadCitiesError])
+
+  const loadData = useCallback(async () => {
     setLoading(true)
+
     try {
       const result = await getGirlAttendanceStats({
         search: search || undefined,
         city_id: cityId,
-        sort_by: sortBy as any,
-        sort_order: sortOrder
+        sort_by: sortBy as
+          | "girl_number"
+          | "online_seconds"
+          | "order_count"
+          | "order_duration_seconds"
+          | "booking_rate_percent"
+          | "extension_rate"
+          | "performance_index",
+        sort_order: sortOrder,
       })
 
       if (result.ok) {
         setData(result.data)
       } else {
-        toast.error(result.error || '加载考勤统计失败')
+        toast.error(result.error || copy.loadAttendanceError)
       }
     } catch (error) {
-      console.error('加载考勤统计失败:', error)
-      toast.error('加载考勤统计失败')
+      console.error(copy.loadAttendanceError, error)
+      toast.error(copy.loadAttendanceError)
     } finally {
       setLoading(false)
     }
-  }
+  }, [cityId, copy.loadAttendanceError, search, sortBy, sortOrder])
 
-  // 初始化加载
-  useEffect(() => {
-    loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // 搜索或筛选变化时重新加载
   useEffect(() => {
     const timer = setTimeout(() => {
       loadData()
-    }, 300) // 防抖300ms
+    }, 300)
 
     return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, cityId, sortBy, sortOrder])
+  }, [loadData])
 
-  // 处理排序
   const handleSort = (field: string) => {
     if (sortBy === field) {
-      // 同一字段切换升降序
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-    } else {
-      // 不同字段默认降序
-      setSortBy(field)
-      setSortOrder('desc')
+      setSortOrder((current) => (current === "asc" ? "desc" : "asc"))
+      return
     }
+
+    setSortBy(field)
+    setSortOrder("desc")
   }
 
-  // 获取城市名称（优先中文）
+  const handleViewPerformance = (girl: GirlAttendanceStats) => {
+    setSelectedGirl(girl)
+    setPerformanceOpen(true)
+  }
+
   const getCityName = (city: City) => {
+    if (locale === "th") {
+      return city.name.th || city.name.en || city.name.zh || `เมือง ${city.id}`
+    }
+
     return city.name.zh || city.name.en || city.name.th || `城市 ${city.id}`
   }
 
-  // 更新诚信分
   const handleUpdateTrustScores = async () => {
-    if (!confirm('确定要根据考勤表现批量更新技师诚信分吗？\n\n此操作将基于最近30天的在线时长和预订率对所有已认证技师的诚信分进行调整。')) {
+    if (!confirm(copy.confirmTrustScoreUpdate)) {
       return
     }
 
     setUpdating(true)
+
     try {
       const result = await updateTrustScoresByAttendance()
 
       if (result.ok) {
-        toast.success(`诚信分更新成功！已更新 ${result.data.updated_count} 位技师`)
+        toast.success(copy.trustScoreUpdateSuccess(result.data.updated_count))
       } else {
-        toast.error(result.error || '更新诚信分失败')
+        toast.error(result.error || copy.trustScoreUpdateError)
       }
     } catch (error) {
-      console.error('更新诚信分失败:', error)
-      toast.error('更新诚信分失败')
+      console.error(copy.trustScoreUpdateError, error)
+      toast.error(copy.trustScoreUpdateError)
     } finally {
       setUpdating(false)
     }
@@ -135,13 +148,10 @@ export default function GirlAttendancePage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 md:px-8 md:py-6">
-      {/* 页面标题 */}
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">技师考勤统计</h1>
-          <p className="text-sm text-muted-foreground">
-            最近30天的技师在线时长、完成订单数和预订率统计
-          </p>
+          <h1 className="text-2xl font-bold">{copy.pageTitle}</h1>
+          <p className="text-sm text-muted-foreground">{copy.pageDescription}</p>
         </div>
         {isSuperAdmin && (
           <Button
@@ -150,45 +160,41 @@ export default function GirlAttendancePage() {
             variant="default"
             className="mt-4 md:mt-0"
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${updating ? 'animate-spin' : ''}`} />
-            {updating ? '更新中...' : '更新诚信分'}
+            <RefreshCw className={`mr-2 h-4 w-4 ${updating ? "animate-spin" : ""}`} />
+            {updating ? copy.updatingTrustScores : copy.updateTrustScores}
           </Button>
         )}
       </div>
 
-      {/* 说明提示 */}
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          <strong>预订率计算：</strong>订单时长 ÷ 在线时长 × 100%
-          <span className="ml-4 text-muted-foreground">
-            （预订率越高表示在线时间利用率越高）
-          </span>
+          <strong>{copy.bookingRateFormulaLabel}</strong>{copy.bookingRateFormulaValue}
+          <span className="ml-4 text-muted-foreground">{copy.bookingRateFormulaHint}</span>
         </AlertDescription>
       </Alert>
 
-      {/* 搜索和筛选栏 */}
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-col gap-4 md:flex-row md:items-center">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="搜索技师名称或工号..."
+                placeholder={copy.searchPlaceholder}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
                 className="pl-10"
               />
             </div>
             <Select
-              value={cityId?.toString() || 'all'}
-              onValueChange={(value) => setCityId(value === 'all' ? undefined : parseInt(value))}
+              value={cityId?.toString() || "all"}
+              onValueChange={(value) => setCityId(value === "all" ? undefined : parseInt(value, 10))}
             >
               <SelectTrigger className="w-full md:w-48">
-                <SelectValue placeholder="筛选城市" />
+                <SelectValue placeholder={copy.cityPlaceholder} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部城市</SelectItem>
+                <SelectItem value="all">{copy.allCities}</SelectItem>
                 {cities.map((city) => (
                   <SelectItem key={city.id} value={city.id.toString()}>
                     {getCityName(city)}
@@ -200,24 +206,28 @@ export default function GirlAttendancePage() {
         </CardContent>
       </Card>
 
-      {/* 统计表格 */}
       <Card>
         <CardHeader>
-          <CardTitle>考勤明细</CardTitle>
-          <CardDescription>
-            共 {data.length} 位已认证技师（已排除被屏蔽的技师）
-          </CardDescription>
+          <CardTitle>{copy.detailsTitle}</CardTitle>
+          <CardDescription>{copy.detailsDescription(data.length)}</CardDescription>
         </CardHeader>
         <CardContent>
           <GirlAttendanceTable
             data={data}
             loading={loading}
             onSort={handleSort}
+            onViewPerformance={handleViewPerformance}
             sortBy={sortBy}
             sortOrder={sortOrder}
           />
         </CardContent>
       </Card>
+
+      <GirlPerformanceDialog
+        girl={selectedGirl}
+        open={performanceOpen}
+        onOpenChange={setPerformanceOpen}
+      />
     </div>
   )
 }

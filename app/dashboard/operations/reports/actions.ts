@@ -42,6 +42,7 @@ export interface ReportListItem {
         user_id: string
         display_name: string | null
         avatar_url: string | null
+        admin_tags?: string[] | null
         girl_number?: number | null  // 技师工号
         girl_name?: string | null    // 技师姓名
     } | null
@@ -49,6 +50,7 @@ export interface ReportListItem {
         user_id: string
         display_name: string | null
         avatar_url: string | null
+        admin_tags?: string[] | null
         girl_number?: number | null  // 技师工号
         girl_name?: string | null    // 技师姓名
     } | null

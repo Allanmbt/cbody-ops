@@ -20,6 +20,7 @@ export interface UserProfile {
     last_ip_address: string | null
     last_login_at: string | null
     is_whitelisted: boolean
+    admin_tags: string[]
     is_banned: boolean
     created_at: string
     updated_at: string
@@ -82,6 +83,7 @@ export interface UpdateUserProfileData {
     timezone?: string
     level?: number
     credit_score?: number
+    admin_tags?: string[]
     is_banned?: boolean
 }
 

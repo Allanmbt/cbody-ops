@@ -1,112 +1,132 @@
--- 技师考勤统计视图
--- 目标：一次性查询技师最近30天的考勤数据，减少数据库查询次数
--- 包含：在线时长、完成订单数、订单总时长、预订率、综合评级
+-- Therapist attendance stats
+-- Uses normalized completed-order duration:
+--   base service duration + valid add-time duration
+-- This avoids booking-rate inflation caused by late manual completion.
 
--- 先删除旧视图（如果存在）
-DROP VIEW IF EXISTS v_girl_attendance_stats;
+DROP VIEW IF EXISTS public.v_girl_attendance_stats;
+DROP VIEW IF EXISTS public.v_order_normalized_sessions;
 
--- 重新创建视图
-CREATE VIEW v_girl_attendance_stats AS
-WITH recent_sessions AS (
-  -- 获取最近30天的会话记录
-  SELECT
-    girl_id,
-    session_type,
-    duration_seconds,
-    amount
-  FROM girl_work_sessions
-  WHERE ended_at >= NOW() - INTERVAL '30 days'
-    AND ended_at <= NOW()
-),
-online_stats AS (
-  -- 统计在线时长（秒）
-  SELECT
-    girl_id,
-    COALESCE(SUM(duration_seconds), 0) AS online_seconds
-  FROM recent_sessions
-  WHERE session_type = 'online'
-  GROUP BY girl_id
-),
-order_stats AS (
-  -- 统计订单数量和时长（秒）
-  SELECT
-    girl_id,
-    COUNT(*) AS order_count,
-    COALESCE(SUM(duration_seconds), 0) AS order_duration_seconds
-  FROM recent_sessions
-  WHERE session_type = 'order'
-  GROUP BY girl_id
+CREATE VIEW public.v_order_normalized_sessions AS
+WITH valid_add_time AS (
+    SELECT
+        ote.order_id,
+        COALESCE(SUM(ote.duration_minutes), 0)::INTEGER AS add_time_minutes
+    FROM public.order_time_extensions ote
+    WHERE ote.settlement_status != 'rejected'
+    GROUP BY ote.order_id
 )
 SELECT
-  g.id AS girl_id,
-  g.girl_number,
-  g.name,
-  g.avatar_url,
-  g.city_id,
-  COALESCE(o_stats.online_seconds, 0) AS online_seconds,
-  COALESCE(ord_stats.order_count, 0) AS order_count,
-  COALESCE(ord_stats.order_duration_seconds, 0) AS order_duration_seconds,
-  -- 预订率计算：订单时长 / 在线时长（避免除以0，转为百分比）
-  CASE
-    WHEN COALESCE(o_stats.online_seconds, 0) > 0
-    THEN ROUND((COALESCE(ord_stats.order_duration_seconds, 0)::NUMERIC / o_stats.online_seconds::NUMERIC) * 100, 2)
-    ELSE 0
-  END AS booking_rate_percent,
-  -- 综合评级计算（优质/较好/一般/较差/很差）
-  -- 算法：基于在线时长、订单数、订单时长、预订率的加权评分
-  CASE
-    -- 数据不足：在线时长 < 10小时 或 订单数 < 2
-    WHEN COALESCE(o_stats.online_seconds, 0) < 36000 OR COALESCE(ord_stats.order_count, 0) < 2 THEN 'insufficient_data'
-    ELSE
-      CASE
-        -- 优质：预订率 >= 40% AND 订单数 >= 10 AND 在线时长 >= 50小时
-        WHEN (
-          CASE
-            WHEN COALESCE(o_stats.online_seconds, 0) > 0
-            THEN (COALESCE(ord_stats.order_duration_seconds, 0)::NUMERIC / o_stats.online_seconds::NUMERIC) * 100
-            ELSE 0
-          END >= 40
-          AND COALESCE(ord_stats.order_count, 0) >= 10
-          AND COALESCE(o_stats.online_seconds, 0) >= 180000
-        ) THEN 'excellent'
-        -- 较好：预订率 >= 30% AND 订单数 >= 5 AND 在线时长 >= 30小时
-        WHEN (
-          CASE
-            WHEN COALESCE(o_stats.online_seconds, 0) > 0
-            THEN (COALESCE(ord_stats.order_duration_seconds, 0)::NUMERIC / o_stats.online_seconds::NUMERIC) * 100
-            ELSE 0
-          END >= 30
-          AND COALESCE(ord_stats.order_count, 0) >= 5
-          AND COALESCE(o_stats.online_seconds, 0) >= 108000
-        ) THEN 'good'
-        -- 一般：预订率 >= 20% AND 订单数 >= 3
-        WHEN (
-          CASE
-            WHEN COALESCE(o_stats.online_seconds, 0) > 0
-            THEN (COALESCE(ord_stats.order_duration_seconds, 0)::NUMERIC / o_stats.online_seconds::NUMERIC) * 100
-            ELSE 0
-          END >= 20
-          AND COALESCE(ord_stats.order_count, 0) >= 3
-        ) THEN 'average'
-        -- 较差：预订率 >= 10% OR 订单数 >= 2
-        WHEN (
-          CASE
-            WHEN COALESCE(o_stats.online_seconds, 0) > 0
-            THEN (COALESCE(ord_stats.order_duration_seconds, 0)::NUMERIC / o_stats.online_seconds::NUMERIC) * 100
-            ELSE 0
-          END >= 10
-          OR COALESCE(ord_stats.order_count, 0) >= 2
-        ) THEN 'poor'
-        -- 很差：其他情况
-        ELSE 'very_poor'
-      END
-  END AS performance_rating
-FROM girls g
-LEFT JOIN online_stats o_stats ON g.id = o_stats.girl_id
-LEFT JOIN order_stats ord_stats ON g.id = ord_stats.girl_id
+    o.id AS order_id,
+    o.girl_id,
+    o.completed_at,
+    GREATEST(
+        COALESCE(
+            CASE
+                WHEN COALESCE(o.service_duration, 0) > 0
+                    THEN o.service_duration * 60
+            END,
+            CASE
+                WHEN o.completed_at IS NOT NULL
+                 AND o.service_started_at IS NOT NULL
+                 AND o.completed_at > o.service_started_at
+                    THEN EXTRACT(EPOCH FROM (o.completed_at - o.service_started_at))::BIGINT
+            END,
+            0
+        ) + (COALESCE(vat.add_time_minutes, 0) * 60),
+        0
+    )::BIGINT AS normalized_duration_seconds,
+    COALESCE(vat.add_time_minutes, 0)::INTEGER AS add_time_minutes
+FROM public.orders o
+LEFT JOIN valid_add_time vat ON vat.order_id = o.id
+WHERE o.status = 'completed'
+  AND o.completed_at IS NOT NULL
+  AND o.girl_id IS NOT NULL;
+
+CREATE VIEW public.v_girl_attendance_stats AS
+WITH recent_online_sessions AS (
+    SELECT
+        gws.girl_id,
+        gws.duration_seconds
+    FROM public.girl_work_sessions gws
+    WHERE gws.session_type = 'online'
+      AND gws.ended_at >= NOW() - INTERVAL '30 days'
+      AND gws.ended_at <= NOW()
+),
+online_stats AS (
+    SELECT
+        ros.girl_id,
+        COALESCE(SUM(ros.duration_seconds), 0) AS online_seconds
+    FROM recent_online_sessions ros
+    GROUP BY ros.girl_id
+),
+order_stats AS (
+    SELECT
+        vons.girl_id,
+        COUNT(*) AS order_count,
+        COALESCE(SUM(vons.normalized_duration_seconds), 0) AS order_duration_seconds
+    FROM public.v_order_normalized_sessions vons
+    WHERE vons.completed_at >= NOW() - INTERVAL '30 days'
+      AND vons.completed_at <= NOW()
+    GROUP BY vons.girl_id
+)
+SELECT
+    g.id AS girl_id,
+    g.girl_number,
+    g.name,
+    g.avatar_url,
+    g.city_id,
+    COALESCE(os.online_seconds, 0) AS online_seconds,
+    COALESCE(ords.order_count, 0) AS order_count,
+    COALESCE(ords.order_duration_seconds, 0) AS order_duration_seconds,
+    CASE
+        WHEN COALESCE(os.online_seconds, 0) > 0
+            THEN ROUND((COALESCE(ords.order_duration_seconds, 0)::NUMERIC / os.online_seconds::NUMERIC) * 100, 2)
+        ELSE 0
+    END AS booking_rate_percent,
+    CASE
+        WHEN COALESCE(os.online_seconds, 0) < 36000 OR COALESCE(ords.order_count, 0) < 2 THEN 'insufficient_data'
+        ELSE
+            CASE
+                WHEN (
+                    CASE
+                        WHEN COALESCE(os.online_seconds, 0) > 0
+                            THEN (COALESCE(ords.order_duration_seconds, 0)::NUMERIC / os.online_seconds::NUMERIC) * 100
+                        ELSE 0
+                    END >= 40
+                    AND COALESCE(ords.order_count, 0) >= 10
+                    AND COALESCE(os.online_seconds, 0) >= 180000
+                ) THEN 'excellent'
+                WHEN (
+                    CASE
+                        WHEN COALESCE(os.online_seconds, 0) > 0
+                            THEN (COALESCE(ords.order_duration_seconds, 0)::NUMERIC / os.online_seconds::NUMERIC) * 100
+                        ELSE 0
+                    END >= 30
+                    AND COALESCE(ords.order_count, 0) >= 5
+                    AND COALESCE(os.online_seconds, 0) >= 108000
+                ) THEN 'good'
+                WHEN (
+                    CASE
+                        WHEN COALESCE(os.online_seconds, 0) > 0
+                            THEN (COALESCE(ords.order_duration_seconds, 0)::NUMERIC / os.online_seconds::NUMERIC) * 100
+                        ELSE 0
+                    END >= 20
+                    AND COALESCE(ords.order_count, 0) >= 3
+                ) THEN 'average'
+                WHEN (
+                    CASE
+                        WHEN COALESCE(os.online_seconds, 0) > 0
+                            THEN (COALESCE(ords.order_duration_seconds, 0)::NUMERIC / os.online_seconds::NUMERIC) * 100
+                        ELSE 0
+                    END >= 10
+                    OR COALESCE(ords.order_count, 0) >= 2
+                ) THEN 'poor'
+                ELSE 'very_poor'
+            END
+    END AS performance_rating
+FROM public.girls g
+LEFT JOIN online_stats os ON g.id = os.girl_id
+LEFT JOIN order_stats ords ON g.id = ords.girl_id
 WHERE g.is_verified = true
   AND g.is_blocked = false
 ORDER BY booking_rate_percent DESC NULLS LAST;
-
--- 为视图添加注释
-COMMENT ON VIEW v_girl_attendance_stats IS '技师考勤统计视图：最近30天的在线时长、订单数量、订单时长、预订率和综合评级';

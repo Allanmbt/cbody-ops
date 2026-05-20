@@ -13,6 +13,7 @@ import {
     FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
     Select,
     SelectContent,
@@ -53,6 +54,7 @@ export function UserProfileEditForm({
 }: UserProfileEditFormProps) {
     const { admin } = useCurrentAdmin()
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [adminTagsInput, setAdminTagsInput] = useState((profile.admin_tags || []).join('，'))
 
     const form = useForm<UpdateUserProfileData>({
         resolver: zodResolver(updateUserProfileSchema),
@@ -75,7 +77,27 @@ export function UserProfileEditForm({
 
         setIsSubmitting(true)
         try {
-            const result = await updateUserProfile(profile.id, data)
+            const adminTags = Array.from(new Set(
+                adminTagsInput
+                    .split(/[,，\n]/)
+                    .map((tag) => tag.trim())
+                    .filter(Boolean)
+            ))
+
+            if (adminTags.length > 10) {
+                toast.error('后台标签最多10个')
+                return
+            }
+
+            if (adminTags.some((tag) => tag.length > 20)) {
+                toast.error('后台标签最长20个字符')
+                return
+            }
+
+            const result = await updateUserProfile(profile.id, {
+                ...data,
+                admin_tags: adminTags,
+            })
 
             if (result.success) {
                 toast.success('用户资料更新成功')
@@ -207,6 +229,19 @@ export function UserProfileEditForm({
                             </FormItem>
                         )}
                     />
+                </div>
+
+                <div className="space-y-2">
+                    <FormLabel>后台标签</FormLabel>
+                    <Textarea
+                        value={adminTagsInput}
+                        onChange={(event) => setAdminTagsInput(event.target.value)}
+                        placeholder="例如：暴力行为，多次取消&#10;有点讨厌"
+                        className="min-h-[88px]"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                        使用逗号、中文逗号或换行分隔；最多10个，每个最多20字，仅后台可见。
+                    </p>
                 </div>
 
                 <FormField

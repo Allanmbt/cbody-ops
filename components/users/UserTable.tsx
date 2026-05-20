@@ -35,6 +35,7 @@ import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { UserDetailDrawer } from './UserDetailDrawer'
 import { SendNotificationDialog } from './SendNotificationDialog'
 import { UserBookingHistoryDialog } from './UserBookingHistoryDialog'
+import { UserAdminTags } from './UserAdminTags'
 import { toggleUserBan, toggleUserWhitelist, updateUserCreditScore } from '@/app/dashboard/users/actions'
 import { toast } from 'sonner'
 
@@ -415,8 +416,9 @@ export function UserTable({
                                                         </AvatarFallback>
                                                     </Avatar>
                                                     <div className="min-w-0">
-                                                        <div className="font-medium">
+                                                        <div className="flex flex-wrap items-center gap-1.5 font-medium">
                                                             {user.display_name || user.username || '未设置'}
+                                                            <UserAdminTags tags={user.admin_tags} />
                                                         </div>
                                                         {user.username && user.display_name && (
                                                             <div className="text-sm text-muted-foreground">

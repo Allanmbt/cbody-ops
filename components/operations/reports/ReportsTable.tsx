@@ -18,6 +18,7 @@ import { formatRelativeTime } from "@/lib/features/orders"
 import type { ReportListItem } from "@/app/dashboard/operations/reports/actions"
 import { ReportDrawer } from "./ReportDrawer"
 import { toast } from "sonner"
+import { UserAdminTags } from "@/components/users/UserAdminTags"
 
 interface ReportsTableProps {
     reports: ReportListItem[]
@@ -154,6 +155,7 @@ export function ReportsTable({ reports, loading = false, onRefresh }: ReportsTab
                                                         <span className="text-sm font-medium truncate max-w-[140px]">
                                                             {reporterDisplayText}
                                                         </span>
+                                                        <UserAdminTags tags={reporterProfile?.admin_tags} />
                                                         {getRoleBadge(report.reporter_role)}
                                                     </div>
                                                     {!reporterIsGirl && reporterProfile && (
@@ -182,9 +184,12 @@ export function ReportsTable({ reports, loading = false, onRefresh }: ReportsTab
                                                     </AvatarFallback>
                                                 </Avatar>
                                                 <div className="flex flex-col gap-0.5">
-                                                    <span className="text-sm font-medium truncate max-w-[120px]">
-                                                        {targetDisplayText}
-                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-medium truncate max-w-[120px]">
+                                                            {targetDisplayText}
+                                                        </span>
+                                                        <UserAdminTags tags={targetProfile?.admin_tags} />
+                                                    </div>
                                                     {!targetIsGirl && targetProfile && (
                                                         <button
                                                             onClick={() => {

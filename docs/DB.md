@@ -479,6 +479,7 @@
 | last_ip_address | INET | 否 | NULL | 最后登录IP |
 | last_login_at | TIMESTAMPTZ | 否 | NULL | 最后登录时间 |
 | is_whitelisted | BOOLEAN | 否 | false | 白名单标识：true 时豁免并发下单限制和恶意取消检查 |
+| admin_tags | TEXT[] | 否 | '{}' | 后台专用用户标签，仅用于管理员识别用户历史备注 |
 | temp_blocked_until | TIMESTAMPTZ | 否 | NULL | 临时禁止下单截止时间（NULL=未限制，用于恶意取消防范） |
 | temp_block_reason | TEXT | 否 | NULL | 临时限制原因（如：频繁取消订单） |
 | last_credit_recovery_at | TIMESTAMPTZ | 否 | NULL | 上次信用分恢复时间（预留字段，暂不启用自动恢复） |

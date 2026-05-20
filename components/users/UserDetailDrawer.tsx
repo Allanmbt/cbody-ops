@@ -20,13 +20,18 @@ import {
     Smartphone,
     Monitor,
     Tablet,
-    Copy
+    Copy,
+    Edit2,
+    Save,
+    X
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { getUserDetail } from '@/app/dashboard/users/actions'
+import { Textarea } from '@/components/ui/textarea'
+import { getUserDetail, updateUserAdminTags } from '@/app/dashboard/users/actions'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
+import { UserAdminTags } from './UserAdminTags'
 
 interface UserDetailDrawerProps {
     open: boolean
@@ -100,6 +105,9 @@ function getDeviceIcon(deviceType: string) {
 export function UserDetailDrawer({ open, onOpenChange, userId }: UserDetailDrawerProps) {
     const [user, setUser] = useState<any>(null)
     const [loading, setLoading] = useState(false)
+    const [editingTags, setEditingTags] = useState(false)
+    const [tagInput, setTagInput] = useState('')
+    const [savingTags, setSavingTags] = useState(false)
 
     useEffect(() => {
         if (open && userId) {
@@ -114,6 +122,8 @@ export function UserDetailDrawer({ open, onOpenChange, userId }: UserDetailDrawe
         const result = await getUserDetail(userId)
         if (result.success && result.data) {
             setUser(result.data)
+            setTagInput((result.data.admin_tags || []).join('，'))
+            setEditingTags(false)
         } else {
             toast.error(result.error || '加载用户详情失败')
         }
@@ -135,6 +145,40 @@ export function UserDetailDrawer({ open, onOpenChange, userId }: UserDetailDrawe
     }
 
     const deviceType = user ? getDeviceType(user.preferences) : 'Web'
+
+    const parseTagInput = () => Array.from(new Set(
+        tagInput
+            .split(/[,，\n]/)
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+    ))
+
+    const handleSaveTags = async () => {
+        if (!user) return
+
+        const tags = parseTagInput()
+        if (tags.length > 10) {
+            toast.error('后台标签最多10个')
+            return
+        }
+        if (tags.some((tag) => tag.length > 20)) {
+            toast.error('后台标签最长20个字符')
+            return
+        }
+
+        setSavingTags(true)
+        const result = await updateUserAdminTags(user.id, tags)
+        setSavingTags(false)
+
+        if (!result.success) {
+            toast.error(result.error || '更新用户标签失败')
+            return
+        }
+
+        setUser((prev: any) => prev ? { ...prev, admin_tags: tags } : prev)
+        setEditingTags(false)
+        toast.success('用户标签已更新')
+    }
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -161,6 +205,58 @@ export function UserDetailDrawer({ open, onOpenChange, userId }: UserDetailDrawe
                                 <h2 className="text-2xl font-bold break-words">
                                     {user.display_name || user.username || '未设置'}
                                 </h2>
+                                <div className="mt-2 space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <UserAdminTags tags={user.admin_tags} />
+                                        {!editingTags && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2 text-xs"
+                                                onClick={() => {
+                                                    setTagInput((user.admin_tags || []).join('，'))
+                                                    setEditingTags(true)
+                                                }}
+                                            >
+                                                <Edit2 className="mr-1 h-3 w-3" />
+                                                编辑标签
+                                            </Button>
+                                        )}
+                                    </div>
+                                    {editingTags && (
+                                        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                                            <Textarea
+                                                value={tagInput}
+                                                onChange={(event) => setTagInput(event.target.value)}
+                                                placeholder="例如：暴力行为，多次取消&#10;有点讨厌"
+                                                className="min-h-[80px] bg-background"
+                                            />
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-xs text-muted-foreground">
+                                                    逗号、中文逗号或换行分隔；最多10个，每个最多20字。
+                                                </p>
+                                                <div className="flex shrink-0 items-center gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled={savingTags}
+                                                        onClick={() => {
+                                                            setTagInput((user.admin_tags || []).join('，'))
+                                                            setEditingTags(false)
+                                                        }}
+                                                    >
+                                                        <X className="mr-1 h-3 w-3" />
+                                                        取消
+                                                    </Button>
+                                                    <Button size="sm" disabled={savingTags} onClick={handleSaveTags}>
+                                                        <Save className="mr-1 h-3 w-3" />
+                                                        {savingTags ? '保存中' : '保存标签'}
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                                 {user.username && user.display_name && (
                                     <p className="text-muted-foreground mt-1">@{user.username}</p>
                                 )}

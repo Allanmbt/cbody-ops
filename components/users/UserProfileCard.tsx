@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Edit, X } from 'lucide-react'
 import type { UserProfile } from '@/lib/features/users'
 import { UserProfileEditForm } from './UserProfileEditForm'
+import { UserAdminTags } from './UserAdminTags'
 
 interface UserProfileCardProps {
     profile: UserProfile
@@ -113,6 +114,7 @@ export function UserProfileCard({ profile, canEdit }: UserProfileCardProps) {
                             <h3 className="text-xl font-semibold">
                                 {profile.display_name || profile.username || '未设置'}
                             </h3>
+                            <UserAdminTags tags={profile.admin_tags} />
                             {profile.username && profile.display_name && (
                                 <p className="text-muted-foreground">@{profile.username}</p>
                             )}

@@ -16,6 +16,30 @@ import {
 } from '@/lib/audit'
 import type { UpdateUserProfileData, UserListParams, UserListItem } from '@/lib/features/users'
 
+function sanitizeAdminTags(tags: unknown): string[] {
+    if (!Array.isArray(tags)) {
+        return []
+    }
+
+    const normalizedTags = Array.from(new Set(
+        tags
+            .filter((tag): tag is string => typeof tag === 'string')
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+    ))
+
+    if (normalizedTags.length > 10) {
+        throw new Error('后台标签最多10个')
+    }
+
+    const tooLongTag = normalizedTags.find((tag) => tag.length > 20)
+    if (tooLongTag) {
+        throw new Error('后台标签最长20个字符')
+    }
+
+    return normalizedTags
+}
+
 /**
  * 更新用户诚信分
  */
@@ -90,6 +114,7 @@ export async function getUserList(
                 experience,
                 credit_score,
                 is_whitelisted,
+                admin_tags,
                 is_banned,
                 last_login_at,
                 created_at,
@@ -223,7 +248,9 @@ export async function updateUserProfile(
         const admin = await requireAdmin(['superadmin'])
 
         // 验证输入数据
-        const validatedData = updateUserProfileSchema.parse(data)
+        const { admin_tags: rawAdminTags, ...profileData } = data
+        const validatedData = updateUserProfileSchema.parse(profileData)
+        const adminTags = sanitizeAdminTags(rawAdminTags)
 
         const supabase = getSupabaseAdminClient()
 
@@ -243,6 +270,7 @@ export async function updateUserProfile(
             .from('user_profiles')
             .update({
                 ...validatedData,
+                admin_tags: adminTags,
                 updated_at: new Date().toISOString()
             })
             .eq('id', targetUserId)
@@ -257,10 +285,16 @@ export async function updateUserProfile(
             const changes: Record<string, unknown> = {}
             const previousValues: Record<string, unknown> = {}
 
-            Object.keys(validatedData).forEach(key => {
-                const newValue = (validatedData as Record<string, unknown>)[key]
+            const auditedData = { ...validatedData, admin_tags: adminTags }
+
+            Object.keys(auditedData).forEach(key => {
+                const newValue = (auditedData as Record<string, unknown>)[key]
                 const oldValue = (currentProfile as Record<string, unknown>)[key]
-                if (newValue !== oldValue) {
+                const changed = Array.isArray(newValue) || Array.isArray(oldValue)
+                    ? JSON.stringify(newValue ?? []) !== JSON.stringify(oldValue ?? [])
+                    : newValue !== oldValue
+
+                if (changed) {
                     changes[key] = newValue
                     previousValues[key] = oldValue
                 }
@@ -285,6 +319,59 @@ export async function updateUserProfile(
 }
 
 // 切换用户封禁状态
+export async function updateUserAdminTags(
+    targetUserId: string,
+    adminTags: string[]
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const admin = await requireAdmin(['superadmin', 'admin'])
+        const tags = sanitizeAdminTags(adminTags)
+        const supabase = getSupabaseAdminClient()
+
+        const { data: currentProfile } = await supabase
+            .from('user_profiles')
+            .select('admin_tags')
+            .eq('id', targetUserId)
+            .single()
+
+        const { error } = await (supabase as any)
+            .from('user_profiles')
+            .update({
+                admin_tags: tags,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', targetUserId)
+
+        if (error) {
+            console.error('[用户标签] 更新失败:', error)
+            return { success: false, error: '更新用户标签失败' }
+        }
+
+        try {
+            const previousTags = (currentProfile as any)?.admin_tags || []
+            if (JSON.stringify(previousTags) !== JSON.stringify(tags)) {
+                await logUserProfileUpdate(
+                    admin.id,
+                    targetUserId,
+                    { admin_tags: tags },
+                    { admin_tags: previousTags }
+                )
+            }
+        } catch (auditError) {
+            console.error('[用户标签] 审计日志失败:', auditError)
+        }
+
+        revalidatePath('/dashboard/users')
+        revalidatePath(`/dashboard/users/${targetUserId}`)
+        revalidatePath('/dashboard/operations/reports')
+
+        return { success: true }
+    } catch (error) {
+        console.error('[用户标签] 更新异常:', error)
+        return { success: false, error: error instanceof Error ? error.message : '更新用户标签异常' }
+    }
+}
+
 export async function toggleUserBan(
     data: {
         user_id: string

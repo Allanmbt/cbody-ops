@@ -66,13 +66,15 @@ SELECT
       'user_id', reporter_girl.user_id,
       'display_name', reporter_girl.name,
       'avatar_url', reporter_girl.avatar_url,
+      'admin_tags', COALESCE(reporter_user.admin_tags, '{}'::text[]),
       'girl_number', reporter_girl.girl_number,
       'girl_name', reporter_girl.name
     )
     ELSE json_build_object(
       'user_id', reporter_user.id,
       'display_name', reporter_user.display_name,
-      'avatar_url', reporter_user.avatar_url
+      'avatar_url', reporter_user.avatar_url,
+      'admin_tags', COALESCE(reporter_user.admin_tags, '{}'::text[])
     )
   END AS reporter_profile,
   
@@ -82,13 +84,15 @@ SELECT
       'user_id', target_girl.user_id,
       'display_name', target_girl.name,
       'avatar_url', target_girl.avatar_url,
+      'admin_tags', COALESCE(target_user.admin_tags, '{}'::text[]),
       'girl_number', target_girl.girl_number,
       'girl_name', target_girl.name
     )
     ELSE json_build_object(
       'user_id', target_user.id,
       'display_name', target_user.display_name,
-      'avatar_url', target_user.avatar_url
+      'avatar_url', target_user.avatar_url,
+      'admin_tags', COALESCE(target_user.admin_tags, '{}'::text[])
     )
   END AS target_profile,
   

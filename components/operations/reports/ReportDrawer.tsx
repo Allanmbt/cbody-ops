@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { formatRelativeTime } from "@/lib/features/orders"
 import { resolveReport, type ReportListItem } from "@/app/dashboard/operations/reports/actions"
 import { toast } from "sonner"
+import { UserAdminTags } from "@/components/users/UserAdminTags"
 
 interface ReportDrawerProps {
     open: boolean
@@ -140,6 +141,7 @@ export function ReportDrawer({ open, onOpenChange, report, onResolved }: ReportD
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm font-medium truncate">{reporterDisplayText}</span>
+                                    <UserAdminTags tags={reporterProfile?.admin_tags} />
                                     <Badge variant="outline" className="text-xs">
                                         举报人 · {getRoleLabel(report.reporter_role)}
                                     </Badge>
@@ -167,6 +169,7 @@ export function ReportDrawer({ open, onOpenChange, report, onResolved }: ReportD
                                 <div className="flex items-center gap-1">
                                     <span className="text-xs">被举报人：</span>
                                     <span className="font-medium text-foreground">{targetDisplayText}</span>
+                                    <UserAdminTags tags={targetProfile?.admin_tags} />
                                 </div>
                                 {!targetIsGirl && targetProfile && (
                                     <button
