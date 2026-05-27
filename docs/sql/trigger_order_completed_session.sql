@@ -1,7 +1,6 @@
--- Order completion trigger:
--- Record order sessions into girl_work_sessions.
--- Uses completed_at when available so late manual completion does not
--- artificially stretch the raw order session.
+-- Order completion trigger
+-- Keep the legacy raw session algorithm for therapist-side order completion flow.
+-- Performance KPIs no longer depend on this raw order duration.
 
 CREATE OR REPLACE FUNCTION public.record_order_session()
 RETURNS TRIGGER
@@ -15,12 +14,8 @@ DECLARE
     v_duration_seconds BIGINT;
 BEGIN
     IF (TG_OP = 'UPDATE' AND OLD.status != 'completed' AND NEW.status = 'completed') THEN
-        v_started_at := COALESCE(NEW.service_started_at, NEW.confirmed_at, NEW.created_at);
-        v_ended_at := COALESCE(NEW.completed_at, NOW());
-
-        IF v_started_at IS NULL OR v_ended_at <= v_started_at THEN
-            RETURN NEW;
-        END IF;
+        v_started_at := COALESCE(NEW.service_started_at, NEW.created_at);
+        v_ended_at := NOW();
 
         v_duration_seconds := EXTRACT(EPOCH FROM (v_ended_at - v_started_at))::BIGINT;
 

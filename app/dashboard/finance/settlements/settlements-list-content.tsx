@@ -43,8 +43,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Calendar, CheckCircle, Clock, FileText, RefreshCw, Download, Edit, Search, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Loader2, X, AlertTriangle, ImageIcon, Copy } from "lucide-react"
-import { getGirlOrderSettlements, getFinanceDayStats, getOrderSettlementDetail, updateOrderSettlementPayment, markSettlementAsSettled, getOrderPaymentData, rejectOrderSettlement } from "@/lib/features/finance/actions"
-import type { OrderSettlementWithDetails, OrderPaymentPageData, OrderPlatformPayment } from "@/lib/features/finance"
+import { getFinanceDayStats, getOrderSettlementDetail, updateOrderSettlementPayment, markSettlementAsSettled, getOrderPaymentData, rejectOrderSettlement, getFinanceOrderSettlementList } from "@/lib/features/finance/actions"
+import type { OrderSettlementWithDetails, OrderPaymentPageData } from "@/lib/features/finance"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
 import { format, subDays } from "date-fns"
@@ -60,6 +60,13 @@ import {
 type FiscalDateOption = 'today' | 'yesterday' | 'day_before_yesterday' | 'all'
 type SortField = 'girl_name' | 'created_at' | 'service_fee' | 'platform_should_get' | null
 type SortOrder = 'asc' | 'desc'
+type AppliedFilters = {
+    search: string
+    status: string
+    platformCollected: string
+    serviceType: string
+    addTime: string
+}
 
 /**
  * 计算泰国时区财务日时间范围
@@ -210,13 +217,20 @@ export function SettlementsListContent() {
     const [fiscalDate, setFiscalDate] = useState<FiscalDateOption>('yesterday')
 
     // 搜索
-    const [searchInput, setSearchInput] = useState('') // 输入框的值（实时更新）
+    const [searchInput, setSearchInput] = useState('')
 
     // 筛选
     const [statusFilter, setStatusFilter] = useState<string>('all')
     const [platformCollectedFilter, setPlatformCollectedFilter] = useState<string>('all')
     const [serviceTypeFilter, setServiceTypeFilter] = useState<string>('all')
     const [addTimeFilter, setAddTimeFilter] = useState<string>('all')
+    const [appliedFilters, setAppliedFilters] = useState<AppliedFilters>({
+        search: '',
+        status: 'all',
+        platformCollected: 'all',
+        serviceType: 'all',
+        addTime: 'all',
+    })
 
     // 排序
     const [sortField, setSortField] = useState<SortField>(null)
@@ -292,11 +306,19 @@ export function SettlementsListContent() {
             setSelectedIds(new Set())
 
             // 一次性加载当前财务日的所有数据（不分页）
-            const result = await getGirlOrderSettlements(
-                undefined,
+            const result = await getFinanceOrderSettlementList(
                 {
                     completed_at_from: startISO,
                     completed_at_to: endISO,
+                    search: appliedFilters.search || undefined,
+                    status: appliedFilters.status as any,
+                    platform_collected: appliedFilters.platformCollected === 'yes'
+                        ? 'collected'
+                        : appliedFilters.platformCollected === 'no'
+                            ? 'not_collected'
+                            : 'all',
+                    service_type: appliedFilters.serviceType as any,
+                    has_add_time: appliedFilters.addTime as any,
                 },
                 { page: 1, pageSize: 9999 }
             )
@@ -313,7 +335,7 @@ export function SettlementsListContent() {
         } finally {
             setLoading(false)
         }
-    }, [startISO, endISO])
+    }, [startISO, endISO, appliedFilters])
 
     // 财务日变化时加载数据
     useEffect(() => {
@@ -324,7 +346,7 @@ export function SettlementsListContent() {
     // 筛选条件变化时重置到第一页
     useEffect(() => {
         setPage(1)
-    }, [searchInput, statusFilter, platformCollectedFilter, serviceTypeFilter, addTimeFilter])
+    }, [appliedFilters])
 
     // 刷新按钮：同时刷新统计和列表
     function handleRefresh() {
@@ -332,19 +354,42 @@ export function SettlementsListContent() {
         loadSettlements()
     }
 
-    // 搜索（实时响应）
-    const handleSearch = (value: string) => {
-        setSearchInput(value)
+    const handleSearch = () => {
+        setAppliedFilters({
+            search: searchInput.trim(),
+            status: statusFilter,
+            platformCollected: platformCollectedFilter,
+            serviceType: serviceTypeFilter,
+            addTime: addTimeFilter,
+        })
+        setPage(1)
+    }
+
+    const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') {
+            event.preventDefault()
+            handleSearch()
+        }
+    }
+
+    const applyFilterChange = (next: Partial<Omit<AppliedFilters, 'search'>>) => {
+        setAppliedFilters((current) => ({
+            ...current,
+            ...next,
+        }))
+        setPage(1)
     }
 
     // 状态筛选
     const handleStatusFilter = (value: string) => {
         setStatusFilter(value)
+        applyFilterChange({ status: value })
     }
 
     // 平台代收筛选
     const handlePlatformCollectedFilter = (value: string) => {
         setPlatformCollectedFilter(value)
+        applyFilterChange({ platformCollected: value })
     }
 
     // 排序切换
@@ -372,6 +417,15 @@ export function SettlementsListContent() {
         duration_minutes: Number((settlement as any).add_time_duration_minutes || 0),
         commission_thb: Number((settlement as any).add_time_commission_thb || 0),
     })
+
+    const getCompactAddTimeSummaryText = (settlement: OrderSettlementWithDetails) => {
+        const summary = getAddTimeSummary(settlement)
+        if (summary.count <= 0) {
+            return null
+        }
+
+        return `+${summary.count}次 / ${summary.duration_minutes}分 / ${formatCurrency(summary.commission_thb)}`
+    }
 
     async function loadSettlementDetail(settlementId: string) {
         try {
@@ -414,46 +468,46 @@ export function SettlementsListContent() {
     const filteredAndSortedSettlements = allSettlements
         .filter(settlement => {
             // 搜索筛选
-            if (searchInput) {
-                const searchLower = searchInput.toLowerCase()
+            if (appliedFilters.search) {
+                const searchLower = appliedFilters.search.toLowerCase()
                 const orderNumber = settlement.orders?.order_number?.toLowerCase() || ''
                 const girlName = settlement.girls?.name?.toLowerCase() || ''
                 const girlNumber = settlement.girls?.girl_number?.toString() || ''
 
                 if (!orderNumber.includes(searchLower) &&
                     !girlName.includes(searchLower) &&
-                    !girlNumber.includes(searchInput)) {
+                    !girlNumber.includes(appliedFilters.search)) {
                     return false
                 }
             }
 
             // 状态筛选
-            if (statusFilter !== 'all' && settlement.settlement_status !== statusFilter) {
+            if (appliedFilters.status !== 'all' && settlement.settlement_status !== appliedFilters.status) {
                 return false
             }
 
             // 平台代收筛选（是否有代收）
-            if (platformCollectedFilter !== 'all') {
+            if (appliedFilters.platformCollected !== 'all') {
                 const actualPaid = Number((settlement as any).actual_paid_amount || 0)
                 const hasCollection = actualPaid > 0
-                if (platformCollectedFilter === 'yes' && !hasCollection) {
+                if (appliedFilters.platformCollected === 'yes' && !hasCollection) {
                     return false
                 }
-                if (platformCollectedFilter === 'no' && hasCollection) {
+                if (appliedFilters.platformCollected === 'no' && hasCollection) {
                     return false
                 }
             }
 
-            if (serviceTypeFilter !== 'all' && settlement.orders?.service_type !== serviceTypeFilter) {
+            if (appliedFilters.serviceType !== 'all' && settlement.orders?.service_type !== appliedFilters.serviceType) {
                 return false
             }
 
-            if (addTimeFilter !== 'all') {
+            if (appliedFilters.addTime !== 'all') {
                 const hasAddTime = getAddTimeSummary(settlement).count > 0
-                if (addTimeFilter === 'yes' && !hasAddTime) {
+                if (appliedFilters.addTime === 'yes' && !hasAddTime) {
                     return false
                 }
-                if (addTimeFilter === 'no' && hasAddTime) {
+                if (appliedFilters.addTime === 'no' && hasAddTime) {
                     return false
                 }
             }
@@ -666,11 +720,19 @@ export function SettlementsListContent() {
             toast.loading('正在导出数据...')
 
             // 获取当前财务日的所有数据（不分页）
-            const result = await getGirlOrderSettlements(
-                undefined,
+            const result = await getFinanceOrderSettlementList(
                 {
                     completed_at_from: startISO,
                     completed_at_to: endISO,
+                    search: appliedFilters.search || undefined,
+                    status: appliedFilters.status as any,
+                    platform_collected: appliedFilters.platformCollected === 'yes'
+                        ? 'collected'
+                        : appliedFilters.platformCollected === 'no'
+                            ? 'not_collected'
+                            : 'all',
+                    service_type: appliedFilters.serviceType as any,
+                    has_add_time: appliedFilters.addTime as any,
                 },
                 { page: 1, pageSize: 10000 } // 设置足够大的 pageSize 获取所有数据
             )
@@ -872,14 +934,21 @@ export function SettlementsListContent() {
                 <CardContent className="p-4">
                     <div className="flex flex-wrap items-center gap-3">
                         {/* 搜索框 */}
-                        <div className="relative flex-1 min-w-[220px] max-w-md">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
-                            <Input
-                                placeholder="搜索工号、技师姓名、订单号..."
-                                value={searchInput}
-                                onChange={(e) => handleSearch(e.target.value)}
-                                className="pl-10"
-                            />
+                        <div className="flex w-full min-w-[220px] max-w-xl gap-2 md:w-auto md:flex-1">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="搜索工号、技师姓名、订单号..."
+                                    value={searchInput}
+                                    onChange={(e) => setSearchInput(e.target.value)}
+                                    onKeyDown={handleSearchKeyDown}
+                                    className="pl-10"
+                                />
+                            </div>
+                            <Button onClick={handleSearch} className="shrink-0">
+                                <Search className="mr-2 size-4" />
+                                搜索
+                            </Button>
                         </div>
 
                         <Select value={statusFilter} onValueChange={handleStatusFilter}>
@@ -904,7 +973,13 @@ export function SettlementsListContent() {
                             </SelectContent>
                         </Select>
 
-                        <Select value={serviceTypeFilter} onValueChange={setServiceTypeFilter}>
+                        <Select
+                            value={serviceTypeFilter}
+                            onValueChange={(value) => {
+                                setServiceTypeFilter(value)
+                                applyFilterChange({ serviceType: value })
+                            }}
+                        >
                             <SelectTrigger className="w-[130px]">
                                 <SelectValue />
                             </SelectTrigger>
@@ -915,7 +990,13 @@ export function SettlementsListContent() {
                             </SelectContent>
                         </Select>
 
-                        <Select value={addTimeFilter} onValueChange={setAddTimeFilter}>
+                        <Select
+                            value={addTimeFilter}
+                            onValueChange={(value) => {
+                                setAddTimeFilter(value)
+                                applyFilterChange({ addTime: value })
+                            }}
+                        >
                             <SelectTrigger className="w-[130px]">
                                 <SelectValue />
                             </SelectTrigger>
@@ -1009,7 +1090,7 @@ export function SettlementsListContent() {
                                             {paginatedSettlements.map((settlement) => {
                                                 const isPending = settlement.settlement_status === 'pending'
                                                 const hasActualPaid = (settlement as any).actual_paid_amount
-                                                const addTimeSummary = getAddTimeSummary(settlement)
+                                                const compactAddTimeSummary = getCompactAddTimeSummaryText(settlement)
 
                                                 return (
                                                     <TableRow key={settlement.id}>
@@ -1064,7 +1145,11 @@ export function SettlementsListContent() {
                                                         <TableCell className="text-right font-medium">
                                                             <div className="flex flex-col items-end gap-0.5">
                                                                 <span>{formatCurrency(settlement.platform_should_get)}</span>
-                                                                <AddTimeSummaryText summary={addTimeSummary} />
+                                                                {compactAddTimeSummary && (
+                                                                    <span className="max-w-[152px] truncate text-xs font-medium text-amber-700 dark:text-amber-300">
+                                                                        {compactAddTimeSummary}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right">
@@ -1253,7 +1338,7 @@ export function SettlementsListContent() {
                                         </Badge>
                                     </div>
                                     <div className="space-y-2 max-h-60 overflow-y-auto border rounded-md p-3">
-                                        {paymentData.payments.map((payment, index) => (
+                                        {paymentData.payments.map((payment) => (
                                             <div key={payment.id} className="flex items-start gap-3 pb-2 border-b last:border-0 last:pb-0">
                                                 <div className="flex-1 space-y-1">
                                                     <div className="flex items-center gap-2 flex-wrap">

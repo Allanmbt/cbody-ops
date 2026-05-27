@@ -7,7 +7,7 @@ export const orderListParamsSchema = z.object({
   page: z.number().int().min(1).default(1),
   limit: z.number().int().min(1).max(100).default(20),
   search: z.string().optional(),
-  status: z.enum([
+  status: z.array(z.enum([
     'pending',
     'confirmed',
     'en_route',
@@ -15,7 +15,7 @@ export const orderListParamsSchema = z.object({
     'in_service',
     'completed',
     'cancelled'
-  ]).optional(),
+  ])).optional(),
   service_type: z.enum(['outcall', 'incall']).optional(),
   has_add_time: z.boolean().optional(),
   start_date: z.string().optional(),

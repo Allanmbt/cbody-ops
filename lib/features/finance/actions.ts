@@ -21,6 +21,188 @@ import type {
 import type { PaginationParams, UpdateDepositData, ApproveTransactionData, RejectTransactionData, UpdateSettlementPaymentData, MarkSettlementAsSettledData } from "./validations"
 import { updateDepositSchema, approveTransactionSchema, rejectTransactionSchema, updateSettlementPaymentSchema, markSettlementAsSettledSchema } from "./validations"
 
+type FinanceSettlementRow = any
+
+export async function getFinanceOrderSettlementList(
+    filters: SettlementListFilters = {},
+    pagination: PaginationParams = { page: 1, pageSize: 20 }
+): Promise<ApiResponse<PaginatedResponse<OrderSettlementWithDetails>>> {
+    try {
+        await requireAdmin(['superadmin', 'admin', 'finance'])
+
+        const supabase = getSupabaseAdminClient()
+        const { page, pageSize } = pagination
+
+        let query = supabase
+            .from('order_settlements')
+            .select(`
+                *,
+                orders!inner (
+                    id,
+                    order_number,
+                    status,
+                    service_name,
+                    service_duration,
+                    total_amount,
+                    completed_at,
+                    service_type,
+                    incall_requested_at,
+                    incall_location_snapshot
+                ),
+                girls!inner (
+                    id,
+                    girl_number,
+                    name,
+                    username,
+                    avatar_url
+                )
+            `)
+
+        if (filters.girl_id) {
+            query = query.eq('girl_id', filters.girl_id)
+        }
+
+        if (filters.status && filters.status !== 'all') {
+            query = query.eq('settlement_status', filters.status)
+        }
+
+        if (filters.completed_at_from) {
+            query = query.gte('created_at', filters.completed_at_from)
+        }
+
+        if (filters.completed_at_to) {
+            query = query.lt('created_at', filters.completed_at_to)
+        }
+
+        query = query.order('created_at', { ascending: false }).range(0, 9999)
+
+        const { data, error } = await query
+        if (error) throw error
+
+        const orderIds = (data || []).map((row: FinanceSettlementRow) => row.order_id).filter(Boolean)
+        const extensionsMap = await fetchOrderTimeExtensions(supabase, orderIds)
+        const getRelatedObject = (value: any) => Array.isArray(value) ? value[0] : value
+
+        const formattedData = (data || []).map((row: FinanceSettlementRow) => {
+            const order = getRelatedObject(row.orders)
+            const girl = getRelatedObject(row.girls)
+            const timeExtensions = extensionsMap.get(row.order_id) || []
+            const addTimeSummary = timeExtensions.reduce((summary, item) => {
+                summary.count += 1
+                summary.duration_minutes += Number(item.duration_minutes || 0)
+                summary.commission_thb += Number(item.commission_thb_snapshot || 0)
+                return summary
+            }, { count: 0, duration_minutes: 0, commission_thb: 0 })
+            const addTimeCount = addTimeSummary.count || Number(row.add_time_count || 0)
+            const addTimeDuration = addTimeSummary.duration_minutes || Number(row.add_time_duration_minutes || 0)
+            const addTimeCommission = addTimeSummary.commission_thb || Number(row.add_time_commission_thb || 0)
+
+            return {
+                ...row,
+                add_time_count: addTimeCount,
+                add_time_duration_minutes: addTimeDuration,
+                add_time_commission_thb: addTimeCommission,
+                orders: order ? {
+                    id: order.id,
+                    order_number: order.order_number,
+                    status: order.status,
+                    service_name: order.service_name,
+                    service_duration: order.service_duration,
+                    total_amount: order.total_amount,
+                    completed_at: order.completed_at,
+                    service_type: order.service_type || 'outcall',
+                    incall_requested_at: order.incall_requested_at || null,
+                    incall_location_snapshot: order.incall_location_snapshot || null,
+                } : null,
+                girls: girl ? {
+                    id: girl.id,
+                    girl_number: girl.girl_number,
+                    name: girl.name,
+                    username: girl.username,
+                    avatar_url: girl.avatar_url,
+                } : null,
+                time_extensions: timeExtensions,
+            }
+        }).filter((settlement: any) => {
+            if (filters.platform_collected && filters.platform_collected !== 'all') {
+                const hasCollection = Number(settlement.actual_paid_amount || 0) > 0
+                if (filters.platform_collected === 'collected' && !hasCollection) return false
+                if (filters.platform_collected === 'not_collected' && hasCollection) return false
+            }
+
+            if (filters.service_type && filters.service_type !== 'all' && settlement.orders?.service_type !== filters.service_type) {
+                return false
+            }
+
+            if (filters.has_add_time && filters.has_add_time !== 'all') {
+                const hasAddTime = Number(settlement.add_time_count || 0) > 0
+                if (filters.has_add_time === 'yes' && !hasAddTime) return false
+                if (filters.has_add_time === 'no' && hasAddTime) return false
+            }
+
+            if (filters.search && filters.search.trim()) {
+                const searchTerm = filters.search.trim()
+                const searchLower = searchTerm.toLowerCase()
+                const orderNumber = settlement.orders?.order_number?.toLowerCase() || ''
+                const girlName = settlement.girls?.name?.toLowerCase() || ''
+                const girlNumber = settlement.girls?.girl_number?.toString() || ''
+
+                if (!orderNumber.includes(searchLower) &&
+                    !girlName.includes(searchLower) &&
+                    !girlNumber.includes(searchTerm)) {
+                    return false
+                }
+            }
+
+            return true
+        })
+
+        const sortedData = [...formattedData].sort((a: any, b: any) => {
+            const ascending = filters.sort_order === 'asc'
+            let aValue: any = new Date(a.created_at).getTime()
+            let bValue: any = new Date(b.created_at).getTime()
+
+            if (filters.sort_by === 'girl_name') {
+                aValue = a.girls?.name || ''
+                bValue = b.girls?.name || ''
+            } else if (filters.sort_by === 'service_fee') {
+                aValue = Number(a.service_fee || 0)
+                bValue = Number(b.service_fee || 0)
+            } else if (filters.sort_by === 'platform_should_get') {
+                aValue = Number(a.platform_should_get || 0)
+                bValue = Number(b.platform_should_get || 0)
+            }
+
+            if (typeof aValue === 'string') {
+                return ascending ? aValue.localeCompare(bValue, 'zh-CN') : bValue.localeCompare(aValue, 'zh-CN')
+            }
+
+            return ascending ? aValue - bValue : bValue - aValue
+        })
+
+        const total = sortedData.length
+        const from = (page - 1) * pageSize
+        const pageData = sortedData.slice(from, from + pageSize)
+
+        return {
+            ok: true,
+            data: {
+                data: pageData as OrderSettlementWithDetails[],
+                total,
+                page,
+                pageSize,
+                totalPages: Math.ceil(total / pageSize),
+            }
+        }
+    } catch (error) {
+        console.error('[订单核验] 获取列表失败:', error)
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : '获取订单核验列表失败'
+        }
+    }
+}
+
 async function fetchOrderTimeExtensions(supabase: any, orderIds: string[]) {
     if (orderIds.length === 0) return new Map<string, any[]>()
 
@@ -979,12 +1161,19 @@ export async function getOrderSettlementDetail(
         }
 
         const extensionsMap = await fetchOrderTimeExtensions(supabase, [(data as any).order_id])
+        const timeExtensions = extensionsMap.get((data as any).order_id) || []
+        const addTimeSummary = timeExtensions.reduce((summary, item) => {
+            summary.count += 1
+            summary.duration_minutes += Number(item.duration_minutes || 0)
+            summary.commission_thb += Number(item.commission_thb_snapshot || 0)
+            return summary
+        }, { count: 0, duration_minutes: 0, commission_thb: 0 })
         const result = {
             ...(data as any),
-            add_time_count: Number((data as any).add_time_count || 0),
-            add_time_duration_minutes: Number((data as any).add_time_duration_minutes || 0),
-            add_time_commission_thb: Number((data as any).add_time_commission_thb || 0),
-            time_extensions: extensionsMap.get((data as any).order_id) || [],
+            add_time_count: addTimeSummary.count || Number((data as any).add_time_count || 0),
+            add_time_duration_minutes: addTimeSummary.duration_minutes || Number((data as any).add_time_duration_minutes || 0),
+            add_time_commission_thb: addTimeSummary.commission_thb || Number((data as any).add_time_commission_thb || 0),
+            time_extensions: timeExtensions,
         }
 
         return { ok: true, data: result as OrderSettlementWithDetails }

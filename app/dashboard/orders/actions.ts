@@ -115,151 +115,173 @@ export async function getAdminOrderStats(): Promise<ApiResponse<AdminOrderStats>
  */
 export async function getOrders(params: OrderListParams): Promise<ApiResponse<PaginatedResponse<Order>>> {
   try {
-    // 验证管理员权限
-    const admin = await requireAdmin(['superadmin', 'admin'])
-    console.log('[订单查询] 管理员验证通过:', admin.display_name)
+    await requireAdmin(['superadmin', 'admin'])
 
-    // 验证参数
     const validatedParams = orderListParamsSchema.parse(params)
     const { page, limit, search, status, service_type, has_add_time, start_date, end_date, sort_by, sort_order } = validatedParams
-    console.log('[订单查询] 查询参数:', validatedParams)
-
     const supabase = getSupabaseAdminClient()
 
-    // ✅ 优化：使用视图查询，预关联所有信息（查询所有用户 → 1次查询）
     let query = supabase
-      .from('v_admin_orders_list')
-      .select('*', { count: 'exact' })
+      .from('orders')
+      .select(`
+        *,
+        girl:girls!girl_id(id, girl_number, username, name, avatar_url),
+        service:services!service_id(id, code, title),
+        service_duration_detail:service_durations!service_duration_id(id, duration_minutes)
+      `, { count: 'exact' })
 
-    console.log('[订单查询] 开始执行查询...')
-
-    // ✅ 优化：搜索条件（订单号、技师工号、技师名）
+    let girlIdsFromSearch: string[] = []
     if (search) {
-      // 由于视图中的 girl 是 JSON 类型，不能直接用 ilike，需要先查询技师表
-      const searchNum = parseInt(search)
-      let girlIdsFromSearch: string[] = []
+      const searchNum = Number.parseInt(search, 10)
 
-      if (!isNaN(searchNum)) {
-        // 数字搜索：查询技师工号
+      if (!Number.isNaN(searchNum)) {
         const { data: matchedGirls } = await supabase
           .from('girls')
           .select('id')
           .eq('girl_number', searchNum)
 
         if (matchedGirls && matchedGirls.length > 0) {
-          girlIdsFromSearch = matchedGirls.map((g: any) => g.id)
+          girlIdsFromSearch = matchedGirls.map((girl: any) => girl.id)
         }
       } else {
-        // 文本搜索：查询技师名
         const { data: matchedGirls } = await supabase
           .from('girls')
           .select('id')
           .or(`name.ilike.%${search}%,username.ilike.%${search}%`)
 
         if (matchedGirls && matchedGirls.length > 0) {
-          girlIdsFromSearch = matchedGirls.map((g: any) => g.id)
+          girlIdsFromSearch = matchedGirls.map((girl: any) => girl.id)
         }
       }
 
-      // 搜索订单号或匹配的技师ID
       if (girlIdsFromSearch.length > 0) {
         query = query.or(`order_number.ilike.%${search}%,girl_id.in.(${girlIdsFromSearch.join(',')})`)
       } else {
         query = query.ilike('order_number', `%${search}%`)
       }
-      console.log('[订单查询] 添加搜索条件:', search)
     }
 
-    // 订单状态筛选
-    if (status) {
-      query = query.eq('status', status)
-      console.log('[订单查询] 添加状态筛选:', status)
+    if (status && status.length > 0) {
+      query = query.in('status', status)
     }
 
     if (service_type) {
       query = query.eq('service_type', service_type)
-      console.log('[订单查询] 添加订单类型筛选:', service_type)
+    }
+
+    if (start_date) {
+      query = query.gte('created_at', start_date)
+    }
+
+    if (end_date) {
+      query = query.lte('created_at', end_date)
     }
 
     if (has_add_time !== undefined) {
-      query = has_add_time
-        ? query.gt('add_time_count', 0)
-        : query.eq('add_time_count', 0)
-      console.log('[订单查询] 添加加钟筛选:', has_add_time)
+      const { data: addTimeRows, error: addTimeError } = await supabase
+        .from('order_time_extensions')
+        .select('order_id')
+        .neq('settlement_status', 'rejected')
+
+      if (addTimeError) {
+        console.error('[订单管理] 获取加钟筛选数据失败:', addTimeError)
+        return { ok: false, error: "获取加钟筛选数据失败" }
+      }
+
+      const addTimeOrderIds = Array.from(
+        new Set((addTimeRows || []).map((row: any) => row.order_id).filter(Boolean))
+      )
+      const addTimeOrderFilter = addTimeOrderIds.map((id) => `"${id}"`).join(',')
+
+      if (has_add_time) {
+        if (addTimeOrderIds.length === 0) {
+          return {
+            ok: true,
+            data: {
+              data: [],
+              total: 0,
+              page,
+              limit,
+              totalPages: 0,
+            }
+          }
+        }
+
+        query = query.in('id', addTimeOrderIds)
+      } else if (addTimeOrderIds.length > 0) {
+        query = query.not('id', 'in', `(${addTimeOrderFilter})`)
+      }
     }
 
-    // 时间范围筛选
-    if (start_date) {
-      query = query.gte('created_at', start_date)
-      console.log('[订单查询] 开始时间:', start_date)
-    }
-    if (end_date) {
-      query = query.lte('created_at', end_date)
-      console.log('[订单查询] 结束时间:', end_date)
-    }
-
-    // 排序
     query = query.order(sort_by, { ascending: sort_order === 'asc' })
-    console.log('[订单查询] 排序:', sort_by, sort_order)
 
-    // 分页
     const from = (page - 1) * limit
     const to = from + limit - 1
-    query = query.range(from, to)
-    console.log('[订单查询] 分页:', { from, to, page, limit })
-
-    const { data: ordersData, error, count } = await query
-
-    console.log('[订单查询] 查询完成 - count:', count, 'data.length:', ordersData?.length, 'error:', error)
+    const { data: ordersData, error, count } = await query.range(from, to)
 
     if (error) {
-      console.error('[订单查询] 获取订单列表失败:', error)
+      console.error('[订单管理] 获取订单列表失败:', error)
       return { ok: false, error: `获取订单列表失败: ${error.message}` }
     }
 
-    // ✅ 优化：视图已包含所有关联数据，直接使用即可
     const orderIds = (ordersData || []).map((order: any) => order.id).filter(Boolean)
     const extensionsMap = await fetchOrderTimeExtensions(supabase, orderIds)
 
-    const ordersWithUsers = (ordersData || []).map((order: any) => {
+    let ordersWithUsers: any[] = (ordersData || []).map((order: any) => {
       const extensions = extensionsMap.get(order.id) || []
-      const summaryFromView = {
-        count: Number(order.add_time_count || 0),
-        duration_minutes: Number(order.add_time_duration_minutes || 0),
-        commission_thb: Number(order.add_time_commission_thb || 0),
-      }
-      const addTimeSummary = summaryFromView.count > 0 ? summaryFromView : buildAddTimeSummary(extensions)
 
       return {
         ...order,
         service_type: order.service_type || 'outcall',
         incall_requested_at: order.incall_requested_at || null,
         incall_location_snapshot: order.incall_location_snapshot || null,
-        add_time_summary: addTimeSummary,
+        add_time_summary: buildAddTimeSummary(extensions),
         time_extensions: extensions,
-        // 如果有 user_profile，转换为 user 格式
-        user: order.user_profile ? {
-          id: order.user_profile.id,
-          email: null, // 视图中没有 email，如需要可以添加
-          raw_user_meta_data: {
-            username: order.user_profile.display_name
-          }
-        } : null
       }
     })
 
-    const actualTotal = count || 0
-    const totalPages = Math.ceil(actualTotal / limit)
-    console.log('[订单查询] 返回结果 - 总记录数:', actualTotal, '总页数:', totalPages, '当前页数据:', ordersWithUsers.length)
+    if (search) {
+      const searchLower = search.toLowerCase()
+      ordersWithUsers = ordersWithUsers.filter((order: any) => {
+        if (order.order_number?.toLowerCase().includes(searchLower)) return true
+        if (girlIdsFromSearch.length > 0 && girlIdsFromSearch.includes(order.girl_id)) return true
+
+        const contactName = order.address_snapshot?.contact?.n
+        if (typeof contactName === 'string' && contactName.toLowerCase().includes(searchLower)) return true
+
+        const contactPhone = order.address_snapshot?.contact?.p
+        if (typeof contactPhone === 'string' && contactPhone.toLowerCase().includes(searchLower)) return true
+
+        return false
+      })
+    }
+
+    for (const order of ordersWithUsers) {
+      if (!order.user_id) continue
+
+      const { data: userData, error: userError } = await supabase.auth.admin.getUserById(order.user_id)
+      if (userError) {
+        console.error('[订单管理] 获取订单用户信息失败:', userError)
+        continue
+      }
+
+      if (userData?.user) {
+        order.user = {
+          id: userData.user.id,
+          email: userData.user.email ?? null,
+          raw_user_meta_data: userData.user.user_metadata || {},
+        }
+      }
+    }
 
     return {
       ok: true,
       data: {
         data: ordersWithUsers as Order[],
-        total: actualTotal,
+        total: count || 0,
         page,
         limit,
-        totalPages
+        totalPages: Math.ceil((count || 0) / limit),
       }
     }
   } catch (error) {

@@ -141,7 +141,7 @@ export interface OrderListParams {
   page: number
   limit: number
   search?: string
-  status?: OrderStatus
+  status?: OrderStatus[]
   service_type?: OrderServiceType
   has_add_time?: boolean
   start_date?: string
