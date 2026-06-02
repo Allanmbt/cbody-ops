@@ -757,7 +757,7 @@ export async function updateOrderStatus(
   newStatus: OrderStatus
 ): Promise<ApiResponse<{ success: boolean }>> {
   try {
-    await requireAdmin(['superadmin', 'admin'])
+    const admin = await requireAdmin(['superadmin', 'admin'])
     const supabase = getSupabaseAdminClient()
 
     // 获取当前订单状态
@@ -778,7 +778,31 @@ export async function updateOrderStatus(
       return { ok: false, error: `${currentStatus === 'completed' ? '已完成' : '已取消'}的订单不能修改状态` }
     }
 
-    // 验证状态流转规则（移除取消逻辑）
+    // 管理员取消走取消记录表，由数据库触发器更新订单状态和队列统计
+    if (newStatus === 'cancelled') {
+      const cancellableStatuses: OrderStatus[] = ['pending', 'confirmed', 'en_route', 'arrived', 'in_service']
+      if (!cancellableStatuses.includes(currentStatus)) {
+        return { ok: false, error: `不能从"${currentStatus}"状态强制取消订单` }
+      }
+
+      const { error: cancelError } = await (supabase
+        .from('order_cancellations') as any)
+        .insert({
+          order_id: orderId,
+          cancelled_by_role: 'admin',
+          cancelled_by_user_id: admin.id,
+          reason_code: 'admin_force_cancel',
+          reason_note: 'OPS后台强制取消订单',
+        })
+
+      if (cancelError) {
+        console.error('[订单状态更新] 管理员强制取消失败:', cancelError)
+        return { ok: false, error: `强制取消订单失败: ${cancelError.message}` }
+      }
+
+      return { ok: true, data: { success: true } }
+    }
+
     const statusFlow: Record<OrderStatus, OrderStatus[]> = {
       pending: ['confirmed'],
       confirmed: ['en_route'],
