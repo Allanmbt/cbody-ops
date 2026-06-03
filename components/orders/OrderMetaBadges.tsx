@@ -71,12 +71,22 @@ export function hasAddTime(summary?: AddTimeSummaryLike | null) {
   return Number(summary?.count || 0) > 0
 }
 
-export function AddTimeSummaryText({ summary, compact = false }: { summary?: AddTimeSummaryLike | null; compact?: boolean }) {
+export function AddTimeSummaryText({
+  summary,
+  compact = false,
+  variant = "default",
+}: {
+  summary?: AddTimeSummaryLike | null
+  compact?: boolean
+  variant?: "default" | "list"
+}) {
   if (!hasAddTime(summary)) return null
 
-  const text = compact
-    ? `+${summary!.duration_minutes} 分钟 / ${formatCurrency(summary!.commission_thb)}`
-    : `加钟 ${summary!.count} 次 / ${summary!.duration_minutes} 分钟 / ${formatCurrency(summary!.commission_thb)}`
+  const text = variant === "list"
+    ? `加钟 ${summary!.count}次 · ${formatCurrency(summary!.commission_thb)}`
+    : compact
+      ? `+${summary!.duration_minutes} 分钟 / ${formatCurrency(summary!.commission_thb)}`
+      : `加钟 ${summary!.count} 次 / ${summary!.duration_minutes} 分钟 / ${formatCurrency(summary!.commission_thb)}`
 
   return (
     <span className="text-xs font-medium text-amber-700 dark:text-amber-300">

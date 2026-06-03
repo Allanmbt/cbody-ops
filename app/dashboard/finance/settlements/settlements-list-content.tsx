@@ -1102,21 +1102,28 @@ export function SettlementsListContent() {
                                                             />
                                                         </TableCell>
                                                         <TableCell className="font-medium">
-                                                            <div className="flex items-center gap-2">
-                                                                <span>{settlement.orders?.order_number || '-'}</span>
-                                                                <OrderTypeIcon serviceType={settlement.orders?.service_type} />
-                                                                {settlement.orders?.order_number && (
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="icon"
-                                                                        className="h-6 w-6"
-                                                                        onClick={() => {
-                                                                            navigator.clipboard.writeText(settlement.orders.order_number)
-                                                                            toast.success('订单号已复制')
-                                                                        }}
-                                                                    >
-                                                                        <Copy className="h-3 w-3" />
-                                                                    </Button>
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span>{settlement.orders?.order_number || '-'}</span>
+                                                                    {settlement.orders?.order_number && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="icon"
+                                                                            className="h-6 w-6"
+                                                                            onClick={() => {
+                                                                                navigator.clipboard.writeText(settlement.orders.order_number)
+                                                                                toast.success('订单号已复制')
+                                                                            }}
+                                                                        >
+                                                                            <Copy className="h-3 w-3" />
+                                                                        </Button>
+                                                                    )}
+                                                                </div>
+                                                                {settlement.orders?.service_type === 'incall' && (
+                                                                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                                        <OrderTypeIcon serviceType={settlement.orders?.service_type} />
+                                                                        <span>到店</span>
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                         </TableCell>
@@ -1145,11 +1152,15 @@ export function SettlementsListContent() {
                                                         <TableCell className="text-right font-medium">
                                                             <div className="flex flex-col items-end gap-0.5">
                                                                 <span>{formatCurrency(settlement.platform_should_get)}</span>
+<<<<<<< Updated upstream
                                                                 {compactAddTimeSummary && (
                                                                     <span className="max-w-[152px] truncate text-xs font-medium text-amber-700 dark:text-amber-300">
                                                                         {compactAddTimeSummary}
                                                                     </span>
                                                                 )}
+=======
+                                                                <AddTimeSummaryText summary={addTimeSummary} variant="list" />
+>>>>>>> Stashed changes
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right">
