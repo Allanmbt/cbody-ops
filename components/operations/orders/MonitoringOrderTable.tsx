@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { Eye, AlertTriangle } from "lucide-react"
+import { Eye, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import type { Order } from "@/lib/features/orders"
 import {
   getOrderStatusText,
@@ -174,11 +174,42 @@ export function MonitoringOrderTable({
 }: MonitoringOrderTableProps) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [technicianSortOrder, setTechnicianSortOrder] = useState<"asc" | "desc" | null>(null)
 
   const handleViewDetail = (order: Order) => {
     setSelectedOrder(order)
     setDrawerOpen(true)
   }
+
+  const displayOrders = useMemo(() => {
+    if (!technicianSortOrder) {
+      return orders
+    }
+
+    return [...orders].sort((a, b) => {
+      const aName = getGirlName(a.girl) || ""
+      const bName = getGirlName(b.girl) || ""
+      const nameCompare = aName.localeCompare(bName, "zh-CN", { sensitivity: "base" })
+
+      if (nameCompare !== 0) {
+        return technicianSortOrder === "asc" ? nameCompare : -nameCompare
+      }
+
+      const aNumber = a.girl?.girl_number || 0
+      const bNumber = b.girl?.girl_number || 0
+      return technicianSortOrder === "asc" ? aNumber - bNumber : bNumber - aNumber
+    })
+  }, [orders, technicianSortOrder])
+
+  const handleTechnicianSort = () => {
+    setTechnicianSortOrder((current) => (current === "asc" ? "desc" : "asc"))
+  }
+
+  const TechnicianSortIcon = technicianSortOrder === "asc"
+    ? ArrowUp
+    : technicianSortOrder === "desc"
+      ? ArrowDown
+      : ArrowUpDown
 
   return (
     <>
@@ -188,7 +219,18 @@ export function MonitoringOrderTable({
             <TableRow>
               <TableHead className="w-[140px]">订单号</TableHead>
               <TableHead className="w-[100px]">状态</TableHead>
-              <TableHead className="w-[150px]">技师</TableHead>
+              <TableHead className="w-[150px]">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleTechnicianSort}
+                  className="-ml-3 h-8 px-3 text-sm font-medium"
+                >
+                  技师
+                  <TechnicianSortIcon className={`ml-1 h-4 w-4 ${technicianSortOrder ? "text-foreground" : "text-muted-foreground"}`} />
+                </Button>
+              </TableHead>
               <TableHead className="w-[120px]">客户</TableHead>
               <TableHead className="w-[150px]">服务</TableHead>
               <TableHead className="w-[80px] text-right">金额</TableHead>
@@ -214,7 +256,7 @@ export function MonitoringOrderTable({
                 </TableCell>
               </TableRow>
             ) : (
-              orders.map((order) => {
+              displayOrders.map((order) => {
                 const { isAbnormal } = detectAbnormal(order)
 
                 return (

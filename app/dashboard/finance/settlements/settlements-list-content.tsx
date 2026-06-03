@@ -1152,15 +1152,11 @@ export function SettlementsListContent() {
                                                         <TableCell className="text-right font-medium">
                                                             <div className="flex flex-col items-end gap-0.5">
                                                                 <span>{formatCurrency(settlement.platform_should_get)}</span>
-<<<<<<< Updated upstream
                                                                 {compactAddTimeSummary && (
                                                                     <span className="max-w-[152px] truncate text-xs font-medium text-amber-700 dark:text-amber-300">
                                                                         {compactAddTimeSummary}
                                                                     </span>
                                                                 )}
-=======
-                                                                <AddTimeSummaryText summary={addTimeSummary} variant="list" />
->>>>>>> Stashed changes
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right">
