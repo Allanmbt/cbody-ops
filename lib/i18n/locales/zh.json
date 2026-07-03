@@ -134,6 +134,7 @@
       "bankAccount": "收款账号",
       "notes": "备注",
       "applyTime": "申请时间",
+      "confirmTime": "确认时间",
       "status": "状态",
       "actions": "操作",
       "viewProof": "查看凭证",

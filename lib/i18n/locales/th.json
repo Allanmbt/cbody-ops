@@ -134,6 +134,7 @@
       "bankAccount": "บัญชีรับเงิน",
       "notes": "หมายเหตุ",
       "applyTime": "เวลายื่นคำขอ",
+      "confirmTime": "เวลายืนยัน",
       "status": "สถานะ",
       "actions": "การดำเนินการ",
       "viewProof": "ดูหลักฐาน",

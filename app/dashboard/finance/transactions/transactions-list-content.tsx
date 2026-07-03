@@ -346,6 +346,7 @@ export function TransactionsListContent() {
                                                 </>
                                             )}
                                             <TableHead>{t(translations, 'transactions.table.applyTime')}</TableHead>
+                                            <TableHead>{t(translations, 'transactions.table.confirmTime')}</TableHead>
                                             <TableHead>{t(translations, 'transactions.table.status')}</TableHead>
                                             <TableHead className="text-right">{t(translations, 'transactions.table.actions')}</TableHead>
                                         </TableRow>
@@ -456,6 +457,9 @@ export function TransactionsListContent() {
 
                                                 <TableCell className="text-sm text-muted-foreground">
                                                     {format(new Date(tx.created_at), 'MM-dd HH:mm', { locale: zhCN })}
+                                                </TableCell>
+                                                <TableCell className="text-sm text-muted-foreground">
+                                                    {tx.confirmed_at ? format(new Date(tx.confirmed_at), 'MM-dd HH:mm', { locale: zhCN }) : '-'}
                                                 </TableCell>
                                                 <TableCell>
                                                     {tx.status === 'pending' && (

@@ -12,10 +12,20 @@ SECURITY DEFINER
 AS $$
 DECLARE
   result JSON;
-  monthly_data JSON;
 BEGIN
   -- 一次性计算所有统计数据
   WITH
+  -- 泰国财务月：每月 1 日 06:00 到下月 1 日 06:00
+  finance_month_params AS (
+    SELECT
+      DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours') AS current_month,
+      (
+        DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours')
+        - INTERVAL '11 months'
+        + INTERVAL '6 hours'
+      ) AT TIME ZONE 'Asia/Bangkok' AS start_at
+  ),
+
   -- 结算单统计
   settlement_stats AS (
     SELECT
@@ -71,67 +81,73 @@ BEGIN
   -- 月度结账金额（最近12个月，THB）
   monthly_settlement AS (
     SELECT
-      TO_CHAR(confirmed_at, 'YYYY-MM') AS month,
+      TO_CHAR((confirmed_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM') AS month,
       COALESCE(SUM(amount), 0) AS amount
     FROM settlement_transactions
+    CROSS JOIN finance_month_params fmp
     WHERE transaction_type = 'settlement'
       AND status = 'confirmed'
-      AND confirmed_at >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
-    GROUP BY TO_CHAR(confirmed_at, 'YYYY-MM')
+      AND confirmed_at >= fmp.start_at
+    GROUP BY TO_CHAR((confirmed_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM')
   ),
 
   -- 月度提现金额（最近12个月，RMB）
   monthly_withdrawal AS (
     SELECT
-      TO_CHAR(confirmed_at, 'YYYY-MM') AS month,
+      TO_CHAR((confirmed_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM') AS month,
       COALESCE(SUM(amount), 0) AS amount
     FROM settlement_transactions
+    CROSS JOIN finance_month_params fmp
     WHERE transaction_type = 'withdrawal'
       AND status = 'confirmed'
-      AND confirmed_at >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
-    GROUP BY TO_CHAR(confirmed_at, 'YYYY-MM')
+      AND confirmed_at >= fmp.start_at
+    GROUP BY TO_CHAR((confirmed_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM')
   ),
 
   -- 月度销售额（最近12个月）
   monthly_revenue AS (
     SELECT
-      TO_CHAR(completed_at, 'YYYY-MM') AS month,
+      TO_CHAR((completed_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM') AS month,
       COALESCE(SUM(total_amount), 0) AS amount
     FROM orders
+    CROSS JOIN finance_month_params fmp
     WHERE status = 'completed'
-      AND completed_at >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
-    GROUP BY TO_CHAR(completed_at, 'YYYY-MM')
+      AND completed_at >= fmp.start_at
+    GROUP BY TO_CHAR((completed_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM')
   ),
 
   -- 月度利润（最近12个月）
   monthly_profit AS (
     SELECT
-      TO_CHAR(settled_at, 'YYYY-MM') AS month,
+      TO_CHAR((settled_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM') AS month,
       COALESCE(SUM(platform_should_get), 0) AS amount
     FROM order_settlements
+    CROSS JOIN finance_month_params fmp
     WHERE settlement_status = 'settled'
-      AND settled_at >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
-    GROUP BY TO_CHAR(settled_at, 'YYYY-MM')
+      AND settled_at >= fmp.start_at
+    GROUP BY TO_CHAR((settled_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM')
   ),
 
   -- 月度支出（最近12个月）
   monthly_expense AS (
     SELECT
-      TO_CHAR(settled_at, 'YYYY-MM') AS month,
+      TO_CHAR((settled_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM') AS month,
       COALESCE(SUM(actual_paid_amount), 0) AS amount
     FROM order_settlements
+    CROSS JOIN finance_month_params fmp
     WHERE settlement_status = 'settled'
       AND actual_paid_amount IS NOT NULL
-      AND settled_at >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
-    GROUP BY TO_CHAR(settled_at, 'YYYY-MM')
+      AND settled_at >= fmp.start_at
+    GROUP BY TO_CHAR((settled_at AT TIME ZONE 'Asia/Bangkok') - INTERVAL '6 hours', 'YYYY-MM')
   ),
 
-  -- 生成最近12个月的月份列表
+  -- 生成最近12个泰国财务月的月份列表
   month_series AS (
     SELECT TO_CHAR(month_date, 'YYYY-MM') AS month
-    FROM GENERATE_SERIES(
-      DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months',
-      DATE_TRUNC('month', CURRENT_DATE),
+    FROM finance_month_params fmp
+    CROSS JOIN GENERATE_SERIES(
+      fmp.current_month - INTERVAL '11 months',
+      fmp.current_month,
       INTERVAL '1 month'
     ) AS month_date
   )
