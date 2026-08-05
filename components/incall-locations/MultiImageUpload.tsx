@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import { X, ImagePlus, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 interface MultiImageUploadProps {
@@ -47,6 +47,7 @@ export function MultiImageUpload({
 }: MultiImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   const handleFiles = async (files: FileList) => {
     const remaining = max - value.length
@@ -72,12 +73,20 @@ export function MultiImageUpload({
       <div className="flex flex-wrap gap-2">
         {value.map((url, idx) => (
           <div key={url} className="relative w-20 h-20 rounded-md overflow-hidden border bg-muted">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt="" className="w-full h-full object-cover" />
+            <button
+              type="button"
+              onClick={() => setPreviewUrl(url)}
+              className="h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              aria-label={`预览环境图片 ${idx + 1}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt={`环境图片 ${idx + 1}`} className="h-full w-full object-cover" />
+            </button>
             <button
               type="button"
               onClick={() => remove(idx)}
               disabled={disabled}
+              aria-label={`移除环境图片 ${idx + 1}`}
               className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
             >
               <X className="h-3 w-3" />
@@ -119,6 +128,22 @@ export function MultiImageUpload({
         className="hidden"
         onChange={(e) => e.target.files && handleFiles(e.target.files)}
       />
+
+      <Dialog open={Boolean(previewUrl)} onOpenChange={(open) => !open && setPreviewUrl(null)}>
+        <DialogContent className="max-w-4xl border-0 bg-black/95 p-2 sm:p-3">
+          <DialogHeader className="sr-only">
+            <DialogTitle>环境图片预览</DialogTitle>
+          </DialogHeader>
+          {previewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={previewUrl}
+              alt="环境图片大图预览"
+              className="max-h-[82vh] w-full rounded-md object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

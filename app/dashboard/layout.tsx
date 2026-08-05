@@ -235,11 +235,11 @@ function getSidebarGroups(translations: any): {
           requiredRole: ['superadmin', 'admin'],
         },
         {
-          key: "incall-locations",
+          key: "private-management",
           title: t(translations, 'nav.items.incallLocations'),
           icon: MapPin,
-          href: "/dashboard/business/incall-locations",
-          requiredRole: ['superadmin', 'admin'],
+          href: "/dashboard/business/private",
+          requiredRole: ['superadmin', 'admin', 'support'],
         },
       ],
     },
@@ -347,6 +347,8 @@ function getBreadcrumbFromPath(pathname: string, translations: any): Array<{ lab
     if (segments[2] === 'girl-attendance') {
       breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.girlAttendance') })
     } else if (segments[2] === 'incall-locations') {
+      breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.incallLocations') })
+    } else if (segments[2] === 'private') {
       breadcrumbs.push({ label: t(translations, 'nav.breadcrumbs.incallLocations') })
     }
   } else if (segments[1] === 'finance') {

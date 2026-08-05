@@ -1,5 +1,9 @@
 # CBODY上门服务平台数据库设计文档
 
+> **最近更新：2026-08-05（Asia/Shanghai）**
+>
+> 本次补充 Private 公开年龄和媒体域名契约。`private_profiles.display_age` 由运营手动维护，NULL 时隐藏；站内 `/images/...` 媒体统一从 `https://cbody.vip` 加载，同时保留 R2 与 Supabase Storage。增量 migration 需按 `20260805020000`、`20260805030000`、`20260805040000` 顺序执行。原 CBODY / Outcall 表结构未修改。
+
 ## 数据库架构概览
 
 本文档详细说明了CBODY上门服务平台的数据库架构设计。系统从UniCloud迁移到Supabase平台，根据业务需求和性能考虑进行了全面优化。
@@ -479,7 +483,6 @@
 | last_ip_address | INET | 否 | NULL | 最后登录IP |
 | last_login_at | TIMESTAMPTZ | 否 | NULL | 最后登录时间 |
 | is_whitelisted | BOOLEAN | 否 | false | 白名单标识：true 时豁免并发下单限制和恶意取消检查 |
-| admin_tags | TEXT[] | 否 | '{}' | 后台专用用户标签，仅用于管理员识别用户历史备注 |
 | temp_blocked_until | TIMESTAMPTZ | 否 | NULL | 临时禁止下单截止时间（NULL=未限制，用于恶意取消防范） |
 | temp_block_reason | TEXT | 否 | NULL | 临时限制原因（如：频繁取消订单） |
 | last_credit_recovery_at | TIMESTAMPTZ | 否 | NULL | 上次信用分恢复时间（预留字段，暂不启用自动恢复） |
@@ -609,6 +612,511 @@
 **外键约束**：
 - FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
 - FOREIGN KEY (girl_id) REFERENCES girls(id) ON DELETE CASCADE
+
+---
+
+## CBODY Private 扩展数据结构
+
+> **文档新增时间：2026-08-05**
+>
+> 本章节描述 CBODY Private Incall 高级展示站的独立扩展。所有对象均为新增 `private_*` 表、Private 辅助函数或公开只读 RPC；不向原 CBODY 表增加字段、索引或触发器，也不修改原表数据。
+
+### Private 技师标识约定
+
+以下三个字段用途不同，任何客户端、网站或 ops 实现不得混用：
+
+| 用途 | 来源字段 | 示例 | 说明 |
+|------|----------|------|------|
+| 数据库内部关联键 | `girls.id` | UUID | 所有 `private_*` 外键统一关联此字段，不在页面作为工号展示 |
+| 页面展示工号 | `girls.girl_number` | `1177` / `No. 1177` | CBODY 分配给技师的公开工号；网站中的 `No. 1177` 必须来自此字段 |
+| 稳定 URL slug | `girls.username` | `diana` | 唯一用户名，用于 `/ladies/diana`；不得使用可重复、可修改的 `girls.name` 作为稳定 slug |
+| 页面显示姓名 | `girls.name` | `Diana` | 公开昵称，可以与其他技师重复，不作为数据库关联键 |
+
+示例：页面显示 `No. 1177 · Diana` 时，`1177` 来自 `girls.girl_number`，`Diana` 来自 `girls.name`，而 Private 扩展记录实际通过 `girls.id` UUID 关联。
+
+### Private 多语言约定
+
+- Private 新增多语言 JSONB 默认使用英文键，例如 `{"en":""}`。
+- 多语言数组使用 `{"en":[]}`。
+- 公开读取顺序固定为：请求语言 → `en` → 空字符串或空数组。
+- 当前网站以英文为主，但结构允许后续加入 `zh`、`th`、`ja`、`ko`。
+- 原表已有多语言字段继续复用，不复制到 Private 表；只有 Private 专属或需要覆盖的内容才写入扩展表。
+
+---
+
+### private_profiles（Private 技师展示扩展表）
+
+每名进入 CBODY Private 的技师最多一条记录。技师基础资料仍来自 `girls`，本表只保存 Private 专属展示与发布信息。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| girl_id | UUID | 是 | - | 主键，关联 `girls.id`；这是内部 UUID，不是展示工号 |
+| introduction | JSONB | 是 | `{"en":""}` | Private 卡片短介绍，多语言 |
+| bio | JSONB | 是 | `{"en":""}` | Private 详情页介绍，多语言 |
+| personal_tags | JSONB | 是 | `{"en":[]}` | Private 个性标签，多语言数组 |
+| skin_tone | JSONB | 是 | `{"en":""}` | Private 展示肤色，多语言 |
+| body_type | JSONB | 是 | `{"en":""}` | Private 展示体型，多语言 |
+| display_age | SMALLINT | 否 | NULL | Private 手动维护的公开年龄；NULL 时页面隐藏年龄 |
+| badge | TEXT | 否 | NULL | Private 列表标签：hot/new/signature/vip |
+| sort_order | INTEGER | 是 | 999 | Private 技师排序，数值越小越靠前 |
+| is_published | BOOLEAN | 是 | false | 是否在 Private 网站公开发布 |
+| health_certified | BOOLEAN | 是 | false | Private 独立确认的健康认证展示状态；不等同于 `girls.is_verified` |
+| booking_url | TEXT | 是 | `''` | 跳转现有 CBODY 预约平台的 HTTPS 地址 |
+| created_by | UUID | 否 | NULL | 创建管理员，关联 `auth.users(id)` |
+| updated_by | UUID | 否 | NULL | 最后修改管理员，关联 `auth.users(id)` |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`girl_id`)
+- INDEX `private_profiles_published_sort_idx` (`sort_order`, `girl_id`) WHERE `is_published = true`
+
+**外键约束**：
+- FOREIGN KEY (`girl_id`) REFERENCES `girls(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- CHECK (`badge` IS NULL OR `badge` IN ('hot', 'new', 'signature', 'vip'))
+- CHECK (`display_age` IS NULL OR `display_age` BETWEEN 20 AND 99)
+- CHECK (`sort_order >= 0`)
+- CHECK (`booking_url = ''` OR `booking_url` 为 HTTPS URL)
+
+**说明**：
+- 页面工号始终读取 `girls.girl_number`，本表不重复保存工号。
+- URL slug 始终读取 `girls.username`，本表不重复保存 slug。
+- Private 页面年龄只读取 `display_age`，不再根据 `girls.birth_date` 自动计算公开年龄。
+- `health_certified` 只能在 Private 确认过真实认证依据后开启，不得直接映射 `girls.is_verified`。
+
+---
+
+### private_availability（Private 每日可约排班表）
+
+按曼谷日期保存技师的 Private 可约状态，替代网站根目录的静态 `schedule.json` 生产数据。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | `gen_random_uuid()` | 主键 |
+| girl_id | UUID | 是 | - | 关联 `girls.id` |
+| service_date | DATE | 是 | - | 排班所属曼谷日期 |
+| is_available | BOOLEAN | 是 | false | 当日是否可约 |
+| start_time | TIME | 否 | NULL | 当日开始时间 |
+| end_time | TIME | 否 | NULL | 结束时间 |
+| ends_next_day | BOOLEAN | 是 | false | 结束时间是否属于次日，例如 15:00–02:00 |
+| note | JSONB | 是 | `{"en":""}` | 可选的多语言排班说明 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`id`)
+- UNIQUE (`girl_id`, `service_date`)
+- INDEX `private_availability_date_idx` (`service_date`, `is_available`, `girl_id`)
+
+**外键约束**：
+- FOREIGN KEY (`girl_id`) REFERENCES `girls(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- `start_time` 与 `end_time` 必须同时为空或同时有值
+- `ends_next_day = true` 时开始和结束时间不得为空
+
+**说明**：
+- ops 可以继续提供“Available Today”快捷开关，但数据库保存的是具体日期和时间。
+- `15:00–02:00` 应保存为 `start_time=15:00`、`end_time=02:00`、`ends_next_day=true`。
+- 公开 RPC 使用 `Asia/Bangkok` 判断当天，并在次日凌晨结束时间前继续识别上一日跨午夜排班。
+- 不复用 `girls_status`，因为该表表示原 Outcall 平台实时上下线状态，与 Private 当日排班语义不同。
+
+---
+
+### private_media（Private 技师媒体表）
+
+保存 Private 专属封面、相册图片和视频外链。原 `girls_media` 不修改，也不会被本表覆盖。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | `gen_random_uuid()` | 主键 |
+| girl_id | UUID | 是 | - | 关联 `girls.id` |
+| kind | TEXT | 是 | - | 媒体类型：image/video |
+| role | TEXT | 是 | gallery | 用途：cover/gallery |
+| url | TEXT | 是 | - | 图片或视频 HTTPS URL，可使用 Supabase Storage 或 R2 |
+| poster_url | TEXT | 否 | NULL | 视频封面 HTTPS URL；视频记录必须提供 |
+| mime_type | TEXT | 否 | NULL | 视频或媒体 MIME，例如 `video/mp4`、`video/webm` |
+| alt | JSONB | 是 | `{"en":""}` | 多语言替代文本 |
+| sort_order | INTEGER | 是 | 0 | 同一技师媒体排序 |
+| is_active | BOOLEAN | 是 | true | 是否启用 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`id`)
+- UNIQUE INDEX `private_media_one_active_cover_idx` (`girl_id`) WHERE `role='cover' AND is_active=true`
+- INDEX `private_media_gallery_sort_idx` (`girl_id`, `role`, `sort_order`, `id`) WHERE `is_active=true`
+
+**外键约束**：
+- FOREIGN KEY (`girl_id`) REFERENCES `girls(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- CHECK (`kind` IN ('image', 'video'))
+- CHECK (`role` IN ('cover', 'gallery'))
+- CHECK (`sort_order >= 0`)
+- `url` 与 `poster_url` 必须为 HTTPS URL
+- `kind='video'` 时 `poster_url` 必填
+
+**说明**：
+- 每名技师最多一张启用状态的 cover。
+- 图片记录的 `url` 是图片地址；视频记录的 `url` 是视频地址，`poster_url` 是预览图。
+- 数据库中的 `/images/...`、`cbodyprivate.com/images/...` 与 `cbody.vip/images/...` 图片会统一规范化为 `https://cbody.vip/images/...`；本地、预览和正式域名使用同一媒体来源。
+- Supabase Storage、R2 等其他 HTTPS 资源保持原 URL，不会被重写。
+- 前端依据 `mime_type` 生成 video source，并支持 MP4、WebM、OGG、MOV 等浏览器可识别格式；最终播放能力仍取决于浏览器编解码器。
+
+---
+
+### private_album_settings（Private 混合相册设置表）
+
+每名 Private 技师最多一条相册设置记录。媒体项目仍保存在 `private_media`，本表只保存整个混合相册共用的背景音乐和静态照片轮播参数。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| girl_id | UUID | 是 | - | 主键，关联 `girls.id` |
+| background_audio_url | TEXT | 否 | NULL | 背景音乐 HTTPS URL |
+| background_audio_object_key | TEXT | 否 | NULL | R2 对象路径，供后台替换或删除文件 |
+| background_audio_mime_type | TEXT | 否 | NULL | 音频 MIME，例如 `audio/mp4`、`audio/mpeg` |
+| background_audio_title | TEXT | 否 | NULL | 后台识别用音乐名称 |
+| background_volume | NUMERIC(3,2) | 是 | 0.35 | 默认音量，范围 0–1 |
+| background_loop | BOOLEAN | 是 | true | 是否循环播放 |
+| is_audio_enabled | BOOLEAN | 是 | false | 是否启用背景音乐 |
+| slide_duration_seconds | SMALLINT | 是 | 5 | 静态照片默认停留秒数，范围 3–10 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`girl_id`)
+- INDEX `private_album_settings_enabled_idx` (`girl_id`) WHERE `is_audio_enabled=true`
+
+**外键约束**：
+- FOREIGN KEY (`girl_id`) REFERENCES `girls(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- CHECK (`background_audio_url` IS NULL OR `background_audio_url` 为 HTTPS URL)
+- CHECK (`background_volume` BETWEEN 0 AND 1)
+- CHECK (`slide_duration_seconds` BETWEEN 3 AND 10)
+- CHECK (`is_audio_enabled=false` OR `background_audio_url` IS NOT NULL)
+
+**说明**：
+- “动态照片”仍保存为 `private_media.kind='video'`，不新增 `live_photo` 类型。
+- 背景音乐属于整个技师相册，不复制到每条媒体记录。
+- 当前 ops 只维护已经上传完成的 HTTPS URL；真实文件建议保存在 R2。
+- `background_audio_object_key` 仅供后台管理文件生命周期，不应通过公开 RPC 返回。
+
+---
+
+### private_service_settings（Private 服务目录扩展表）
+
+在不修改原 `services` 表的前提下，标记原服务是否用于 Private Incall，以及是否允许展示 Themed Attire。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| service_id | INTEGER | 是 | - | 主键，关联原 `services.id` |
+| is_incall_enabled | BOOLEAN | 是 | false | 该原服务是否允许用于 CBODY Private Incall |
+| supports_attire | BOOLEAN | 是 | false | 该服务是否允许绑定和展示制服 |
+| display_category | TEXT | 是 | wellness | Private 前端分类：wellness/yoga/screening |
+| name_override | JSONB | 是 | `{"en":""}` | 兼容保留字段；当前公开 RPC 始终使用原 `services.title` |
+| description_override | JSONB | 是 | `{"en":""}` | Private 通用服务介绍；不会回退原 `services.description` |
+| sort_order | INTEGER | 是 | 999 | Private 服务目录默认排序 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`service_id`)
+- INDEX `private_service_settings_active_sort_idx` (`sort_order`, `service_id`) WHERE `is_incall_enabled=true`
+
+**外键约束**：
+- FOREIGN KEY (`service_id`) REFERENCES `services(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- CHECK (`display_category` IN ('wellness', 'yoga', 'screening'))
+- CHECK (`sort_order >= 0`)
+
+**说明**：
+- 这里的外键由新表持有，不向原 `services` 表增加任何字段。
+- `supports_attire=false` 时，即使残留制服绑定记录，公开 RPC 也不会返回制服。
+- 服务标题始终读取原 `services.title`；原 `services.description` 不用于 Private 页面。
+- `description_override` 是 Private 通用介绍；某位技师需要专属版本时，由 `private_provider_services.description_override` 优先覆盖。
+
+---
+
+### private_provider_services（Private 技师服务展示表）
+
+关联已经由管理员审核的 `admin_girl_services` 记录，决定某名技师的某项合格服务是否在 Private 网站发布。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| admin_girl_service_id | UUID | 是 | - | 主键，关联 `admin_girl_services.id` |
+| is_published | BOOLEAN | 是 | false | 是否在该技师 Private 页面展示 |
+| sort_order | INTEGER | 是 | 999 | 该技师服务排序 |
+| badge | TEXT | 否 | NULL | 兼容保留字段；当前公开推荐标签读取原 `services.badge` 并映射为 Private 展示标签 |
+| description_override | JSONB | 是 | `{"en":""}` | 此技师对应服务的专属介绍覆盖 |
+| includes_override | JSONB | 是 | `{"en":[]}` | 此技师对应服务的包含内容，多语言数组 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`admin_girl_service_id`)
+- INDEX `private_provider_services_published_sort_idx` (`sort_order`, `admin_girl_service_id`) WHERE `is_published=true`
+
+**外键约束**：
+- FOREIGN KEY (`admin_girl_service_id`) REFERENCES `admin_girl_services(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- CHECK (`badge` IS NULL OR `badge` IN ('popular', 'trending', 'new', 'signature', 'recommended'))
+- CHECK (`sort_order >= 0`)
+
+**Private 服务公开条件**：
+
+一个服务只有同时满足以下条件才会出现在网站：
+
+1. `services.is_active = true`；
+2. `private_service_settings.is_incall_enabled = true`；
+3. `admin_girl_services.is_qualified = true`；
+4. `private_provider_services.is_published = true`；
+5. 至少存在一条 `girl_service_durations.is_active = true`；
+6. 对应 `service_durations.is_active = true`。
+
+**公开字段来源**：
+
+- 名称：`services.title`；
+- 推荐标签：`services.badge`，公开 RPC 将 `TOP_PICK` 映射为 `recommended`、`HOT` 映射为 `popular`；
+- 时长与价格：只返回最短的一条有效时长，价格为 `COALESCE(girl_service_durations.custom_price, service_durations.default_price)`；
+- 介绍：`private_provider_services.description_override`，为空时读取 `private_service_settings.description_override`，不回退原服务介绍；
+- 子项目：`private_provider_services.includes_override`；
+- 制服：`private_provider_service_attires → private_attires`，并受 `private_service_settings.supports_attire` 控制。
+
+---
+
+### private_attires（Private 制服目录表）
+
+Private 专属 Themed Attire 公共目录，可被多名技师的不同服务复用。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| id | UUID | 是 | `gen_random_uuid()` | 主键 |
+| code | TEXT | 是 | - | 唯一制服编号，例如 A001 |
+| name | JSONB | 是 | `{"en":""}` | 多语言制服名称 |
+| note | JSONB | 是 | `{"en":""}` | 多语言简短说明 |
+| image_url | TEXT | 是 | - | 制服 HTTPS 图片地址 |
+| sort_order | INTEGER | 是 | 999 | 默认排序 |
+| is_active | BOOLEAN | 是 | true | 是否启用 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`id`)
+- UNIQUE (`code`)
+- INDEX `private_attires_active_sort_idx` (`sort_order`, `code`) WHERE `is_active=true`
+
+**外键约束**：
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- `code` 不得为空
+- `image_url` 必须为 HTTPS URL
+- CHECK (`sort_order >= 0`)
+
+---
+
+### private_provider_service_attires（Private 技师服务制服关联表）
+
+制服不是直接绑定技师，也不是仅绑定全局服务，而是绑定“技师已审核服务关系”。这样同一项服务在不同技师处可以拥有不同制服集合。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| admin_girl_service_id | UUID | 是 | - | 关联 `admin_girl_services.id` |
+| attire_id | UUID | 是 | - | 关联 `private_attires.id` |
+| sort_order | INTEGER | 是 | 999 | 该技师该服务中的制服排序 |
+| is_active | BOOLEAN | 是 | true | 是否启用此绑定 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`admin_girl_service_id`, `attire_id`)
+- INDEX `private_provider_service_attires_active_sort_idx` (`admin_girl_service_id`, `sort_order`, `attire_id`) WHERE `is_active=true`
+
+**外键约束**：
+- FOREIGN KEY (`admin_girl_service_id`) REFERENCES `admin_girl_services(id)` ON DELETE CASCADE
+- FOREIGN KEY (`attire_id`) REFERENCES `private_attires(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**绑定校验**：
+- 绑定写入前，由仅挂载在本新表上的校验触发器确认对应 `services.id` 已存在 `private_service_settings`。
+- `is_incall_enabled` 与 `supports_attire` 必须同时为 true。
+- 原 `admin_girl_services` 表不会增加触发器或字段。
+
+---
+
+### private_location_content（Private 场所公开文案扩展表）
+
+场所身份、照片、城市和 Google Place 继续复用 `incall_locations`；本表只保存适合公开且可本地化的名称与地区。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| incall_location_id | UUID | 是 | - | 主键，关联 `incall_locations.id` |
+| public_name | JSONB | 是 | `{"en":""}` | 对外公开的场所名称，不得包含房号或敏感信息 |
+| district | JSONB | 是 | `{"en":""}` | 对外地区，例如 Thonglor |
+| is_published | BOOLEAN | 是 | false | 是否允许在 Private 网站公开 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`incall_location_id`)
+- INDEX `private_location_content_published_idx` (`incall_location_id`) WHERE `is_published=true`
+
+**外键约束**：
+- FOREIGN KEY (`incall_location_id`) REFERENCES `incall_locations(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**公开场所数据来源**：
+- 场所 UUID：`incall_locations.id`
+- 场所名称：`incall_locations.name`；若名称包含 Room、Unit、Floor 或 Suite 等敏感房间信息，公开 RPC 回退到 `private_location_content.public_name`
+- 公共地区：`private_location_content.district`，例如 Rama 9；该扩展字段已经存在，无需再新增表或字段
+- 图片：`incall_locations.photos`
+- 城市：`incall_locations.city_id → cities.name`
+- Google Maps：根据 `incall_locations.place_id` 构造标准 Maps URL；缺少 Place ID 时不展示无效链接
+
+**禁止公开**：
+- `incall_locations.address`
+- `incall_locations.lat` / `lng`
+- 房号、楼层、门禁说明
+- 未经筛选的 `incall_locations.meta`
+
+---
+
+### Private 公开只读 RPC
+
+#### get_private_providers(locale TEXT DEFAULT 'en')
+
+返回已通过全部发布、Incall、认证、服务和场所条件的技师列表。返回内容包括：
+
+- `id`：字符串形式的 `girls.girl_number`，用于页面工号语义；
+- `girlId`：内部 `girls.id` UUID；
+- `code`：格式化后的 `№ 1177`；
+- `slug`：`girls.username`；
+- 显示姓名、Private 文案、标签和基础资料；
+- 当日排班；
+- cover、gallery 图片和视频；
+- 通过 `girls_categories → categories` 读取的技师分类（`id`、`code`、本地化 `name`、`sortOrder`）；
+- 场所公开信息；
+- 已审核、已启用的服务时长、价格与制服。
+
+#### get_private_provider(slug TEXT, locale TEXT DEFAULT 'en')
+
+按照 `girls.username` 查询单个技师并返回相同的公开安全结构。无符合条件记录时返回 NULL。
+
+#### get_private_categories(locale TEXT DEFAULT 'en')
+
+返回 `categories.is_active=true` 的分类列表，名称读取规则为“请求语言 → 英文 → 空字符串”，供列表页动态生成分类筛选。该 RPC 不修改或复制原分类数据。
+
+**安全边界**：
+- 网站使用 Supabase anon key 调用 RPC。
+- anon 不直接读取 `girls`、`incall_locations` 或任何 `private_*` 原始表。
+- RPC 不返回精确地址、坐标、内部备注、管理员字段、财务字段或认证资料原件。
+- 网站不得使用 service role key。
+
+---
+
+### Private RLS 与管理权限
+
+所有新增 `private_*` 表启用 RLS：
+
+| 管理员角色 | 权限 |
+|------------|------|
+| superadmin | Private 扩展表完整读写 |
+| admin | Private 扩展表完整读写 |
+| support | 读取 Private 扩展数据；新增和修改 `private_availability`；不可删除排班 |
+| finance | 无 Private 内容写权限 |
+| anon | 不可直接读取扩展表，只能执行三个公开只读 RPC |
+
+所有更新通过新增表自己的 `updated_at` 触发器记录修改时间和 `updated_by`。这些触发器不会挂载到原 CBODY 表。
+
+---
+
+### Private 动态数据绑定流程
+
+推荐执行顺序：
+
+1. 审核网站仓库中的 Private migration，确认与当前线上表字段一致。
+2. 使用正常 Supabase migration 流程应用新增对象；不要在原表中手工增加 Private 字段。
+3. 在 `private_service_settings` 中选择真实 `services.id`，开启允许用于 Incall 的服务并设置 `supports_attire`。
+4. 在 `private_location_content` 中为已有 `incall_locations.id` 补充安全的公开名称和地区。
+5. 在 `private_profiles` 中通过真实 `girls.id` 创建 Private 资料；确认该技师已通过原有 `girls_categories` 绑定有效的 `categories.id`。后台列表同时显示 `girls.girl_number` 和 `girls.name` 方便运营识别。
+6. 在 `private_media` 中添加一张 cover 和需要的 gallery 图片/视频。
+7. 从已审核的 `admin_girl_services.id` 创建 `private_provider_services`，不得直接绕过审核关系绑定 `services.id`。
+8. 价格和时长继续读取 `girl_service_durations` 与 `service_durations`，Private 表不复制价格。
+9. 如果服务支持制服，先维护 `private_attires`，再写入 `private_provider_service_attires`。
+10. 在 `private_availability` 维护当天或未来日期的可约状态。
+11. 使用 anon 角色分别测试 `get_private_categories('en')`、`get_private_providers('en')` 和 `get_private_provider(slug, 'en')`。
+12. 数据完整后，在 Vercel 设置 `PRIVATE_DATA_SOURCE=supabase`、`SUPABASE_URL` 和 `SUPABASE_ANON_KEY`，重新部署一次完成切换。此后日常资料更新不需要 Git 提交或 Vercel 重新部署。
+
+### ops 后台建议
+
+数据库 migration 和 RPC 可以先完成并使用 Supabase Studio 验证，不需要等待 ops 页面才能测试。但是在正式将生产网站切换为动态数据前，建议在现有 ops 增加一个轻量 `CBODY Private` 模块，避免多人直接编辑数据库。
+
+建议最少提供以下界面：
+
+1. **Private 技师列表**：工号 `girl_number`、姓名、发布状态、当日可约、时间、标签和排序。
+2. **Private Profile**：介绍、标签、体型展示、健康认证状态和预约 URL。
+3. **混合相册**：每名技师维护 1–5 项静态图片或动态照片；动态照片按无声短视频保存并配置 poster，背景音乐与轮播参数读取 `private_album_settings`。
+4. **Services**：只显示已经存在于 `admin_girl_services` 且 `is_qualified=true` 的服务；管理 Private 发布状态、介绍和排序。
+5. **Themed Attire**：维护制服目录，并绑定到指定的已审核技师服务。
+6. **Venue**：从现有 `incall_locations` 选择场所，只维护 Private 公开名称、地区与发布状态。
+7. **Availability**：按曼谷日期快速切换可约状态和工作时间，支持跨午夜。
+
+ops 不需要新建独立后端、订单系统或 CMS，只需复用现有 Supabase、管理员登录和 `admin_profiles` 权限。
+
+---
+
+### 原 CBODY 表变更确认
+
+截至 **2026-08-05**，CBODY Private 扩展方案对原表的处理如下：
+
+- `girls`：**未增加字段，未修改索引，未增加触发器，未修改数据**。
+- `girls_status`：**未修改，也不用于 Private 排班**。
+- `services`：**未增加 Incall 或制服字段**；相关配置位于 `private_service_settings`。
+- `service_durations`：**未修改**，继续作为服务时长和默认价格来源。
+- `admin_girl_services`：**未修改**，Private 只通过新表外键读取已审核关系。
+- `girl_service_durations`：**未修改**，继续作为技师启用时长和自定义价格来源。
+- `incall_locations`：**未增加字段，未修改数据**；Private 通过 `private_location_content` 补充公开文案。
+- `girls_media`：**未修改**；Private 专属媒体保存在 `private_media`。
+- `orders`、支付、结算、聊天及其他 Outcall 业务表：**全部未修改**。
+
+新增表中的外键指向原表，只建立 Private 扩展记录到原数据的引用；不会改变原 Outcall 客户端、技师端或 ops 当前读取和写入原表的方式。
 
 ---
 

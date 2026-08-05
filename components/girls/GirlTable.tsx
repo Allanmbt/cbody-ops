@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -19,7 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { LoadingSpinner } from "@/components/ui/loading"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, Image as ImageIcon, Store } from "lucide-react"
+import { MoreVertical, Eye, EyeOff, Edit, Shield, ShieldCheck, Image as ImageIcon, Store, Sparkles } from "lucide-react"
 import type { GirlWithStatus } from "@/lib/features/girls"
 
 interface GirlTableProps {
@@ -37,6 +38,7 @@ export function GirlTable({
     onToggleBlocked,
     onToggleVerified
 }: GirlTableProps) {
+    const router = useRouter()
     const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
     const [previewImage, setPreviewImage] = useState<string | null>(null)
 
@@ -128,6 +130,19 @@ export function GirlTable({
         if (avatarUrl) {
             setPreviewImage(avatarUrl)
         }
+    }
+
+    const openPrivateManagement = (girl: GirlWithStatus) => {
+        const params = new URLSearchParams({
+            section: "providers",
+            girl: girl.id,
+            girlNumber: String(girl.girl_number),
+            girlName: getGirlName(girl),
+            username: girl.username,
+            verified: String(girl.is_verified),
+            blocked: String(girl.is_blocked),
+        })
+        router.push(`/dashboard/business/private?${params.toString()}`)
     }
 
     if (loading) {
@@ -275,6 +290,13 @@ export function GirlTable({
                                             <Edit className="mr-2 h-4 w-4" />
                                             编辑
                                         </DropdownMenuItem>
+
+                                        {girl.incall_enabled === true && (
+                                            <DropdownMenuItem onClick={() => openPrivateManagement(girl)}>
+                                                <Sparkles className="mr-2 h-4 w-4" />
+                                                管理 Private
+                                            </DropdownMenuItem>
+                                        )}
 
                                         <DropdownMenuItem
                                             onClick={() => handleAction(`verified-${girl.id}`, async () => await onToggleVerified(girl))}

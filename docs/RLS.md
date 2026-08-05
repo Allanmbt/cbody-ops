@@ -1,3 +1,7 @@
+> **最近新增：2026-08-05（Asia/Shanghai）**
+>
+> 本次补充 Private 手动公开年龄辅助函数权限。增量 migration 需按 `20260805020000`、`20260805030000`、`20260805040000` 顺序执行。原有 CBODY / Outcall 表、函数与策略未修改。
+
 ## 公共函数
 
 ### 1) 判断是否为管理员或超级管理员
@@ -449,31 +453,6 @@ CREATE POLICY "Service durations are manageable by admins"
    using ((auth.jwt()->>'role') in ('admin','superadmin'))
 with check ((auth.jwt()->>'role') in ('admin','superadmin'));
 
-```
-
-## add_time_packages表策略
-
-### 加钟套餐（技师端可读启用套餐）
-```sql
-ALTER TABLE public.add_time_packages ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "add_time_packages.girl.select"
-  ON public.add_time_packages
-  FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.girls g
-      WHERE g.user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "add_time_packages.admin.all"
-  ON public.add_time_packages
-  FOR ALL
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
-
-GRANT SELECT ON public.add_time_packages TO authenticated;
 ```
 
 ## admin_girl_services表策略
@@ -1418,27 +1397,6 @@ GRANT SELECT ON public.order_settlements TO authenticated;
 
 ---
 
-## order_time_extensions 订单加钟记录表策略
-
-```sql
-ALTER TABLE public.order_time_extensions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "order_time_extensions.girl.select"
-  ON public.order_time_extensions
-  FOR SELECT
-  USING (public.is_current_user_girl(girl_id));
-
-CREATE POLICY "order_time_extensions.admin.all"
-  ON public.order_time_extensions
-  FOR ALL
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
-
-GRANT SELECT ON public.order_time_extensions TO authenticated;
-```
-
----
-
 ## settlement_transactions 结算交易记录表策略
 
 **用途说明**：唯一记录"真实资金流动"的申请与确认。只记录技师给平台结账或平台向技师打款提现，不再关联具体订单。
@@ -2340,3 +2298,302 @@ CREATE TRIGGER trg_sync_settlement_balance
 **完整代码**：`docs/sql/settlement_triggers.sql`
 
 ```
+
+```
+
+---
+
+## CBODY Private 扩展表 RLS
+
+> **新增时间：2026-08-05**
+>
+> 本章节只适用于新增 `private_*` 表及三个公开只读 RPC。原 `girls`、`categories`、`girls_categories`、`services`、`admin_girl_services`、`girl_service_durations`、`service_durations`、`incall_locations` 和其他 Outcall 表的 RLS 不作任何修改。
+
+### 权限原则
+
+| 角色 | Private 原始表权限 | 公开 RPC |
+|------|--------------------|----------|
+| superadmin | 全部读取、新增、修改、删除 | 可执行 |
+| admin | 全部读取、新增、修改、删除 | 可执行 |
+| support | 可读取全部 Private 表；仅可新增和修改排班 | 可执行 |
+| finance | 无 Private 原始表权限 | 登录状态下可执行公开 RPC |
+| 技师本人 | 无 Private 原始表权限 | 登录状态下可执行公开 RPC |
+| authenticated 普通用户 | 无 Private 原始表权限 | 可执行 |
+| anon | 无 Private 原始表权限 | 只能执行三个公开只读 RPC |
+
+补充原则：
+
+- Private 内容统一由 ops 管理员维护，技师端不能自行修改 Private 资料、媒体、相册音乐、服务、制服或场所。
+- `support` 不能修改资料、媒体、相册音乐、服务、制服和场所，也不能删除排班。
+- 网站使用 anon key，但不直接查询任何原始表。
+- Private 表中的 `girl_id` 始终是 `girls.id` UUID；页面工号 `girls.girl_number` 不参与 RLS 判断。
+- 不新增 Private Storage 策略；`private_media` 只保存已批准的 HTTPS 图片、poster 和视频 URL，`private_album_settings` 只保存已批准的背景音乐 URL 和后台对象路径。
+
+### Private 管理角色判断函数
+
+现有 `public.is_admin()` 继续供原 CBODY 表使用，不修改其逻辑。Private 单独使用可传入允许角色的辅助函数：
+
+```sql
+CREATE OR REPLACE FUNCTION public.private_is_active_admin(allowed_roles TEXT[])
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.admin_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role::text = ANY(allowed_roles)
+  );
+$$;
+
+REVOKE ALL
+  ON FUNCTION public.private_is_active_admin(TEXT[])
+  FROM PUBLIC, anon;
+
+GRANT EXECUTE
+  ON FUNCTION public.private_is_active_admin(TEXT[])
+  TO authenticated;
+```
+
+**说明**：
+
+- 使用 `SECURITY DEFINER` 避免 `admin_profiles` 自身 RLS 导致角色判断递归。
+- 固定空 `search_path`，函数内部所有对象使用完整 schema 名称。
+- anon 不需要执行此函数；公开访问由安全 RPC 处理。
+
+### 启用 RLS 与基础授权
+
+```sql
+ALTER TABLE public.private_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_availability ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_media ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_album_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_service_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_provider_services ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_attires ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_provider_service_attires ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_location_content ENABLE ROW LEVEL SECURITY;
+
+-- 匿名用户不能直接读取或修改任何 Private 原始表
+REVOKE ALL ON TABLE public.private_profiles FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_availability FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_media FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_album_settings FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_service_settings FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_provider_services FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_attires FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_provider_service_attires FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_location_content FROM anon, authenticated;
+
+-- 表级授权只是允许请求进入 RLS；最终是否放行仍由下方策略决定
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_availability TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_media TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_album_settings TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_service_settings TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_provider_services TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_attires TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_provider_service_attires TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_location_content TO authenticated;
+```
+
+### Private 内容表通用策略
+
+以下八张内容表采用同一组最小策略：
+
+- `private_profiles`
+- `private_media`
+- `private_album_settings`
+- `private_service_settings`
+- `private_provider_services`
+- `private_attires`
+- `private_provider_service_attires`
+- `private_location_content`
+
+```sql
+DO $$
+DECLARE
+  table_name TEXT;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY[
+    'private_profiles',
+    'private_media',
+    'private_album_settings',
+    'private_service_settings',
+    'private_provider_services',
+    'private_attires',
+    'private_provider_service_attires',
+    'private_location_content'
+  ]
+  LOOP
+    -- superadmin/admin/support 可以读取，供现有 ops 展示
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.private_is_active_admin(ARRAY[''superadmin'', ''admin'', ''support'']))',
+      table_name || '_admin_select',
+      table_name
+    );
+
+    -- 只有 superadmin/admin 可以新增
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (public.private_is_active_admin(ARRAY[''superadmin'', ''admin'']))',
+      table_name || '_admin_insert',
+      table_name
+    );
+
+    -- 只有 superadmin/admin 可以修改，并校验修改后的记录
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (public.private_is_active_admin(ARRAY[''superadmin'', ''admin''])) WITH CHECK (public.private_is_active_admin(ARRAY[''superadmin'', ''admin'']))',
+      table_name || '_admin_update',
+      table_name
+    );
+
+    -- 只有 superadmin/admin 可以删除
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (public.private_is_active_admin(ARRAY[''superadmin'', ''admin'']))',
+      table_name || '_admin_delete',
+      table_name
+    );
+  END LOOP;
+END;
+$$;
+```
+
+**说明**：
+
+- 不建立 anon SELECT 策略，避免绕过 RPC 读取原始关联数据或管理员审计字段。
+- 不给技师建立 self policy；Private 内容由 ops 统一审核与发布。
+- `finance` 不在允许角色数组中，因此无法读取或修改 Private 原始表。
+
+### private_availability 排班策略
+
+`support` 可以维护日常排班，但删除操作只允许 `superadmin/admin`：
+
+```sql
+CREATE POLICY "private_availability_admin_select"
+  ON public.private_availability
+  FOR SELECT
+  TO authenticated
+  USING (
+    public.private_is_active_admin(ARRAY['superadmin', 'admin', 'support'])
+  );
+
+CREATE POLICY "private_availability_admin_insert"
+  ON public.private_availability
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    public.private_is_active_admin(ARRAY['superadmin', 'admin', 'support'])
+  );
+
+CREATE POLICY "private_availability_admin_update"
+  ON public.private_availability
+  FOR UPDATE
+  TO authenticated
+  USING (
+    public.private_is_active_admin(ARRAY['superadmin', 'admin', 'support'])
+  )
+  WITH CHECK (
+    public.private_is_active_admin(ARRAY['superadmin', 'admin', 'support'])
+  );
+
+CREATE POLICY "private_availability_admin_delete"
+  ON public.private_availability
+  FOR DELETE
+  TO authenticated
+  USING (
+    public.private_is_active_admin(ARRAY['superadmin', 'admin'])
+  );
+```
+
+### 网站公开读取策略
+
+网站不直接 SELECT 原表，只开放以下三个 `SECURITY DEFINER` RPC：
+
+```sql
+REVOKE ALL ON FUNCTION public.get_private_categories(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_private_providers(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_private_provider(TEXT, TEXT) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.get_private_categories(TEXT)
+  TO anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.get_private_providers(TEXT)
+  TO anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.get_private_provider(TEXT, TEXT)
+  TO anon, authenticated;
+```
+
+公开 RPC 内部必须固定执行以下过滤：
+
+- `private_profiles.is_published = true`
+- `girls.incall_enabled = true`
+- `girls.is_verified = true`
+- `girls.is_blocked = false`
+- `girls.deleted_at IS NULL`
+- `incall_locations.is_active = true`
+- `private_location_content.is_published = true`
+- 只返回已审核、已启用、已在 Private 发布且存在有效时长的服务
+- 只返回启用的 cover、gallery 和制服
+- anon 不直接读取 `private_album_settings`；公开 RPC 如需返回相册音乐，只能返回启用记录的音频 URL、MIME、标题、默认音量、循环状态和静态照片停留秒数
+- 公开 RPC 不得返回 `background_audio_object_key`、管理员或审计字段
+- 场所不返回 `address`、经纬度、房号、门禁信息和内部 `meta`
+- 不返回管理员、财务、认证原件或内部备注字段
+
+内部辅助函数不对 anon 或普通 authenticated 用户开放：
+
+```sql
+REVOKE ALL ON FUNCTION public.private_provider_stats_payload(UUID, TEXT)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_provider_venue_payload(UUID, TEXT)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_provider_services_payload(UUID, TEXT)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_provider_categories(UUID, TEXT)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_provider_payload(UUID, TEXT)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_i18n_text(JSONB, TEXT)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_i18n_json(JSONB, TEXT)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_set_updated_at()
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.private_validate_attire_binding()
+  FROM PUBLIC, anon, authenticated;
+```
+
+### Private RLS 验收清单
+
+应用 migration 后至少使用不同角色验证：
+
+1. anon 直接 SELECT 任意 `private_*` 表应被拒绝。
+2. anon 可以执行三个公开只读 RPC，但只能获得激活分类及已发布、安全的技师字段。
+3. 普通 authenticated、finance 和技师账号不能直接读取或写入 `private_*` 表。
+4. support 可以读取全部 Private 表，可以新增和修改排班，但不能删除排班或修改其他内容。
+5. admin/superadmin 可以管理全部 Private 扩展数据。
+6. 将技师、场所、服务、时长或 Private 发布状态关闭后，公开 RPC 不再返回对应数据。
+7. 使用 `girls.girl_number` 只作为输出工号，不参与 RLS 或外键判断。
+
+### 原有策略变更确认
+
+截至 **2026-08-05**：
+
+- 原 CBODY / Outcall 表 RLS：**未修改**。
+- 原 `public.is_admin()` 与 `public.is_superadmin()`：**未修改**。
+- 原 Storage 策略：**未修改**。
+- 新增 RLS 只挂载在九张 `private_*` 表。
+- 新增公开权限只包含三个只读 RPC 的 EXECUTE。
+- 未向 anon 开放任何 Private 原始表。
