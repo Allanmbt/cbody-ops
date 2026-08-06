@@ -11,9 +11,6 @@ const httpsUrl = z.string().url("请输入有效 URL").refine(
 )
 
 export const privateProfileFormSchema = z.object({
-  introduction_en: z.string().max(240, "短介绍最多 240 字"),
-  introduction_zh: z.string().max(240).optional(),
-  introduction_th: z.string().max(240).optional(),
   bio_en: z.string().max(3000, "详情介绍最多 3000 字"),
   bio_zh: z.string().max(3000).optional(),
   bio_th: z.string().max(3000).optional(),
@@ -69,8 +66,6 @@ export const privateAvailabilitySettingFormSchema = z.object({
   is_available: z.boolean(),
   start_time: z.string().min(1, "请填写开始时间"),
   end_time: z.string().min(1, "请填写结束时间"),
-  ends_next_day: z.boolean(),
-  note_en: z.string().max(240),
 }).superRefine((value, ctx) => {
   if (value.start_time === value.end_time) {
     ctx.addIssue({ code: "custom", path: ["end_time"], message: "开始和结束时间不能相同" })
@@ -84,14 +79,14 @@ export const privateServiceSettingFormSchema = z.object({
   description_en: z.string().max(2000),
   description_zh: z.string().max(2000).optional(),
   description_th: z.string().max(2000).optional(),
+  includes_en: z.string().max(4000),
+  includes_zh: z.string().max(4000).optional(),
+  includes_th: z.string().max(4000).optional(),
   sort_order: z.coerce.number().int().min(0),
 })
 
 export const privateProviderServiceFormSchema = z.object({
   is_published: z.boolean(),
-  sort_order: z.coerce.number().int().min(0),
-  description_en: z.string().max(2000),
-  includes_en: z.string(),
   attire_ids: z.array(z.string()),
 })
 

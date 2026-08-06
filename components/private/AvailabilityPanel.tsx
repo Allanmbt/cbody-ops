@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { CalendarClock, Clock3, Pencil, Users } from "lucide-react"
+import { Clock3, Pencil, Users } from "lucide-react"
 import { toast } from "sonner"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
 import {
   createAuditFields,
   formatAvailabilityTime,
@@ -52,8 +51,10 @@ const defaultSettingValues: PrivateAvailabilitySettingFormData = {
   is_available: false,
   start_time: "15:00",
   end_time: "02:00",
-  ends_next_day: true,
-  note_en: "",
+}
+
+function endsNextDay(startTime: string, endTime: string): boolean {
+  return endTime <= startTime
 }
 
 function createSetting(
@@ -70,8 +71,8 @@ function createSetting(
     is_available: values.is_available,
     start_time: values.start_time,
     end_time: values.end_time,
-    ends_next_day: values.ends_next_day,
-    note: { ...(existing?.note || {}), en: values.note_en },
+    ends_next_day: endsNextDay(values.start_time, values.end_time),
+    note: existing?.note || { en: "" },
     updated_by: null,
     updated_at: now,
   }
@@ -84,8 +85,6 @@ function valuesFromSetting(
     is_available: setting?.is_available ?? defaultSettingValues.is_available,
     start_time: setting?.start_time?.slice(0, 5) || defaultSettingValues.start_time,
     end_time: setting?.end_time?.slice(0, 5) || defaultSettingValues.end_time,
-    ends_next_day: setting?.ends_next_day ?? defaultSettingValues.ends_next_day,
-    note_en: setting?.note.en || "",
   }
 }
 
@@ -171,14 +170,6 @@ export function AvailabilityPanel({
 
   return (
     <div className="space-y-4">
-      <Alert>
-        <CalendarClock className="h-4 w-4" />
-        <AlertTitle>持续生效的常规排班</AlertTitle>
-        <AlertDescription>
-          工作时间会每天重复使用；“当前可约”开启后会一直保持，直到管理员手动关闭。时间仅在需要时修改，无需每天重新创建排班。
-        </AlertDescription>
-      </Alert>
-
       {!settingsAvailable && (
         <Alert variant="destructive">
           <AlertTitle>常规排班表尚未部署</AlertTitle>
@@ -190,12 +181,7 @@ export function AvailabilityPanel({
 
       <Card>
         <CardHeader className="flex-row items-center justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">技师常规排班</CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              时间按曼谷时区展示；跨午夜例如 15:00–02:00。
-            </p>
-          </div>
+          <CardTitle className="text-base">排班管理</CardTitle>
           {!compact && permissions.canManageAvailability && (
             <Button
               onClick={() => setBatchOpen(true)}
@@ -268,14 +254,10 @@ export function AvailabilityPanel({
                       {setting
                         ? formatAvailabilityTime(
                             setting.start_time,
-                            setting.end_time,
-                            setting.ends_next_day
+                            setting.end_time
                           )
-                        : "默认 15:00–02:00 次日"}
+                        : "15:00–02:00"}
                     </span>
-                    {setting?.note.en && (
-                      <span className="truncate">· {setting.note.en}</span>
-                    )}
                   </div>
                 </div>
 
@@ -349,12 +331,7 @@ function AvailabilityFields({
         name="is_available"
         render={({ field }) => (
           <FormItem className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <FormLabel>当前可约</FormLabel>
-              <p className="text-xs text-muted-foreground">
-                状态持续生效，关闭后仍保留固定工作时间
-              </p>
-            </div>
+            <FormLabel>当前可约</FormLabel>
             <FormControl>
               <Switch checked={field.value} onCheckedChange={field.onChange} />
             </FormControl>
@@ -367,7 +344,7 @@ function AvailabilityFields({
           name="start_time"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>每日开始时间</FormLabel>
+              <FormLabel>开始时间</FormLabel>
               <FormControl>
                 <Input type="time" {...field} />
               </FormControl>
@@ -380,7 +357,7 @@ function AvailabilityFields({
           name="end_time"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>每日结束时间</FormLabel>
+              <FormLabel>结束时间</FormLabel>
               <FormControl>
                 <Input type="time" {...field} />
               </FormControl>
@@ -389,37 +366,6 @@ function AvailabilityFields({
           )}
         />
       </div>
-      <FormField
-        control={form.control}
-        name="ends_next_day"
-        render={({ field }) => (
-          <FormItem className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <FormLabel>结束时间属于次日</FormLabel>
-              <p className="text-xs text-muted-foreground">
-                例如 15:00–02:00 时需要开启
-              </p>
-            </div>
-            <FormControl>
-              <Switch checked={field.value} onCheckedChange={field.onChange} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="note_en"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>英文排班说明</FormLabel>
-            <FormControl>
-              <Textarea placeholder="Optional note" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
     </div>
   )
 }
@@ -447,7 +393,7 @@ function AvailabilityDialog({
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <AvailabilityFields form={form} />
             <DialogFooter>
-              <Button type="submit">保存常规排班</Button>
+              <Button type="submit">保存排班</Button>
             </DialogFooter>
           </form>
         </Form>
@@ -484,7 +430,7 @@ function BatchAvailabilityDialog({
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <AvailabilityFields form={form} />
             <DialogFooter>
-              <Button type="submit">应用常规排班</Button>
+              <Button type="submit">应用排班</Button>
             </DialogFooter>
           </form>
         </Form>

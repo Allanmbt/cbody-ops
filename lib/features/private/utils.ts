@@ -28,11 +28,10 @@ export function splitList(value: string): string[] {
 
 export function formatAvailabilityTime(
   startTime: string | null,
-  endTime: string | null,
-  endsNextDay: boolean
+  endTime: string | null
 ): string {
   if (!startTime || !endTime) return "未设置时间"
-  return `${startTime.slice(0, 5)}–${endTime.slice(0, 5)}${endsNextDay ? " 次日" : ""}`
+  return `${startTime.slice(0, 5)}–${endTime.slice(0, 5)}`
 }
 
 export function hasSensitiveLocationName(name: string): boolean {

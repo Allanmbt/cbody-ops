@@ -19,7 +19,8 @@ import { toast } from "sonner"
 import { uploadIncallPhoto } from "@/app/dashboard/business/incall-locations/actions"
 import { GooglePlacesInput, type PlaceResult } from "@/components/incall-locations/GooglePlacesInput"
 import { MultiImageUpload } from "@/components/incall-locations/MultiImageUpload"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ListPagination } from "@/components/private/ListPagination"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,6 +80,8 @@ interface VenuesPanelProps {
   focusLocationId?: string | null
 }
 
+const VENUE_PAGE_SIZE = 12
+
 export function VenuesPanel({
   data,
   dispatch,
@@ -87,6 +90,7 @@ export function VenuesPanel({
 }: VenuesPanelProps) {
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
   const [editingLocation, setEditingLocation] =
     useState<PrivateIncallLocation | null | undefined>(undefined)
   const [deletingLocation, setDeletingLocation] = useState<PrivateIncallLocation | null>(null)
@@ -115,19 +119,19 @@ export function VenuesPanel({
     })
   }, [data.locations, data.locationContent, search])
 
+  const pageCount = Math.max(1, Math.ceil(locations.length / VENUE_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const visibleLocations = locations.slice((safePage - 1) * VENUE_PAGE_SIZE, safePage * VENUE_PAGE_SIZE)
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, pageCount))
+  }, [pageCount])
+
   const referenceCount = (locationId: string) =>
     data.girls.filter((girl) => girl.incall_location_id === locationId).length
 
   return (
     <div className="space-y-4">
-      <Alert>
-        <ShieldAlert className="h-4 w-4" />
-        <AlertTitle>公开信息安全边界</AlertTitle>
-        <AlertDescription>
-          Private 页面只展示经过筛选的场所名称、地区、图片、城市和有效地图链接；详细地址、坐标、房号、进门与停车说明不会进入公开预览。
-        </AlertDescription>
-      </Alert>
-
       <Card>
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <form
@@ -135,6 +139,7 @@ export function VenuesPanel({
             onSubmit={(event) => {
               event.preventDefault()
               setSearch(searchInput.trim())
+              setPage(1)
             }}
           >
             <div className="relative min-w-0 flex-1">
@@ -142,7 +147,7 @@ export function VenuesPanel({
               <Input
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="搜索名称、地址、Place ID、公开名称或地区"
+                placeholder="搜索场所、城市、公开名称或地区"
                 className="pl-9"
               />
             </div>
@@ -157,6 +162,7 @@ export function VenuesPanel({
                 onClick={() => {
                   setSearchInput("")
                   setSearch("")
+                  setPage(1)
                 }}
               >
                 清除
@@ -173,57 +179,44 @@ export function VenuesPanel({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {locations.map((location) => {
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {visibleLocations.map((location) => {
           const content = data.locationContent.find(
             (item) => item.incall_location_id === location.id
           )
           const publicName = getEffectivePublicName(location.name, content?.public_name)
+          const showPublicName = publicName.value.trim().toLowerCase() !== location.name.trim().toLowerCase()
           const references = referenceCount(location.id)
           return (
-            <Card key={location.id}>
-              <CardHeader className="pb-3">
+            <Card key={location.id} className="overflow-hidden">
+              {location.photos.length > 0 && <LocationPhotoStrip photos={location.photos} />}
+              <CardHeader className="p-3 pb-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <CardTitle className="truncate text-base">{location.name}</CardTitle>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {location.city_name} · {references} 名技师关联
                     </p>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1">
                     <Badge variant={location.is_active ? "default" : "secondary"}>
-                      {location.is_active ? "地址激活" : "地址停用"}
+                      {location.is_active ? "启用" : "停用"}
                     </Badge>
                     <Badge variant={content?.is_published ? "default" : "outline"}>
-                      {content?.is_published ? "Private 已公开" : "未公开"}
+                      {content?.is_published ? "公开" : "未公开"}
                     </Badge>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {location.photos.length > 0 && <LocationPhotoStrip photos={location.photos} />}
-                <div className="rounded-lg bg-muted/50 p-3">
-                  <div className="text-xs text-muted-foreground">
-                    RPC 实际公开名称 ·{" "}
-                    {publicName.source === "private"
-                      ? "来自 private_location_content"
-                      : "来自内部名称"}
-                  </div>
-                  <div className="mt-1 font-medium">{publicName.value}</div>
-                  <div className="text-sm text-muted-foreground">
+              <CardContent className="space-y-3 p-3 pt-1">
+                <div className="min-w-0">
+                  {showPublicName && <div className="truncate text-sm font-medium">{publicName.value}</div>}
+                  <div className="truncate text-xs text-muted-foreground">
                     {localizedText(content?.district) || "地区未设置"}
                   </div>
                 </div>
-                <div className="space-y-1 text-sm">
-                  <div className="line-clamp-2 text-muted-foreground">
-                    内部地址：{location.address}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    照片 {location.photos.length} 张 ·{" "}
-                    {location.place_id ? "已配置 Place ID" : "无 Place ID"}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="text-xs text-muted-foreground">照片 {location.photos.length} 张{location.place_id ? " · 已配置地图" : ""}</div>
+                <div className="flex flex-wrap gap-1">
                   <Button
                     size="sm"
                     variant="outline"
@@ -257,16 +250,13 @@ export function VenuesPanel({
                     删除
                   </Button>
                 </div>
-                {references > 0 && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    已被技师引用，禁止删除。请先到技师管理解除地址关联。
-                  </p>
-                )}
               </CardContent>
             </Card>
           )
         })}
       </div>
+
+      <ListPagination page={safePage} pageSize={VENUE_PAGE_SIZE} total={locations.length} onPageChange={setPage} />
 
       {locations.length === 0 && (
         <Card>
@@ -329,30 +319,18 @@ export function VenuesPanel({
 
 function LocationPhotoStrip({ photos }: { photos: string[] }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const cover = photos[0]
   return (
     <>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {photos.slice(0, 4).map((url, index) => (
-          <button
-            key={url}
-            type="button"
-            onClick={() => setPreviewUrl(url)}
-            className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={`预览环境图片 ${index + 1}`}
-          >
-            <img
-              src={url}
-              alt={`环境图片 ${index + 1}`}
-              className="h-full w-full object-cover"
-            />
-            {index === 3 && photos.length > 4 && (
-              <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm font-medium text-white">
-                +{photos.length - 4}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      <button
+        type="button"
+        onClick={() => setPreviewUrl(cover)}
+        className="relative block aspect-[16/9] w-full cursor-zoom-in overflow-hidden bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label="预览场所图片"
+      >
+        <img src={cover} alt="场所图片" className="h-full w-full object-cover" />
+        {photos.length > 1 && <span className="absolute bottom-2 right-2 rounded bg-black/65 px-2 py-1 text-xs text-white">{photos.length} 张</span>}
+      </button>
       <Dialog open={Boolean(previewUrl)} onOpenChange={(open) => !open && setPreviewUrl(null)}>
         <DialogContent className="max-w-4xl border-0 bg-black/95 p-2 sm:p-3">
           <DialogHeader className="sr-only">

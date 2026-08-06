@@ -14,17 +14,14 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  Eye,
   Image as ImageIcon,
   MapPin,
   Maximize2,
   Music2,
-  MoreHorizontal,
   Pencil,
   Plus,
   PlayCircle,
   Search,
-  Settings2,
   Shirt,
   Store,
   Trash2,
@@ -44,7 +41,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -104,7 +100,7 @@ function mutationSuccessMessage(action: PrivateMutationAction): string {
     UPSERT_AVAILABILITY_SETTINGS_BATCH: "批量常规排班已保存",
     UPSERT_SERVICE_SETTING: "Private 服务设置已保存",
     DELETE_SERVICE_SETTING: "服务已移出 Private 目录",
-    UPSERT_PROVIDER_SERVICE: "技师服务发布设置已保存",
+    UPSERT_PROVIDER_SERVICE: "技师服务绑定已保存",
     DELETE_PROVIDER_SERVICE: "技师服务扩展已删除",
     UPSERT_ATTIRE: "制服已保存",
     DELETE_ATTIRE: "制服及其关联已删除",
@@ -134,14 +130,6 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
       toast.success(mutationSuccessMessage(result.data))
     })
   }, [])
-
-  const girls = useMemo(() => data.girls.filter((girl) => girl.incall_enabled), [data.girls])
-  const stats = useMemo(() => {
-    const published = girls.filter((girl) => data.profiles.find((item) => item.girl_id === girl.id)?.is_published).length
-    const available = girls.filter((girl) => data.availabilitySettings.some((item) => item.girl_id === girl.id && item.is_available)).length
-    const incomplete = girls.filter((girl) => !getProviderReadiness(data, girl, today).ready).length
-    return { total: girls.length, published, available, incomplete }
-  }, [data, girls, today])
 
   const switchSection = (next: PrivateSection, girlId?: string) => {
     setSection(next)
@@ -176,13 +164,6 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
         <Badge variant="outline" className="h-7 gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Supabase 实时数据{isSaving ? " · 保存中" : ""}</Badge>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Private 技师" value={stats.total} icon={Users} onClick={() => { switchSection("providers"); }} />
-        <StatCard label="已发布资料" value={stats.published} icon={Eye} onClick={() => switchSection("providers")} />
-        <StatCard label="当前可约" value={stats.available} icon={CalendarDays} onClick={() => switchSection("availability")} />
-        <StatCard label="配置不完整" value={stats.incomplete} icon={CircleAlert} tone="warning" onClick={() => switchSection("providers")} />
-      </div>
-
       <Tabs value={section} onValueChange={(value) => switchSection(value as PrivateSection)} className="space-y-4">
         <div className="overflow-x-auto pb-1"><TabsList className="min-w-max"><TabsTrigger value="providers"><Users />Private 技师</TabsTrigger><TabsTrigger value="availability"><CalendarDays />排班管理</TabsTrigger><TabsTrigger value="catalog"><Shirt />服务与制服</TabsTrigger><TabsTrigger value="venues"><MapPin />场所与地址</TabsTrigger></TabsList></div>
         <TabsContent value="providers"><ProviderList data={data} permissions={permissions} today={today} onOpenProvider={openProvider} /></TabsContent>
@@ -202,10 +183,6 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
       />
     </div>
   )
-}
-
-function StatCard({ label, value, icon: Icon, tone, onClick }: { label: string; value: number; icon: React.ComponentType<{ className?: string }>; tone?: "warning"; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Card className="transition-colors hover:bg-accent/30"><CardContent className="flex items-center justify-between p-4"><div><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold">{value}</p></div><div className={`rounded-lg p-2.5 ${tone === "warning" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-primary/10 text-primary"}`}><Icon className="h-5 w-5" /></div></CardContent></Card></button>
 }
 
 function ProviderList({ data, permissions, today, onOpenProvider }: { data: PrivateDataset; permissions: PrivatePagePermissions; today: string; onOpenProvider: (girlId: string) => void }) {
@@ -258,7 +235,7 @@ function ProviderRow({ girl, data, today, onOpen }: { girl: PrivateGirl; data: P
   const mediaCount = data.media.filter((item) => item.girl_id === girl.id).length
   const serviceCount = getPublishedProviderServices(data, girl.id).length
   const readiness = getProviderReadiness(data, girl, today)
-  return <TableRow><TableCell><ProviderIdentity girl={girl} profile={profile} /></TableCell><TableCell><div className="max-w-[180px] truncate">{location?.name || "未分配"}</div>{!location && <span className="text-xs text-amber-600">需在技师管理设置</span>}</TableCell><TableCell>{availability ? <><Badge variant={availability.is_available ? "default" : "secondary"}>{availability.is_available ? "可约" : "不可约"}</Badge><div className="mt-1 text-xs text-muted-foreground">{formatAvailabilityTime(availability.start_time, availability.end_time, availability.ends_next_day)}</div></> : <Badge variant="outline">未配置</Badge>}</TableCell><TableCell><div className="text-sm">{serviceCount} 服务 · {mediaCount} 媒体</div><div className="text-xs text-muted-foreground">{girl.category_names.length} 分类</div></TableCell><TableCell>{profile?.sort_order ?? "—"}</TableCell><TableCell><ReadinessBadge readiness={readiness} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={onOpen}>配置</Button></TableCell></TableRow>
+  return <TableRow><TableCell><ProviderIdentity girl={girl} profile={profile} /></TableCell><TableCell><div className="max-w-[180px] truncate">{location?.name || "未分配"}</div>{!location && <span className="text-xs text-amber-600">需在技师管理设置</span>}</TableCell><TableCell>{availability ? <><Badge variant={availability.is_available ? "default" : "secondary"}>{availability.is_available ? "可约" : "不可约"}</Badge><div className="mt-1 text-xs text-muted-foreground">{formatAvailabilityTime(availability.start_time, availability.end_time)}</div></> : <Badge variant="outline">未配置</Badge>}</TableCell><TableCell><div className="text-sm">{serviceCount} 服务 · {mediaCount} 媒体</div><div className="text-xs text-muted-foreground">{girl.category_names.length} 分类</div></TableCell><TableCell>{profile?.sort_order ?? "—"}</TableCell><TableCell><ReadinessBadge readiness={readiness} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={onOpen}>配置</Button></TableCell></TableRow>
 }
 
 function ProviderMobileCard({ girl, data, today, onOpen }: { girl: PrivateGirl; data: PrivateDataset; today: string; onOpen: () => void }) {
@@ -325,11 +302,11 @@ function ProfilePanel({ girl, data, dispatch, permissions, readiness }: { girl: 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const form = useForm<PrivateProfileFormData>({ resolver: zodResolver(privateProfileFormSchema) as any, defaultValues: profileDefaults(profile) })
   useEffect(() => form.reset(profileDefaults(profile)), [profile, form, girl.id])
-  const save = (values: PrivateProfileFormData) => { const now = new Date().toISOString(); dispatch({ type: "UPSERT_PROFILE", value: { ...(profile || { ...createAuditFields(now), girl_id: girl.id }), introduction: { ...(profile?.introduction || {}), en: values.introduction_en, zh: values.introduction_zh || "", th: values.introduction_th || "" }, bio: { ...(profile?.bio || {}), en: values.bio_en, zh: values.bio_zh || "", th: values.bio_th || "" }, personal_tags: { ...(profile?.personal_tags || {}), en: splitList(values.personal_tags_en) }, skin_tone: { ...(profile?.skin_tone || {}), en: values.skin_tone_en }, body_type: { ...(profile?.body_type || {}), en: values.body_type_en }, display_age: values.display_age, badge: values.badge === "none" ? null : values.badge, sort_order: values.sort_order, is_published: values.is_published, health_certified: values.health_certified, booking_url: values.booking_url, updated_by: null, updated_at: now } }) }
-  return <div className="space-y-4"><ReadinessDetails readiness={readiness} /><Card><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Private Profile</CardTitle>{profile && <Button variant="ghost" size="sm" className="text-destructive" disabled={!permissions.canManageContent} onClick={() => setDeleteOpen(true)}><Trash2 className="mr-2 h-4 w-4" />删除资料</Button>}</CardHeader><CardContent><Form {...form}><form onSubmit={form.handleSubmit(save)} className="space-y-4"><FormField control={form.control} name="introduction_en" render={({ field }) => <FormItem><FormLabel>卡片短介绍（EN）</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="bio_en" render={({ field }) => <FormItem><FormLabel>详情介绍（EN）</FormLabel><FormControl><Textarea rows={5} {...field} /></FormControl><FormMessage /></FormItem>} /><details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">中文与泰文介绍</summary><div className="mt-3 grid gap-4"><FormField control={form.control} name="introduction_zh" render={({ field }) => <FormItem><FormLabel>短介绍（ZH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /><FormField control={form.control} name="bio_zh" render={({ field }) => <FormItem><FormLabel>详情（ZH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /><FormField control={form.control} name="introduction_th" render={({ field }) => <FormItem><FormLabel>短介绍（TH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /><FormField control={form.control} name="bio_th" render={({ field }) => <FormItem><FormLabel>详情（TH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /></div></details><FormField control={form.control} name="personal_tags_en" render={({ field }) => <FormItem><FormLabel>个性标签（EN，逗号分隔）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /><div className="grid gap-3 sm:grid-cols-2"><FormField control={form.control} name="skin_tone_en" render={({ field }) => <FormItem><FormLabel>肤色展示（EN）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="body_type_en" render={({ field }) => <FormItem><FormLabel>体型展示（EN）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /></div><div className="grid gap-3 sm:grid-cols-3"><FormField control={form.control} name="display_age" render={({ field }) => <FormItem><FormLabel>公开年龄</FormLabel><FormControl><Input type="number" min={20} max={99} value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : event.target.value)} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="badge" render={({ field }) => <FormItem><FormLabel>Private 标签</FormLabel><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="none">无</SelectItem><SelectItem value="hot">hot</SelectItem><SelectItem value="new">new</SelectItem><SelectItem value="signature">signature</SelectItem><SelectItem value="vip">vip</SelectItem></SelectContent></Select></FormItem>} /><FormField control={form.control} name="sort_order" render={({ field }) => <FormItem><FormLabel>排序</FormLabel><FormControl><Input type="number" min={0} {...field} /></FormControl><FormMessage /></FormItem>} /></div><FormField control={form.control} name="booking_url" render={({ field }) => <FormItem><FormLabel>预约 HTTPS URL</FormLabel><FormControl><Input placeholder="https://..." {...field} /></FormControl><FormMessage /></FormItem>} /><div className="grid gap-3 sm:grid-cols-2"><FormField control={form.control} name="health_certified" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>Private 健康认证</FormLabel><p className="text-xs text-muted-foreground">不能直接映射原 is_verified</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} /><FormField control={form.control} name="is_published" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>发布 Private 资料</FormLabel><p className="text-xs text-muted-foreground">仍需满足完整公开链路</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} /></div><Button type="submit" disabled={!permissions.canManageContent}>{profile ? "保存资料" : "创建资料"}</Button></form></Form></CardContent></Card><AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除 Private Profile？</AlertDialogTitle><AlertDialogDescription>将删除真实 private_profiles 记录。媒体、服务和排班是独立关联，不会被自动删除，但该技师将无法公开。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => { dispatch({ type: "DELETE_PROFILE", girlId: girl.id }); setDeleteOpen(false) }}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>
+  const save = (values: PrivateProfileFormData) => { const now = new Date().toISOString(); dispatch({ type: "UPSERT_PROFILE", value: { ...(profile || { ...createAuditFields(now), girl_id: girl.id }), introduction: profile?.introduction || { en: "" }, bio: { ...(profile?.bio || {}), en: values.bio_en, zh: values.bio_zh || "", th: values.bio_th || "" }, personal_tags: { ...(profile?.personal_tags || {}), en: splitList(values.personal_tags_en) }, skin_tone: { ...(profile?.skin_tone || {}), en: values.skin_tone_en }, body_type: { ...(profile?.body_type || {}), en: values.body_type_en }, display_age: values.display_age, badge: values.badge === "none" ? null : values.badge, sort_order: values.sort_order, is_published: values.is_published, health_certified: values.health_certified, booking_url: values.booking_url, updated_by: null, updated_at: now } }) }
+  return <div className="space-y-4"><ReadinessDetails readiness={readiness} /><Card><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Private Profile</CardTitle>{profile && <Button variant="ghost" size="sm" className="text-destructive" disabled={!permissions.canManageContent} onClick={() => setDeleteOpen(true)}><Trash2 className="mr-2 h-4 w-4" />删除资料</Button>}</CardHeader><CardContent><Form {...form}><form onSubmit={form.handleSubmit(save)} className="space-y-4"><FormField control={form.control} name="bio_en" render={({ field }) => <FormItem><FormLabel>详情介绍（EN）</FormLabel><FormControl><Textarea rows={5} {...field} /></FormControl><FormMessage /></FormItem>} /><details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">中文与泰文介绍</summary><div className="mt-3 grid gap-4"><FormField control={form.control} name="bio_zh" render={({ field }) => <FormItem><FormLabel>详情（ZH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /><FormField control={form.control} name="bio_th" render={({ field }) => <FormItem><FormLabel>详情（TH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /></div></details><FormField control={form.control} name="personal_tags_en" render={({ field }) => <FormItem><FormLabel>个性标签（EN，逗号分隔）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /><div className="grid gap-3 sm:grid-cols-2"><FormField control={form.control} name="skin_tone_en" render={({ field }) => <FormItem><FormLabel>肤色展示（EN）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="body_type_en" render={({ field }) => <FormItem><FormLabel>体型展示（EN）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /></div><div className="grid gap-3 sm:grid-cols-3"><FormField control={form.control} name="display_age" render={({ field }) => <FormItem><FormLabel>公开年龄</FormLabel><FormControl><Input type="number" min={20} max={99} value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : event.target.value)} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="badge" render={({ field }) => <FormItem><FormLabel>Private 标签</FormLabel><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="none">无</SelectItem><SelectItem value="hot">hot</SelectItem><SelectItem value="new">new</SelectItem><SelectItem value="signature">signature</SelectItem><SelectItem value="vip">vip</SelectItem></SelectContent></Select></FormItem>} /><FormField control={form.control} name="sort_order" render={({ field }) => <FormItem><FormLabel>排序</FormLabel><FormControl><Input type="number" min={0} {...field} /></FormControl><FormMessage /></FormItem>} /></div><FormField control={form.control} name="booking_url" render={({ field }) => <FormItem><FormLabel>预约 HTTPS URL</FormLabel><FormControl><Input placeholder="https://..." {...field} /></FormControl><FormMessage /></FormItem>} /><div className="grid gap-3 sm:grid-cols-2"><FormField control={form.control} name="health_certified" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>Private 健康认证</FormLabel><p className="text-xs text-muted-foreground">不能直接映射原 is_verified</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} /><FormField control={form.control} name="is_published" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>发布 Private 资料</FormLabel><p className="text-xs text-muted-foreground">仍需满足完整公开链路</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} /></div><Button type="submit" disabled={!permissions.canManageContent}>{profile ? "保存资料" : "创建资料"}</Button></form></Form></CardContent></Card><AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除 Private Profile？</AlertDialogTitle><AlertDialogDescription>将删除真实 private_profiles 记录。媒体、服务和排班是独立关联，不会被自动删除，但该技师将无法公开。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => { dispatch({ type: "DELETE_PROFILE", girlId: girl.id }); setDeleteOpen(false) }}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>
 }
 
-function profileDefaults(profile?: PrivateProfile): PrivateProfileFormData { return { introduction_en: profile?.introduction.en || "", introduction_zh: profile?.introduction.zh || "", introduction_th: profile?.introduction.th || "", bio_en: profile?.bio.en || "", bio_zh: profile?.bio.zh || "", bio_th: profile?.bio.th || "", personal_tags_en: profile?.personal_tags.en?.join(", ") || "", skin_tone_en: profile?.skin_tone.en || "", body_type_en: profile?.body_type.en || "", display_age: profile?.display_age ?? null, badge: profile?.badge || "none", sort_order: profile?.sort_order ?? 999, is_published: profile?.is_published ?? false, health_certified: profile?.health_certified ?? false, booking_url: profile?.booking_url || "" } }
+function profileDefaults(profile?: PrivateProfile): PrivateProfileFormData { return { bio_en: profile?.bio.en || "", bio_zh: profile?.bio.zh || "", bio_th: profile?.bio.th || "", personal_tags_en: profile?.personal_tags.en?.join(", ") || "", skin_tone_en: profile?.skin_tone.en || "", body_type_en: profile?.body_type.en || "", display_age: profile?.display_age ?? null, badge: profile?.badge || "none", sort_order: profile?.sort_order ?? 999, is_published: profile?.is_published ?? false, health_certified: profile?.health_certified ?? false, booking_url: profile?.booking_url || "" } }
 
 function ReadinessDetails({ readiness }: { readiness: ReturnType<typeof getProviderReadiness> }) { return <div className="grid gap-3 sm:grid-cols-2"><Alert className={readiness.ready ? "border-emerald-300" : "border-amber-300"}>{readiness.ready ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}<AlertTitle>{readiness.ready ? "满足公开硬条件" : `${readiness.blockers.length} 项公开阻断`}</AlertTitle><AlertDescription>{readiness.blockers.length ? readiness.blockers.join("、") : "RPC 仍会按当前数据库状态进行最终过滤。"}</AlertDescription></Alert><Alert><CircleAlert className="h-4 w-4" /><AlertTitle>{readiness.warnings.length} 项质量提醒</AlertTitle><AlertDescription>{readiness.warnings.length ? readiness.warnings.join("、") : "暂无质量提醒"}</AlertDescription></Alert></div> }
 
@@ -484,18 +461,99 @@ function MediaDialog({ girlId, media, open, otherActiveCover, onOpenChange, onSa
 }
 
 function ProviderServicesPanel({ girl, data, dispatch, permissions }: { girl: PrivateGirl; data: PrivateDataset; dispatch: PrivateMutationDispatcher; permissions: PrivatePagePermissions }) {
-  const qualified = data.adminGirlServices.filter((item) => item.girl_id === girl.id && item.is_qualified)
+  const qualified = data.adminGirlServices.filter((item) =>
+    item.girl_id === girl.id &&
+    item.is_qualified &&
+    data.serviceSettings.some((setting) => setting.service_id === item.service_id && setting.is_incall_enabled)
+  )
   const [editing, setEditing] = useState<AdminGirlService | null>(null)
-  const [deleting, setDeleting] = useState<AdminGirlService | null>(null)
-  return <div className="space-y-4"><Alert><Settings2 className="h-4 w-4" /><AlertTitle>服务来源保持只读</AlertTitle><AlertDescription>仅列出 admin_girl_services.is_qualified=true 的审核关系；原服务、审核关系、时长与价格不会在此修改。</AlertDescription></Alert><div className="space-y-3">{qualified.map((adminService) => { const service = data.services.find((item) => item.id === adminService.service_id); const setting = data.serviceSettings.find((item) => item.service_id === adminService.service_id); const provider = data.providerServices.find((item) => item.admin_girl_service_id === adminService.id); const bindings = data.providerServiceAttires.filter((item) => item.admin_girl_service_id === adminService.id && item.is_active); const chainValid = Boolean(service?.is_active && setting?.is_incall_enabled && provider?.is_published && adminService.duration_active); return <Card key={adminService.id}><CardContent className="p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h4 className="font-medium">{localizedText(service?.title, "zh") || localizedText(service?.title)}</h4><Badge variant={chainValid ? "default" : "secondary"}>{chainValid ? "公开链路有效" : "未满足公开条件"}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{adminService.duration_minutes} 分钟 · ฿{adminService.price.toLocaleString()} · {bindings.length} 套制服</p><p className="mt-2 line-clamp-2 text-sm">{localizedText(provider?.description_override) || localizedText(setting?.description_override) || "暂无 Private 介绍"}</p>{!setting?.is_incall_enabled && <p className="mt-2 text-xs text-amber-600">该服务尚未在全局 Private 服务目录启用</p>}</div><DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm"><MoreHorizontal className="mr-2 h-4 w-4" />操作</Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem disabled={!permissions.canManageContent || !setting?.is_incall_enabled} onClick={() => setEditing(adminService)}><Pencil className="mr-2 h-4 w-4" />{provider ? "编辑发布设置" : "创建发布设置"}</DropdownMenuItem>{provider && <><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive" disabled={!permissions.canManageContent} onClick={() => setDeleting(adminService)}><Trash2 className="mr-2 h-4 w-4" />删除 Private 服务扩展</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu></div></CardContent></Card> })}{qualified.length === 0 && <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">没有已审核合格的服务，请先在服务管理完成绑定审核。</div>}</div><ProviderServiceDialog adminService={editing} data={data} open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)} onSave={(value, attireBindings) => { dispatch({ type: "UPSERT_PROVIDER_SERVICE", value, attireBindings }); setEditing(null) }} /><AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除 Private 技师服务扩展？</AlertDialogTitle><AlertDialogDescription>将删除真实 private_provider_services 记录及其制服绑定，不影响原 admin_girl_services 审核关系或价格时长。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => { if (deleting) dispatch({ type: "DELETE_PROVIDER_SERVICE", adminGirlServiceId: deleting.id }); setDeleting(null) }}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>
+  return (
+    <div className="space-y-4">
+      <div className="space-y-3">
+        {qualified.map((adminService) => {
+          const service = data.services.find((item) => item.id === adminService.service_id)
+          const setting = data.serviceSettings.find((item) => item.service_id === adminService.service_id)
+          const provider = data.providerServices.find((item) => item.admin_girl_service_id === adminService.id)
+          const bindings = data.providerServiceAttires.filter((item) => item.admin_girl_service_id === adminService.id && item.is_active)
+          const chainValid = Boolean(service?.is_active && setting?.is_incall_enabled && provider?.is_published && adminService.duration_active)
+          return (
+            <Card key={adminService.id}>
+              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="font-medium">{localizedText(service?.title, "zh") || localizedText(service?.title)}</h4>
+                    <Badge variant={chainValid ? "default" : "secondary"}>{chainValid ? "已绑定并公开" : "未公开"}</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{adminService.duration_minutes} 分钟 · ฿{adminService.price.toLocaleString()} · {bindings.length} 套制服</p>
+                </div>
+                <Button variant="outline" size="sm" disabled={!permissions.canManageContent || !setting?.is_incall_enabled} onClick={() => setEditing(adminService)}>
+                  <Pencil className="mr-2 h-4 w-4" />设置绑定{setting?.supports_attire ? "与制服" : ""}
+                </Button>
+              </CardContent>
+            </Card>
+          )
+        })}
+        {qualified.length === 0 && <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">暂无可绑定的 Private 服务</div>}
+      </div>
+      <ProviderServiceDialog adminService={editing} data={data} open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)} onSave={(value, attireBindings) => { dispatch({ type: "UPSERT_PROVIDER_SERVICE", value, attireBindings }); setEditing(null) }} />
+    </div>
+  )
 }
 
 function ProviderServiceDialog({ adminService, data, open, onOpenChange, onSave }: { adminService: AdminGirlService | null; data: PrivateDataset; open: boolean; onOpenChange: (open: boolean) => void; onSave: (value: PrivateProviderService, attireBindings: PrivateDataset["providerServiceAttires"]) => void }) {
   const provider = adminService ? data.providerServices.find((item) => item.admin_girl_service_id === adminService.id) : undefined
   const service = adminService ? data.services.find((item) => item.id === adminService.service_id) : undefined
   const setting = adminService ? data.serviceSettings.find((item) => item.service_id === adminService.service_id) : undefined
-  const form = useForm<PrivateProviderServiceFormData>({ resolver: zodResolver(privateProviderServiceFormSchema) as any, defaultValues: { is_published: false, sort_order: 999, description_en: "", includes_en: "", attire_ids: [] } })
-  useEffect(() => { if (!adminService) return; form.reset({ is_published: provider?.is_published ?? false, sort_order: provider?.sort_order ?? 999, description_en: provider?.description_override.en || "", includes_en: provider?.includes_override.en?.join("\n") || "", attire_ids: data.providerServiceAttires.filter((item) => item.admin_girl_service_id === adminService.id && item.is_active).map((item) => item.attire_id) }) }, [adminService, provider, data.providerServiceAttires, form])
+  const [attireQuery, setAttireQuery] = useState("")
+  const [previewAttire, setPreviewAttire] = useState<PrivateDataset["attires"][number] | null>(null)
+  const form = useForm<PrivateProviderServiceFormData>({ resolver: zodResolver(privateProviderServiceFormSchema) as any, defaultValues: { is_published: false, attire_ids: [] } })
+  useEffect(() => { if (!adminService) return; form.reset({ is_published: provider?.is_published ?? false, attire_ids: data.providerServiceAttires.filter((item) => item.admin_girl_service_id === adminService.id && item.is_active && data.attires.some((attire) => attire.id === item.attire_id && attire.is_active)).map((item) => item.attire_id) }); setAttireQuery(""); setPreviewAttire(null) }, [adminService, provider, data.providerServiceAttires, data.attires, form])
+  const visibleAttires = data.attires
+    .filter((attire) => attire.is_active)
+    .filter((attire) => !attireQuery.trim() || `${attire.code} ${localizedText(attire.name)}`.toLowerCase().includes(attireQuery.trim().toLowerCase()))
+    .sort((a, b) => a.sort_order - b.sort_order || a.code.localeCompare(b.code))
   if (!adminService || !service) return null
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{localizedText(service.title, "zh") || localizedText(service.title)} · 技师发布设置</DialogTitle></DialogHeader><Form {...form}><form className="space-y-4" onSubmit={form.handleSubmit((values) => { const now = new Date().toISOString(); const audit = createAuditFields(now); const value: PrivateProviderService = { ...(provider || { ...audit, admin_girl_service_id: adminService.id, badge: null }), is_published: values.is_published, sort_order: values.sort_order, description_override: { ...(provider?.description_override || {}), en: values.description_en }, includes_override: { ...(provider?.includes_override || {}), en: splitList(values.includes_en) }, updated_by: null, updated_at: now }; const bindings = values.attire_ids.map((attireId, index) => ({ ...audit, admin_girl_service_id: adminService.id, attire_id: attireId, sort_order: (index + 1) * 10, is_active: true, updated_by: null, updated_at: now })); onSave(value, bindings) })}><div className="rounded-lg bg-muted/50 p-3 text-sm">公开价格预览：{adminService.duration_minutes} 分钟 · ฿{adminService.price.toLocaleString()}</div><div className="grid gap-3 sm:grid-cols-2"><FormField control={form.control} name="is_published" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>在该技师页面发布</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} /><FormField control={form.control} name="sort_order" render={({ field }) => <FormItem><FormLabel>技师内排序</FormLabel><FormControl><Input type="number" min={0} {...field} /></FormControl><FormMessage /></FormItem>} /></div><FormField control={form.control} name="description_en" render={({ field }) => <FormItem><FormLabel>技师专属服务介绍（EN）</FormLabel><FormControl><Textarea rows={4} {...field} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="includes_en" render={({ field }) => <FormItem><FormLabel>包含内容（EN，每行或逗号分隔）</FormLabel><FormControl><Textarea rows={4} {...field} /></FormControl><FormMessage /></FormItem>} />{setting?.supports_attire ? <FormField control={form.control} name="attire_ids" render={({ field }) => <FormItem><FormLabel>绑定制服</FormLabel><div className="grid gap-2 sm:grid-cols-2">{data.attires.map((attire) => <label key={attire.id} className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${!attire.is_active ? "opacity-50" : ""}`}><Checkbox checked={field.value.includes(attire.id)} disabled={!attire.is_active} onCheckedChange={(checked) => field.onChange(checked ? [...field.value, attire.id] : field.value.filter((id) => id !== attire.id))} />{attire.code} · {localizedText(attire.name)}</label>)}</div><FormMessage /></FormItem>} /> : <Alert><Shirt className="h-4 w-4" /><AlertDescription>该服务未开启 supports_attire，公开 RPC 不会返回制服。</AlertDescription></Alert>}<DialogFooter><Button type="submit">保存发布设置</Button></DialogFooter></form></Form></DialogContent></Dialog>
+  return <>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader><DialogTitle>{localizedText(service.title, "zh") || localizedText(service.title)} · 技师服务绑定</DialogTitle></DialogHeader>
+        <Form {...form}>
+          <form className="space-y-4" onSubmit={form.handleSubmit((values) => {
+            const now = new Date().toISOString()
+            const audit = createAuditFields(now)
+            const value: PrivateProviderService = {
+              ...(provider || { ...audit, admin_girl_service_id: adminService.id, badge: null }),
+              is_published: values.is_published,
+              sort_order: setting?.sort_order ?? 999,
+              description_override: setting?.description_override || { en: "" },
+              includes_override: setting?.includes_override || { en: [] },
+              updated_by: null,
+              updated_at: now,
+            }
+            const bindings = values.attire_ids.map((attireId, index) => ({
+              ...audit,
+              admin_girl_service_id: adminService.id,
+              attire_id: attireId,
+              sort_order: (index + 1) * 10,
+              is_active: true,
+              updated_by: null,
+              updated_at: now,
+            }))
+            onSave(value, bindings)
+          })}>
+            <div className="rounded-lg bg-muted/50 p-3 text-sm">{adminService.duration_minutes} 分钟 · ฿{adminService.price.toLocaleString()}</div>
+            <FormField control={form.control} name="is_published" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>该技师提供此服务</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
+            {setting?.supports_attire ? <FormField control={form.control} name="attire_ids" render={({ field }) => <FormItem><div className="flex items-center justify-between gap-3"><FormLabel>制服</FormLabel><span className="text-xs text-muted-foreground">已选 {field.value.length}</span></div><Input value={attireQuery} onChange={(event) => setAttireQuery(event.target.value)} placeholder="搜索制服编号" /><div className="max-h-72 overflow-y-auto rounded-lg border p-2"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{visibleAttires.map((attire) => <label key={attire.id} className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm hover:bg-accent"><Checkbox checked={field.value.includes(attire.id)} onCheckedChange={(checked) => field.onChange(checked ? [...field.value, attire.id] : field.value.filter((id) => id !== attire.id))} /><button type="button" className="shrink-0 cursor-zoom-in" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setPreviewAttire(attire) }} aria-label={`预览制服 ${attire.code}`}><img src={attire.image_url} alt={attire.code} className="h-10 w-10 rounded object-cover" /></button><span className="truncate font-medium">{attire.code}</span></label>)}{visibleAttires.length === 0 && <div className="col-span-full py-8 text-center text-sm text-muted-foreground">没有匹配的制服</div>}</div></div><FormMessage /></FormItem>} /> : <Alert><Shirt className="h-4 w-4" /><AlertDescription>此服务不支持制服。</AlertDescription></Alert>}
+            <DialogFooter><Button type="submit">保存服务绑定</Button></DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={Boolean(previewAttire)} onOpenChange={(previewOpen) => !previewOpen && setPreviewAttire(null)}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader><DialogTitle>{previewAttire?.code}</DialogTitle></DialogHeader>
+        {previewAttire && <img src={previewAttire.image_url} alt={previewAttire.code} className="max-h-[75vh] w-full rounded-lg object-contain" />}
+      </DialogContent>
+    </Dialog>
+  </>
 }

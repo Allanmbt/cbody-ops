@@ -78,6 +78,7 @@ const serviceSettingRecordSchema = z.object({
   display_category: z.enum(["wellness", "yoga", "screening"]),
   name_override: localizedTextSchema,
   description_override: localizedTextSchema,
+  includes_override: localizedListSchema,
   sort_order: z.number().int().min(0),
 })
 
@@ -288,7 +289,10 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
       })) as PrivateAlbumSettings[] : [],
       services: (servicesResult.data || []).map((item: any) => ({ ...item, title: textMap(item.title) })),
       serviceSettings: (settingsResult.data || []).map((item: any) => ({
-        ...item, name_override: textMap(item.name_override), description_override: textMap(item.description_override),
+        ...item,
+        name_override: textMap(item.name_override),
+        description_override: textMap(item.description_override),
+        includes_override: listMap(item.includes_override),
       })) as PrivateServiceSetting[],
       adminGirlServices: (adminServicesResult.data || []).map((item: any) => {
         const durations = (validDurationsByAdminService.get(item.id) || []).sort((a, b) => a.duration_minutes - b.duration_minutes)
@@ -352,7 +356,6 @@ export async function applyPrivateMutation(
         const value = profileRecordSchema.parse(action.value)
         await assertIncallGirl(db, value.girl_id)
         privateProfileFormSchema.parse({
-          introduction_en: value.introduction.en || "", introduction_zh: value.introduction.zh || "", introduction_th: value.introduction.th || "",
           bio_en: value.bio.en || "", bio_zh: value.bio.zh || "", bio_th: value.bio.th || "",
           personal_tags_en: (value.personal_tags.en || []).join(","), skin_tone_en: value.skin_tone.en || "",
           body_type_en: value.body_type.en || "", display_age: value.display_age, badge: value.badge || "none",
@@ -450,11 +453,15 @@ export async function applyPrivateMutation(
       case "UPSERT_AVAILABILITY_SETTING":
       case "UPSERT_AVAILABILITY_SETTINGS_BATCH": {
         const inputValues = action.type === "UPSERT_AVAILABILITY_SETTING" ? [action.value] : action.values
-        const values = inputValues.map((item) => availabilitySettingRecordSchema.parse(item))
+        const values = inputValues.map((item) => {
+          const value = availabilitySettingRecordSchema.parse(item)
+          return { ...value, ends_next_day: value.end_time.slice(0, 5) <= value.start_time.slice(0, 5) }
+        })
         await Promise.all([...new Set(values.map((item) => item.girl_id))].map((girlId) => assertIncallGirl(db, girlId)))
         values.forEach((value) => privateAvailabilitySettingFormSchema.parse({
-          is_available: value.is_available, start_time: value.start_time, end_time: value.end_time,
-          ends_next_day: value.ends_next_day, note_en: value.note.en || "",
+          is_available: value.is_available,
+          start_time: value.start_time,
+          end_time: value.end_time,
         }))
         const { data: existingRows, error: existingError } = await db
           .from("private_availability_settings")
@@ -506,6 +513,9 @@ export async function applyPrivateMutation(
           is_incall_enabled: value.is_incall_enabled, supports_attire: value.supports_attire,
           display_category: value.display_category, description_en: value.description_override.en || "",
           description_zh: value.description_override.zh || "", description_th: value.description_override.th || "",
+          includes_en: (value.includes_override.en || []).join("\n"),
+          includes_zh: (value.includes_override.zh || []).join("\n"),
+          includes_th: (value.includes_override.th || []).join("\n"),
           sort_order: value.sort_order,
         })
         const { data: existing } = await db.from("private_service_settings").select("service_id").eq("service_id", value.service_id).maybeSingle()
@@ -514,7 +524,18 @@ export async function applyPrivateMutation(
         const { data, error } = await query.select("*").single()
         if (error) throw new Error(error.message)
         await audit(admin.id, existing ? "private_service_setting_update" : "private_service_setting_create", String(value.service_id))
-        return { ok: true, data: { type: "UPSERT_SERVICE_SETTING", value: data as PrivateServiceSetting } }
+        return {
+          ok: true,
+          data: {
+            type: "UPSERT_SERVICE_SETTING",
+            value: {
+              ...data,
+              name_override: textMap(data.name_override),
+              description_override: textMap(data.description_override),
+              includes_override: listMap(data.includes_override),
+            } as PrivateServiceSetting,
+          },
+        }
       }
       case "DELETE_SERVICE_SETTING": {
         z.number().int().positive().parse(action.serviceId)
@@ -527,18 +548,30 @@ export async function applyPrivateMutation(
         const value = providerServiceRecordSchema.parse(action.value)
         const attireIds = action.attireBindings.map((item) => uuidSchema.parse(item.attire_id))
         privateProviderServiceFormSchema.parse({
-          is_published: value.is_published, sort_order: value.sort_order,
-          description_en: value.description_override.en || "", includes_en: (value.includes_override.en || []).join("\n"),
+          is_published: value.is_published,
           attire_ids: attireIds,
         })
         const { data: relation, error: relationError } = await db.from("admin_girl_services").select("id,girl_id,service_id,is_qualified").eq("id", value.admin_girl_service_id).maybeSingle()
         if (relationError || !relation?.is_qualified) return { ok: false, error: "只能维护已审核合格的技师服务" }
         await assertIncallGirl(db, relation.girl_id)
-        const { data: setting } = await db.from("private_service_settings").select("is_incall_enabled,supports_attire").eq("service_id", relation.service_id).maybeSingle()
+        const { data: setting, error: settingError } = await db
+          .from("private_service_settings")
+          .select("is_incall_enabled,supports_attire,sort_order,description_override,includes_override")
+          .eq("service_id", relation.service_id)
+          .maybeSingle()
+        if (settingError) throw new Error(`Private 公共服务内容读取失败：${settingError.message}`)
         if (!setting?.is_incall_enabled) return { ok: false, error: "该服务尚未启用 Private Incall" }
         if (attireIds.length && !setting.supports_attire) return { ok: false, error: "该服务未开启制服支持" }
         const { data: existing } = await db.from("private_provider_services").select("admin_girl_service_id").eq("admin_girl_service_id", value.admin_girl_service_id).maybeSingle()
-        const payload = { ...value, updated_by: admin.id, updated_at: now, ...(!existing ? { created_by: admin.id } : {}) }
+        const payload = {
+          ...value,
+          sort_order: Number(setting.sort_order),
+          description_override: textMap(setting.description_override),
+          includes_override: listMap(setting.includes_override),
+          updated_by: admin.id,
+          updated_at: now,
+          ...(!existing ? { created_by: admin.id } : {}),
+        }
         const query = existing ? db.from("private_provider_services").update(payload).eq("admin_girl_service_id", value.admin_girl_service_id) : db.from("private_provider_services").insert(payload)
         const { data, error } = await query.select("*").single()
         if (error) throw new Error(error.message)

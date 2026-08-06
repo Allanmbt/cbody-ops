@@ -88,6 +88,7 @@ export interface PrivateServiceSetting extends PrivateAuditFields {
   display_category: "wellness" | "yoga" | "screening"
   name_override: LocalizedText
   description_override: LocalizedText
+  includes_override: LocalizedList
   sort_order: number
 }
 
