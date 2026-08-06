@@ -5,10 +5,9 @@ import { z } from "zod"
 import { logAuditAction } from "@/lib/audit"
 import { requireAdmin } from "@/lib/auth"
 import {
-  bangkokDate,
   privateAlbumSettingsFormSchema,
   privateAttireFormSchema,
-  privateAvailabilityFormSchema,
+  privateAvailabilitySettingFormSchema,
   privateLocationFormSchema,
   privateMediaFormSchema,
   privateProfileFormSchema,
@@ -16,7 +15,7 @@ import {
   privateServiceSettingFormSchema,
   type PrivateAlbumSettings,
   type PrivateAttire,
-  type PrivateAvailability,
+  type PrivateAvailabilitySetting,
   type PrivateDataset,
   type PrivateIncallLocation,
   type PrivateLocationContent,
@@ -63,13 +62,11 @@ const mediaRecordSchema = z.object({
   is_active: z.boolean(),
 })
 
-const availabilityRecordSchema = z.object({
-  id: uuidSchema,
+const availabilitySettingRecordSchema = z.object({
   girl_id: uuidSchema,
-  service_date: z.iso.date(),
   is_available: z.boolean(),
-  start_time: z.string().nullable(),
-  end_time: z.string().nullable(),
+  start_time: z.string().min(1),
+  end_time: z.string().min(1),
   ends_next_day: z.boolean(),
   note: localizedTextSchema,
 })
@@ -188,7 +185,7 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
     const [
       girlsResult,
       profilesResult,
-      availabilityResult,
+      availabilitySettingsResult,
       mediaResult,
       servicesResult,
       settingsResult,
@@ -207,7 +204,7 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
     ] = await Promise.all([
       db.from("girls").select("id,girl_number,username,name,avatar_url,incall_enabled,incall_location_id,is_verified,is_blocked,deleted_at").eq("incall_enabled", true).is("deleted_at", null).order("girl_number").limit(1000),
       db.from("private_profiles").select("*").order("sort_order").limit(1000),
-      db.from("private_availability").select("*").eq("service_date", bangkokDate()).limit(1000),
+      db.from("private_availability_settings").select("*").order("girl_id").limit(1000),
       db.from("private_media").select("*").order("sort_order").limit(5000),
       db.from("services").select("id,code,title,badge,is_active").order("sort_order").limit(1000),
       db.from("private_service_settings").select("*").order("sort_order").limit(1000),
@@ -226,7 +223,7 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
     ])
 
     const requiredResults: [string, { error: { message: string } | null }][] = [
-      ["技师", girlsResult], ["Private 资料", profilesResult], ["排班", availabilityResult],
+      ["技师", girlsResult], ["Private 资料", profilesResult],
       ["媒体", mediaResult], ["服务", servicesResult], ["Private 服务目录", settingsResult],
       ["技师服务", adminServicesResult], ["技师服务时长", girlDurationsResult],
       ["服务时长", durationsResult], ["技师 Private 服务", providerServicesResult],
@@ -235,6 +232,11 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
       ["技师分类", girlCategoriesResult], ["分类", categoriesResult],
     ]
     requiredResults.forEach(([label, result]) => assertQuery(label, result))
+
+    const availabilitySettingsAvailable = !availabilitySettingsResult.error
+    if (availabilitySettingsResult.error && !/private_availability_settings|schema cache/i.test(availabilitySettingsResult.error.message)) {
+      throw new Error(`常规排班设置读取失败：${availabilitySettingsResult.error.message}`)
+    }
 
     const albumSettingsAvailable = !albumSettingsResult.error
     if (albumSettingsResult.error && !/private_album_settings|schema cache/i.test(albumSettingsResult.error.message)) {
@@ -272,7 +274,12 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
         introduction: textMap(item.introduction), bio: textMap(item.bio), personal_tags: listMap(item.personal_tags),
         skin_tone: textMap(item.skin_tone), body_type: textMap(item.body_type),
       })) as PrivateProfile[],
-      availability: (availabilityResult.data || []).map((item: any) => ({ ...item, note: textMap(item.note) })) as PrivateAvailability[],
+      availabilitySettings: availabilitySettingsAvailable
+        ? (availabilitySettingsResult.data || []).map((item: any) => ({
+            ...item,
+            note: textMap(item.note),
+          })) as PrivateAvailabilitySetting[]
+        : [],
       media: (mediaResult.data || []).map((item: any) => ({ ...item, alt: textMap(item.alt) })) as PrivateMedia[],
       albumSettings: albumSettingsAvailable ? (albumSettingsResult.data || []).map((item: any) => ({
         ...item,
@@ -311,36 +318,15 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
       locationContent: (locationContentResult.data || []).map((item: any) => ({
         ...item, public_name: textMap(item.public_name), district: textMap(item.district),
       })) as PrivateLocationContent[],
-      capabilities: { albumSettings: albumSettingsAvailable },
+      capabilities: {
+        albumSettings: albumSettingsAvailable,
+        availabilitySettings: availabilitySettingsAvailable,
+      },
     }
 
     return { ok: true, data }
   } catch (error) {
     console.error("[到店管理] 读取真实数据失败:", error)
-    return { ok: false, error: firstIssue(error) }
-  }
-}
-
-export async function getPrivateAvailabilityForDate(
-  serviceDate: string
-): Promise<ActionResponse<PrivateAvailability[]>> {
-  try {
-    await requireAdmin(["superadmin", "admin", "support"])
-    const date = z.iso.date().parse(serviceDate)
-    const db = getSupabaseAdminClient() as any
-    const { data, error } = await db
-      .from("private_availability")
-      .select("*")
-      .eq("service_date", date)
-      .order("girl_id")
-      .limit(1000)
-    if (error) throw new Error(error.message)
-    return {
-      ok: true,
-      data: (data || []).map((item: any) => ({ ...item, note: textMap(item.note) })) as PrivateAvailability[],
-    }
-  } catch (error) {
-    console.error("[到店管理] 按日期读取排班失败:", error)
     return { ok: false, error: firstIssue(error) }
   }
 }
@@ -353,13 +339,10 @@ export async function applyPrivateMutation(
   action: PrivateMutationAction
 ): Promise<ActionResponse<PrivateMutationAction>> {
   try {
-    const availabilityAction = action.type === "UPSERT_AVAILABILITY" || action.type === "UPSERT_AVAILABILITY_BATCH" || action.type === "DELETE_AVAILABILITY"
+    const availabilityAction = action.type === "UPSERT_AVAILABILITY_SETTING" || action.type === "UPSERT_AVAILABILITY_SETTINGS_BATCH"
     const admin = await requireAdmin(
       availabilityAction ? ["superadmin", "admin", "support"] : ["superadmin", "admin"]
     )
-    if (action.type === "DELETE_AVAILABILITY" && admin.role === "support") {
-      return { ok: false, error: "support 不能删除排班" }
-    }
 
     const db = getSupabaseAdminClient() as any
     const now = new Date().toISOString()
@@ -464,32 +447,58 @@ export async function applyPrivateMutation(
         await audit(admin.id, existing ? "private_album_settings_update" : "private_album_settings_create", value.girl_id)
         return { ok: true, data: { type: "UPSERT_ALBUM_SETTINGS", value: { ...data, background_volume: Number(data.background_volume) } as PrivateAlbumSettings } }
       }
-      case "UPSERT_AVAILABILITY":
-      case "UPSERT_AVAILABILITY_BATCH": {
-        const inputValues = action.type === "UPSERT_AVAILABILITY" ? [action.value] : action.values
-        const values = inputValues.map((item) => availabilityRecordSchema.parse(item))
+      case "UPSERT_AVAILABILITY_SETTING":
+      case "UPSERT_AVAILABILITY_SETTINGS_BATCH": {
+        const inputValues = action.type === "UPSERT_AVAILABILITY_SETTING" ? [action.value] : action.values
+        const values = inputValues.map((item) => availabilitySettingRecordSchema.parse(item))
         await Promise.all([...new Set(values.map((item) => item.girl_id))].map((girlId) => assertIncallGirl(db, girlId)))
-        values.forEach((value) => privateAvailabilityFormSchema.parse({
-          is_available: value.is_available, start_time: value.start_time || "", end_time: value.end_time || "",
+        values.forEach((value) => privateAvailabilitySettingFormSchema.parse({
+          is_available: value.is_available, start_time: value.start_time, end_time: value.end_time,
           ends_next_day: value.ends_next_day, note_en: value.note.en || "",
         }))
-        const payloads = values.map(({ id: _id, ...value }) => ({ ...value, updated_by: admin.id, updated_at: now }))
-        const { data, error } = await db.from("private_availability").upsert(payloads, { onConflict: "girl_id,service_date" }).select("*")
-        if (error) throw new Error(error.message)
-        await audit(admin.id, "private_availability_upsert", values.map((item) => item.girl_id).join(","), { count: values.length })
-        const records = (data || []).map((item: any) => ({ ...item, note: textMap(item.note) })) as PrivateAvailability[]
-        return { ok: true, data: records.length === 1 && action.type === "UPSERT_AVAILABILITY" ? { type: "UPSERT_AVAILABILITY", value: records[0] } : { type: "UPSERT_AVAILABILITY_BATCH", values: records } }
-      }
-      case "DELETE_AVAILABILITY": {
-        uuidSchema.parse(action.id)
-        const { data: availabilityRow, error: availabilityReadError } = await db.from("private_availability").select("girl_id").eq("id", action.id).maybeSingle()
-        if (availabilityReadError) throw new Error(availabilityReadError.message)
-        if (!availabilityRow) return { ok: false, error: "排班记录不存在" }
-        await assertIncallGirl(db, availabilityRow.girl_id)
-        const { error } = await db.from("private_availability").delete().eq("id", action.id)
-        if (error) throw new Error(error.message)
-        await audit(admin.id, "private_availability_delete", action.id)
-        return { ok: true, data: action }
+        const { data: existingRows, error: existingError } = await db
+          .from("private_availability_settings")
+          .select("girl_id,created_by,created_at")
+          .in("girl_id", values.map((item) => item.girl_id))
+        if (existingError && !/private_availability_settings|schema cache/i.test(existingError.message)) {
+          throw new Error(existingError.message)
+        }
+        const existingByGirlId = new Map<string, { created_by: string | null; created_at: string }>(
+          (existingRows || []).map((item: any) => [item.girl_id, item])
+        )
+        const payloads = values.map((value) => ({
+          ...value,
+          created_by: existingByGirlId.get(value.girl_id)?.created_by || admin.id,
+          created_at: existingByGirlId.get(value.girl_id)?.created_at || now,
+          updated_by: admin.id,
+          updated_at: now,
+        }))
+        const { data, error } = await db
+          .from("private_availability_settings")
+          .upsert(payloads, { onConflict: "girl_id", ignoreDuplicates: false })
+          .select("*")
+        if (error) {
+          if (/private_availability_settings|schema cache/i.test(error.message)) {
+            throw new Error("常规排班表尚未部署，请先应用本次 Supabase migration")
+          }
+          throw new Error(error.message)
+        }
+        await audit(
+          admin.id,
+          "private_availability_settings_upsert",
+          values.map((item) => item.girl_id).join(","),
+          { count: values.length }
+        )
+        const records = (data || []).map((item: any) => ({
+          ...item,
+          note: textMap(item.note),
+        })) as PrivateAvailabilitySetting[]
+        return {
+          ok: true,
+          data: records.length === 1 && action.type === "UPSERT_AVAILABILITY_SETTING"
+            ? { type: "UPSERT_AVAILABILITY_SETTING", value: records[0] }
+            : { type: "UPSERT_AVAILABILITY_SETTINGS_BATCH", values: records },
+        }
       }
       case "UPSERT_SERVICE_SETTING": {
         const value = serviceSettingRecordSchema.parse(action.value)

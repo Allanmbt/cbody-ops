@@ -39,13 +39,11 @@ export interface PrivateProfile extends PrivateAuditFields {
   booking_url: string
 }
 
-export interface PrivateAvailability extends PrivateAuditFields {
-  id: string
+export interface PrivateAvailabilitySetting extends PrivateAuditFields {
   girl_id: string
-  service_date: string
   is_available: boolean
-  start_time: string | null
-  end_time: string | null
+  start_time: string
+  end_time: string
   ends_next_day: boolean
   note: LocalizedText
 }
@@ -170,7 +168,7 @@ export interface PrivateLocationContent extends PrivateAuditFields {
 export interface PrivateDataset {
   girls: PrivateGirl[]
   profiles: PrivateProfile[]
-  availability: PrivateAvailability[]
+  availabilitySettings: PrivateAvailabilitySetting[]
   media: PrivateMedia[]
   albumSettings: PrivateAlbumSettings[]
   services: BaseService[]
@@ -184,6 +182,7 @@ export interface PrivateDataset {
   locationContent: PrivateLocationContent[]
   capabilities: {
     albumSettings: boolean
+    availabilitySettings: boolean
   }
 }
 
@@ -193,9 +192,8 @@ export type PrivateMutationAction =
   | { type: "UPSERT_MEDIA"; value: PrivateMedia; replaceActiveCover?: boolean }
   | { type: "DELETE_MEDIA"; id: string }
   | { type: "UPSERT_ALBUM_SETTINGS"; value: PrivateAlbumSettings }
-  | { type: "UPSERT_AVAILABILITY"; value: PrivateAvailability }
-  | { type: "UPSERT_AVAILABILITY_BATCH"; values: PrivateAvailability[] }
-  | { type: "DELETE_AVAILABILITY"; id: string }
+  | { type: "UPSERT_AVAILABILITY_SETTING"; value: PrivateAvailabilitySetting }
+  | { type: "UPSERT_AVAILABILITY_SETTINGS_BATCH"; values: PrivateAvailabilitySetting[] }
   | { type: "UPSERT_SERVICE_SETTING"; value: PrivateServiceSetting }
   | { type: "DELETE_SERVICE_SETTING"; serviceId: number }
   | {

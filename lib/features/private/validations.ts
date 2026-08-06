@@ -65,18 +65,15 @@ export const privateAlbumSettingsFormSchema = z.object({
   }
 })
 
-export const privateAvailabilityFormSchema = z.object({
+export const privateAvailabilitySettingFormSchema = z.object({
   is_available: z.boolean(),
-  start_time: z.string(),
-  end_time: z.string(),
+  start_time: z.string().min(1, "请填写开始时间"),
+  end_time: z.string().min(1, "请填写结束时间"),
   ends_next_day: z.boolean(),
   note_en: z.string().max(240),
 }).superRefine((value, ctx) => {
-  if (Boolean(value.start_time) !== Boolean(value.end_time)) {
-    ctx.addIssue({ code: "custom", path: ["end_time"], message: "开始和结束时间必须同时填写" })
-  }
-  if (value.ends_next_day && (!value.start_time || !value.end_time)) {
-    ctx.addIssue({ code: "custom", path: ["ends_next_day"], message: "跨午夜排班必须填写时间" })
+  if (value.start_time === value.end_time) {
+    ctx.addIssue({ code: "custom", path: ["end_time"], message: "开始和结束时间不能相同" })
   }
 })
 
@@ -133,7 +130,7 @@ export const privateLocationFormSchema = z.object({
 export type PrivateProfileFormData = z.infer<typeof privateProfileFormSchema>
 export type PrivateMediaFormData = z.infer<typeof privateMediaFormSchema>
 export type PrivateAlbumSettingsFormData = z.infer<typeof privateAlbumSettingsFormSchema>
-export type PrivateAvailabilityFormData = z.infer<typeof privateAvailabilityFormSchema>
+export type PrivateAvailabilitySettingFormData = z.infer<typeof privateAvailabilitySettingFormSchema>
 export type PrivateServiceSettingFormData = z.infer<typeof privateServiceSettingFormSchema>
 export type PrivateProviderServiceFormData = z.infer<typeof privateProviderServiceFormSchema>
 export type PrivateAttireFormData = z.infer<typeof privateAttireFormSchema>

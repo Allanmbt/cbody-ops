@@ -60,7 +60,7 @@ export interface ProviderReadiness {
 export function getProviderReadiness(
   dataset: PrivateDataset,
   girl: PrivateGirl,
-  today: string
+  _today: string
 ): ProviderReadiness {
   const profile = dataset.profiles.find((item) => item.girl_id === girl.id)
   const location = dataset.locations.find((item) => item.id === girl.incall_location_id)
@@ -96,8 +96,8 @@ export function getProviderReadiness(
   if (!dataset.media.some((item) => item.girl_id === girl.id && item.role === "cover" && item.is_active)) {
     warnings.push("缺少启用封面")
   }
-  if (!dataset.availability.some((item) => item.girl_id === girl.id && item.service_date >= today && item.is_available)) {
-    warnings.push("没有近期可约排班")
+  if (!dataset.availabilitySettings.some((item) => item.girl_id === girl.id && item.is_available)) {
+    warnings.push("常规排班当前未开启可约")
   }
   if (!profile?.booking_url) warnings.push("预约 URL 为空")
   if (!profile?.health_certified) warnings.push("未开启健康认证展示")

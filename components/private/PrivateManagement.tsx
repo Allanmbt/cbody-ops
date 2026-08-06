@@ -100,9 +100,8 @@ function mutationSuccessMessage(action: PrivateMutationAction): string {
     UPSERT_MEDIA: action.type === "UPSERT_MEDIA" && action.replaceActiveCover ? "相册媒体已保存并替换封面" : "相册媒体已保存",
     DELETE_MEDIA: "相册媒体记录已删除",
     UPSERT_ALBUM_SETTINGS: "相册背景音乐设置已保存",
-    UPSERT_AVAILABILITY: "排班已保存",
-    UPSERT_AVAILABILITY_BATCH: "批量排班已保存",
-    DELETE_AVAILABILITY: "排班已删除",
+    UPSERT_AVAILABILITY_SETTING: "常规排班已保存",
+    UPSERT_AVAILABILITY_SETTINGS_BATCH: "批量常规排班已保存",
     UPSERT_SERVICE_SETTING: "Private 服务设置已保存",
     DELETE_SERVICE_SETTING: "服务已移出 Private 目录",
     UPSERT_PROVIDER_SERVICE: "技师服务发布设置已保存",
@@ -139,7 +138,7 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
   const girls = useMemo(() => data.girls.filter((girl) => girl.incall_enabled), [data.girls])
   const stats = useMemo(() => {
     const published = girls.filter((girl) => data.profiles.find((item) => item.girl_id === girl.id)?.is_published).length
-    const available = girls.filter((girl) => data.availability.some((item) => item.girl_id === girl.id && item.service_date === today && item.is_available)).length
+    const available = girls.filter((girl) => data.availabilitySettings.some((item) => item.girl_id === girl.id && item.is_available)).length
     const incomplete = girls.filter((girl) => !getProviderReadiness(data, girl, today).ready).length
     return { total: girls.length, published, available, incomplete }
   }, [data, girls, today])
@@ -180,7 +179,7 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Private 技师" value={stats.total} icon={Users} onClick={() => { switchSection("providers"); }} />
         <StatCard label="已发布资料" value={stats.published} icon={Eye} onClick={() => switchSection("providers")} />
-        <StatCard label="今日可约" value={stats.available} icon={CalendarDays} onClick={() => switchSection("availability")} />
+        <StatCard label="当前可约" value={stats.available} icon={CalendarDays} onClick={() => switchSection("availability")} />
         <StatCard label="配置不完整" value={stats.incomplete} icon={CircleAlert} tone="warning" onClick={() => switchSection("providers")} />
       </div>
 
@@ -223,7 +222,7 @@ function ProviderList({ data, permissions, today, onOpenProvider }: { data: Priv
     const keyword = search.trim().toLowerCase()
     return data.girls.filter((girl) => girl.incall_enabled).filter((girl) => {
       const profile = data.profiles.find((item) => item.girl_id === girl.id)
-      const available = data.availability.some((item) => item.girl_id === girl.id && item.service_date === today && item.is_available)
+      const available = data.availabilitySettings.some((item) => item.girl_id === girl.id && item.is_available)
       const ready = getProviderReadiness(data, girl, today).ready
       const matchesSearch = !keyword || girl.name.toLowerCase().includes(keyword) || girl.username.toLowerCase().includes(keyword) || String(girl.girl_number).includes(keyword)
       return matchesSearch &&
@@ -240,9 +239,9 @@ function ProviderList({ data, permissions, today, onOpenProvider }: { data: Priv
   const reset = () => { setSearchInput(""); setSearch(""); setPublishFilter("all"); setReadinessFilter("all"); setAvailabilityFilter("all"); setLocationFilter("all") }
 
   return <div className="space-y-4">
-    <Card><CardContent className="flex flex-wrap gap-3 p-4"><form className="flex min-w-[260px] flex-1 gap-2" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()) }}><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="搜索工号、姓名或 username" className="pl-9" /></div><Button type="submit"><Search className="mr-2 h-4 w-4" />搜索</Button></form><FilterSelect value={publishFilter} onChange={(value) => setPublishFilter(value as PublishFilter)} items={[['all','全部发布状态'],['published','资料已发布'],['draft','资料未发布']]} /><FilterSelect value={readinessFilter} onChange={(value) => setReadinessFilter(value as ReadinessFilter)} items={[['all','全部完整度'],['ready','满足公开条件'],['incomplete','配置不完整']]} /><FilterSelect value={availabilityFilter} onChange={(value) => setAvailabilityFilter(value as AvailabilityFilter)} items={[['all','全部今日状态'],['available','今日可约'],['unavailable','今日不可约/未排班']]} /><Select value={locationFilter} onValueChange={setLocationFilter}><SelectTrigger className="w-full sm:w-[170px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部场所</SelectItem><SelectItem value="none">未分配场所</SelectItem>{data.locations.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button variant="outline" onClick={reset}>重置</Button></CardContent></Card>
+    <Card><CardContent className="flex flex-wrap gap-3 p-4"><form className="flex min-w-[260px] flex-1 gap-2" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()) }}><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="搜索工号、姓名或 username" className="pl-9" /></div><Button type="submit"><Search className="mr-2 h-4 w-4" />搜索</Button></form><FilterSelect value={publishFilter} onChange={(value) => setPublishFilter(value as PublishFilter)} items={[['all','全部发布状态'],['published','资料已发布'],['draft','资料未发布']]} /><FilterSelect value={readinessFilter} onChange={(value) => setReadinessFilter(value as ReadinessFilter)} items={[['all','全部完整度'],['ready','满足公开条件'],['incomplete','配置不完整']]} /><FilterSelect value={availabilityFilter} onChange={(value) => setAvailabilityFilter(value as AvailabilityFilter)} items={[['all','全部可约状态'],['available','当前可约'],['unavailable','当前不可约/未配置']]} /><Select value={locationFilter} onValueChange={setLocationFilter}><SelectTrigger className="w-full sm:w-[170px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部场所</SelectItem><SelectItem value="none">未分配场所</SelectItem>{data.locations.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button variant="outline" onClick={reset}>重置</Button></CardContent></Card>
     <Card><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Private 技师列表</CardTitle><div className="flex items-center gap-2"><Badge variant="outline">{providers.length} 名</Badge><Button asChild variant="outline" size="sm"><Link href="/dashboard/girls">管理到店资格</Link></Button></div></CardHeader><CardContent>
-      <div className="hidden overflow-x-auto rounded-md border md:block"><Table className="min-w-[900px]"><TableHeader><TableRow><TableHead>技师</TableHead><TableHead>场所</TableHead><TableHead>今日排班</TableHead><TableHead>资源</TableHead><TableHead>排序</TableHead><TableHead>发布条件</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{visible.map((girl) => <ProviderRow key={girl.id} girl={girl} data={data} today={today} onOpen={() => onOpenProvider(girl.id)} />)}{visible.length === 0 && <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">没有符合条件的 Incall 技师</TableCell></TableRow>}</TableBody></Table></div>
+      <div className="hidden overflow-x-auto rounded-md border md:block"><Table className="min-w-[900px]"><TableHeader><TableRow><TableHead>技师</TableHead><TableHead>场所</TableHead><TableHead>常规排班</TableHead><TableHead>资源</TableHead><TableHead>排序</TableHead><TableHead>发布条件</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{visible.map((girl) => <ProviderRow key={girl.id} girl={girl} data={data} today={today} onOpen={() => onOpenProvider(girl.id)} />)}{visible.length === 0 && <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">没有符合条件的 Incall 技师</TableCell></TableRow>}</TableBody></Table></div>
       <div className="space-y-3 md:hidden">{visible.map((girl) => <ProviderMobileCard key={girl.id} girl={girl} data={data} today={today} onOpen={() => onOpenProvider(girl.id)} />)}</div>
       {providers.length > limit && <div className="mt-4 flex items-center justify-between"><span className="text-sm text-muted-foreground">显示 {(page - 1) * limit + 1}–{Math.min(page * limit, providers.length)}，共 {providers.length} 名</span><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft className="h-4 w-4" />上一页</Button><span className="text-sm">第 {page} 页</span><Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>下一页<ChevronRight className="h-4 w-4" /></Button></div></div>}
       {!permissions.canManageContent && <p className="mt-4 text-xs text-muted-foreground">当前角色为 support：可查看全部内容，仅排班模块可新增或修改。</p>}
@@ -255,17 +254,17 @@ function FilterSelect({ value, onChange, items }: { value: string; onChange: (va
 function ProviderRow({ girl, data, today, onOpen }: { girl: PrivateGirl; data: PrivateDataset; today: string; onOpen: () => void }) {
   const profile = data.profiles.find((item) => item.girl_id === girl.id)
   const location = data.locations.find((item) => item.id === girl.incall_location_id)
-  const availability = data.availability.find((item) => item.girl_id === girl.id && item.service_date === today)
+  const availability = data.availabilitySettings.find((item) => item.girl_id === girl.id)
   const mediaCount = data.media.filter((item) => item.girl_id === girl.id).length
   const serviceCount = getPublishedProviderServices(data, girl.id).length
   const readiness = getProviderReadiness(data, girl, today)
-  return <TableRow><TableCell><ProviderIdentity girl={girl} profile={profile} /></TableCell><TableCell><div className="max-w-[180px] truncate">{location?.name || "未分配"}</div>{!location && <span className="text-xs text-amber-600">需在技师管理设置</span>}</TableCell><TableCell>{availability ? <><Badge variant={availability.is_available ? "default" : "secondary"}>{availability.is_available ? "可约" : "不可约"}</Badge><div className="mt-1 text-xs text-muted-foreground">{formatAvailabilityTime(availability.start_time, availability.end_time, availability.ends_next_day)}</div></> : <Badge variant="outline">未排班</Badge>}</TableCell><TableCell><div className="text-sm">{serviceCount} 服务 · {mediaCount} 媒体</div><div className="text-xs text-muted-foreground">{girl.category_names.length} 分类</div></TableCell><TableCell>{profile?.sort_order ?? "—"}</TableCell><TableCell><ReadinessBadge readiness={readiness} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={onOpen}>配置</Button></TableCell></TableRow>
+  return <TableRow><TableCell><ProviderIdentity girl={girl} profile={profile} /></TableCell><TableCell><div className="max-w-[180px] truncate">{location?.name || "未分配"}</div>{!location && <span className="text-xs text-amber-600">需在技师管理设置</span>}</TableCell><TableCell>{availability ? <><Badge variant={availability.is_available ? "default" : "secondary"}>{availability.is_available ? "可约" : "不可约"}</Badge><div className="mt-1 text-xs text-muted-foreground">{formatAvailabilityTime(availability.start_time, availability.end_time, availability.ends_next_day)}</div></> : <Badge variant="outline">未配置</Badge>}</TableCell><TableCell><div className="text-sm">{serviceCount} 服务 · {mediaCount} 媒体</div><div className="text-xs text-muted-foreground">{girl.category_names.length} 分类</div></TableCell><TableCell>{profile?.sort_order ?? "—"}</TableCell><TableCell><ReadinessBadge readiness={readiness} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={onOpen}>配置</Button></TableCell></TableRow>
 }
 
 function ProviderMobileCard({ girl, data, today, onOpen }: { girl: PrivateGirl; data: PrivateDataset; today: string; onOpen: () => void }) {
   const profile = data.profiles.find((item) => item.girl_id === girl.id)
-  const availability = data.availability.find((item) => item.girl_id === girl.id && item.service_date === today)
-  return <div className="rounded-lg border p-4"><div className="flex items-start justify-between gap-3"><ProviderIdentity girl={girl} profile={profile} /><ReadinessBadge readiness={getProviderReadiness(data, girl, today)} /></div><div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div><span className="text-muted-foreground">今日：</span>{availability?.is_available ? "可约" : "不可约/未排"}</div><div><span className="text-muted-foreground">排序：</span>{profile?.sort_order ?? "—"}</div></div><Button className="mt-4 w-full" variant="outline" onClick={onOpen}>打开 Private 配置</Button></div>
+  const availability = data.availabilitySettings.find((item) => item.girl_id === girl.id)
+  return <div className="rounded-lg border p-4"><div className="flex items-start justify-between gap-3"><ProviderIdentity girl={girl} profile={profile} /><ReadinessBadge readiness={getProviderReadiness(data, girl, today)} /></div><div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div><span className="text-muted-foreground">当前：</span>{availability?.is_available ? "可约" : "不可约/未配置"}</div><div><span className="text-muted-foreground">排序：</span>{profile?.sort_order ?? "—"}</div></div><Button className="mt-4 w-full" variant="outline" onClick={onOpen}>打开 Private 配置</Button></div>
 }
 
 function ProviderIdentity({ girl, profile }: { girl: PrivateGirl; profile?: PrivateProfile }) {

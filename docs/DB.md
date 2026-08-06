@@ -1,8 +1,8 @@
 # CBODY上门服务平台数据库设计文档
 
-> **最近更新：2026-08-05（Asia/Shanghai）**
+> **最近更新：2026-08-06（Asia/Shanghai）**
 >
-> 本次补充 Private 公开年龄和媒体域名契约。`private_profiles.display_age` 由运营手动维护，NULL 时隐藏；站内 `/images/...` 媒体统一从 `https://cbody.vip` 加载，同时保留 R2 与 Supabase Storage。增量 migration 需按 `20260805020000`、`20260805030000`、`20260805040000` 顺序执行。原 CBODY / Outcall 表结构未修改。
+> 本次新增 `private_availability_settings`，用于持续保持技师当前可约状态和每天固定工作时间；原 `private_availability` 每日记录完整保留。原 CBODY / Outcall 表结构未修改。
 
 ## 数据库架构概览
 
@@ -690,9 +690,47 @@
 
 ---
 
-### private_availability（Private 每日可约排班表）
+### private_availability_settings（Private 常规排班设置表）
 
-按曼谷日期保存技师的 Private 可约状态，替代网站根目录的静态 `schedule.json` 生产数据。
+每名 Incall 技师一条持续生效的常规排班。管理员只需设置固定工作时间，并按实际情况开启或关闭可约状态；未再次修改时，状态和时间每天继续生效。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| girl_id | UUID | 是 | - | 主键，关联 `girls.id` |
+| is_available | BOOLEAN | 是 | false | 当前是否可约；保持到管理员下次修改 |
+| start_time | TIME | 是 | `15:00` | 每天固定开始时间 |
+| end_time | TIME | 是 | `02:00` | 每天固定结束时间 |
+| ends_next_day | BOOLEAN | 是 | true | 结束时间是否属于次日 |
+| note | JSONB | 是 | `{"en":""}` | 可选的多语言常规排班说明 |
+| created_by | UUID | 否 | NULL | 创建管理员 |
+| updated_by | UUID | 否 | NULL | 最后修改管理员 |
+| created_at | TIMESTAMPTZ | 是 | NOW() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | NOW() | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (`girl_id`)
+- INDEX `private_availability_settings_available_idx` (`girl_id`) WHERE `is_available = true`
+
+**外键约束**：
+- FOREIGN KEY (`girl_id`) REFERENCES `girls(id)` ON DELETE CASCADE
+- FOREIGN KEY (`created_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+- FOREIGN KEY (`updated_by`) REFERENCES `auth.users(id)` ON DELETE SET NULL
+
+**CHECK约束**：
+- `start_time <> end_time`
+- `jsonb_typeof(note) = 'object'`
+
+**说明**：
+- `15:00–02:00` 保存为 `start_time=15:00`、`end_time=02:00`、`ends_next_day=true`。
+- 关闭 `is_available` 不清除工作时间；下次开启时直接恢复原固定时段。
+- migration 从每名技师最新的 `private_availability` 记录初始化本表，不覆盖已存在的常规设置。
+- 公开 RPC 应优先读取本表；跨午夜时在次日结束时间前继续视为上一工作时段。
+
+---
+
+### private_availability（Private 历史按日排班表）
+
+原按曼谷日期保存的排班表继续保留历史数据和未来单日例外扩展能力；当前 ops 日常排班不再要求管理员每天维护本表。
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
 |--------|----------|------|--------|------|
@@ -724,9 +762,9 @@
 - `ends_next_day = true` 时开始和结束时间不得为空
 
 **说明**：
-- ops 可以继续提供“Available Today”快捷开关，但数据库保存的是具体日期和时间。
+- 当前常规状态和固定工作时间读取 `private_availability_settings`；本表不再作为 ops 默认录入入口。
 - `15:00–02:00` 应保存为 `start_time=15:00`、`end_time=02:00`、`ends_next_day=true`。
-- 公开 RPC 使用 `Asia/Bangkok` 判断当天，并在次日凌晨结束时间前继续识别上一日跨午夜排班。
+- 若未来启用单日例外，公开 RPC 可让本表的目标日期记录覆盖常规设置。
 - 不复用 `girls_status`，因为该表表示原 Outcall 平台实时上下线状态，与 Private 当日排班语义不同。
 
 ---
@@ -1080,7 +1118,7 @@ Private 专属 Themed Attire 公共目录，可被多名技师的不同服务复
 7. 从已审核的 `admin_girl_services.id` 创建 `private_provider_services`，不得直接绕过审核关系绑定 `services.id`。
 8. 价格和时长继续读取 `girl_service_durations` 与 `service_durations`，Private 表不复制价格。
 9. 如果服务支持制服，先维护 `private_attires`，再写入 `private_provider_service_attires`。
-10. 在 `private_availability` 维护当天或未来日期的可约状态。
+10. 在 `private_availability_settings` 设置固定工作时间，并按实际情况持续开启或关闭可约状态。
 11. 使用 anon 角色分别测试 `get_private_categories('en')`、`get_private_providers('en')` 和 `get_private_provider(slug, 'en')`。
 12. 数据完整后，在 Vercel 设置 `PRIVATE_DATA_SOURCE=supabase`、`SUPABASE_URL` 和 `SUPABASE_ANON_KEY`，重新部署一次完成切换。此后日常资料更新不需要 Git 提交或 Vercel 重新部署。
 
@@ -1090,13 +1128,13 @@ Private 专属 Themed Attire 公共目录，可被多名技师的不同服务复
 
 建议最少提供以下界面：
 
-1. **Private 技师列表**：工号 `girl_number`、姓名、发布状态、当日可约、时间、标签和排序。
+1. **Private 技师列表**：工号 `girl_number`、姓名、发布状态、当前可约、固定工作时间、标签和排序。
 2. **Private Profile**：介绍、标签、体型展示、健康认证状态和预约 URL。
 3. **混合相册**：每名技师维护 1–5 项静态图片或动态照片；动态照片按无声短视频保存并配置 poster，背景音乐与轮播参数读取 `private_album_settings`。
 4. **Services**：只显示已经存在于 `admin_girl_services` 且 `is_qualified=true` 的服务；管理 Private 发布状态、介绍和排序。
 5. **Themed Attire**：维护制服目录，并绑定到指定的已审核技师服务。
 6. **Venue**：从现有 `incall_locations` 选择场所，只维护 Private 公开名称、地区与发布状态。
-7. **Availability**：按曼谷日期快速切换可约状态和工作时间，支持跨午夜。
+7. **Availability**：维护持续生效的可约开关和每日固定工作时间，支持跨午夜及批量设置。
 
 ops 不需要新建独立后端、订单系统或 CMS，只需复用现有 Supabase、管理员登录和 `admin_profiles` 权限。
 

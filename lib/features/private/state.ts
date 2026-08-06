@@ -39,28 +39,26 @@ export function privateDataReducer(
           (item) => item.girl_id === action.value.girl_id
         ),
       }
-    case "UPSERT_AVAILABILITY":
+    case "UPSERT_AVAILABILITY_SETTING":
       return {
         ...state,
-        availability: upsert(
-          state.availability,
+        availabilitySettings: upsert(
+          state.availabilitySettings,
           action.value,
-          (item) => item.girl_id === action.value.girl_id && item.service_date === action.value.service_date
+          (item) => item.girl_id === action.value.girl_id
         ),
       }
-    case "UPSERT_AVAILABILITY_BATCH": {
-      let availability = state.availability
+    case "UPSERT_AVAILABILITY_SETTINGS_BATCH": {
+      let availabilitySettings = state.availabilitySettings
       for (const value of action.values) {
-        availability = upsert(
-          availability,
+        availabilitySettings = upsert(
+          availabilitySettings,
           value,
-          (item) => item.girl_id === value.girl_id && item.service_date === value.service_date
+          (item) => item.girl_id === value.girl_id
         )
       }
-      return { ...state, availability }
+      return { ...state, availabilitySettings }
     }
-    case "DELETE_AVAILABILITY":
-      return { ...state, availability: state.availability.filter((item) => item.id !== action.id) }
     case "UPSERT_SERVICE_SETTING":
       return {
         ...state,

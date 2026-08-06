@@ -1,6 +1,6 @@
-> **最近新增：2026-08-05（Asia/Shanghai）**
+> **最近新增：2026-08-06（Asia/Shanghai）**
 >
-> 本次补充 Private 手动公开年龄辅助函数权限。增量 migration 需按 `20260805020000`、`20260805030000`、`20260805040000` 顺序执行。原有 CBODY / Outcall 表、函数与策略未修改。
+> 本次新增 `private_availability_settings` 常规排班策略；`support` 可读取、新增和修改，只有 `superadmin/admin` 可删除。原有 CBODY / Outcall 表、函数与策略未修改。
 
 ## 公共函数
 
@@ -2370,6 +2370,7 @@ GRANT EXECUTE
 ```sql
 ALTER TABLE public.private_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.private_availability ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.private_availability_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.private_media ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.private_album_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.private_service_settings ENABLE ROW LEVEL SECURITY;
@@ -2381,6 +2382,7 @@ ALTER TABLE public.private_location_content ENABLE ROW LEVEL SECURITY;
 -- 匿名用户不能直接读取或修改任何 Private 原始表
 REVOKE ALL ON TABLE public.private_profiles FROM anon, authenticated;
 REVOKE ALL ON TABLE public.private_availability FROM anon, authenticated;
+REVOKE ALL ON TABLE public.private_availability_settings FROM anon, authenticated;
 REVOKE ALL ON TABLE public.private_media FROM anon, authenticated;
 REVOKE ALL ON TABLE public.private_album_settings FROM anon, authenticated;
 REVOKE ALL ON TABLE public.private_service_settings FROM anon, authenticated;
@@ -2392,6 +2394,7 @@ REVOKE ALL ON TABLE public.private_location_content FROM anon, authenticated;
 -- 表级授权只是允许请求进入 RLS；最终是否放行仍由下方策略决定
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_profiles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_availability TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_availability_settings TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_media TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_album_settings TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.private_service_settings TO authenticated;
@@ -2468,29 +2471,29 @@ $$;
 - 不给技师建立 self policy；Private 内容由 ops 统一审核与发布。
 - `finance` 不在允许角色数组中，因此无法读取或修改 Private 原始表。
 
-### private_availability 排班策略
+### private_availability_settings 常规排班策略
 
-`support` 可以维护日常排班，但删除操作只允许 `superadmin/admin`：
+`support` 可以维护持续生效的常规排班，但删除操作只允许 `superadmin/admin`。关闭可约状态应使用 UPDATE，不需要删除记录：
 
 ```sql
-CREATE POLICY "private_availability_admin_select"
-  ON public.private_availability
+CREATE POLICY "private_availability_settings_admin_select"
+  ON public.private_availability_settings
   FOR SELECT
   TO authenticated
   USING (
     public.private_is_active_admin(ARRAY['superadmin', 'admin', 'support'])
   );
 
-CREATE POLICY "private_availability_admin_insert"
-  ON public.private_availability
+CREATE POLICY "private_availability_settings_admin_insert"
+  ON public.private_availability_settings
   FOR INSERT
   TO authenticated
   WITH CHECK (
     public.private_is_active_admin(ARRAY['superadmin', 'admin', 'support'])
   );
 
-CREATE POLICY "private_availability_admin_update"
-  ON public.private_availability
+CREATE POLICY "private_availability_settings_admin_update"
+  ON public.private_availability_settings
   FOR UPDATE
   TO authenticated
   USING (
@@ -2500,14 +2503,16 @@ CREATE POLICY "private_availability_admin_update"
     public.private_is_active_admin(ARRAY['superadmin', 'admin', 'support'])
   );
 
-CREATE POLICY "private_availability_admin_delete"
-  ON public.private_availability
+CREATE POLICY "private_availability_settings_admin_delete"
+  ON public.private_availability_settings
   FOR DELETE
   TO authenticated
   USING (
     public.private_is_active_admin(ARRAY['superadmin', 'admin'])
-  );
+);
 ```
+
+原 `private_availability` 的策略保持不变，用于历史每日记录和未来单日例外；当前 ops 默认只写入 `private_availability_settings`。
 
 ### 网站公开读取策略
 
@@ -2594,6 +2599,6 @@ REVOKE ALL ON FUNCTION public.private_validate_attire_binding()
 - 原 CBODY / Outcall 表 RLS：**未修改**。
 - 原 `public.is_admin()` 与 `public.is_superadmin()`：**未修改**。
 - 原 Storage 策略：**未修改**。
-- 新增 RLS 只挂载在九张 `private_*` 表。
+- 新增 RLS 只挂载在十张 `private_*` 表。
 - 新增公开权限只包含三个只读 RPC 的 EXECUTE。
 - 未向 anon 开放任何 Private 原始表。
