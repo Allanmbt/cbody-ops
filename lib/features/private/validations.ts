@@ -1,5 +1,11 @@
 import { z } from "zod"
 
+import {
+  PRIVATE_BODY_TYPE_CODES,
+  PRIVATE_PROFILE_TAG_CODES,
+  PRIVATE_SKIN_TONE_CODES,
+} from "./profile-options"
+
 const optionalHttpsUrl = z.string().refine(
   (value) => value === "" || /^https:\/\//i.test(value),
   "必须为空或使用 HTTPS 地址"
@@ -14,9 +20,11 @@ export const privateProfileFormSchema = z.object({
   bio_en: z.string().max(3000, "详情介绍最多 3000 字"),
   bio_zh: z.string().max(3000).optional(),
   bio_th: z.string().max(3000).optional(),
-  personal_tags_en: z.string(),
-  skin_tone_en: z.string().max(80),
-  body_type_en: z.string().max(80),
+  personal_tag_codes: z.array(z.enum(PRIVATE_PROFILE_TAG_CODES))
+    .max(PRIVATE_PROFILE_TAG_CODES.length)
+    .refine((items) => new Set(items).size === items.length, "标签不能重复"),
+  skin_tone_code: z.union([z.enum(PRIVATE_SKIN_TONE_CODES), z.literal("")]).refine(Boolean, "请选择肤色"),
+  body_type_code: z.union([z.enum(PRIVATE_BODY_TYPE_CODES), z.literal("")]).refine(Boolean, "请选择身材"),
   display_age: z.coerce.number().int().min(20).max(99).nullable(),
   badge: z.enum(["none", "hot", "new", "signature", "vip"]),
   sort_order: z.coerce.number().int().min(0),

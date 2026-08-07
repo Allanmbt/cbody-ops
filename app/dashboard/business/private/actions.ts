@@ -357,8 +357,8 @@ export async function applyPrivateMutation(
         await assertIncallGirl(db, value.girl_id)
         privateProfileFormSchema.parse({
           bio_en: value.bio.en || "", bio_zh: value.bio.zh || "", bio_th: value.bio.th || "",
-          personal_tags_en: (value.personal_tags.en || []).join(","), skin_tone_en: value.skin_tone.en || "",
-          body_type_en: value.body_type.en || "", display_age: value.display_age, badge: value.badge || "none",
+          personal_tag_codes: value.personal_tags.en || [], skin_tone_code: value.skin_tone.en || "",
+          body_type_code: value.body_type.en || "", display_age: value.display_age, badge: value.badge || "none",
           sort_order: value.sort_order, is_published: value.is_published, health_certified: value.health_certified,
           booking_url: value.booking_url,
         })

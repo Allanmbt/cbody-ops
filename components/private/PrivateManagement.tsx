@@ -55,12 +55,17 @@ import {
   formatAvailabilityTime,
   getProviderReadiness,
   localizedText,
+  PRIVATE_BODY_TYPE_OPTIONS,
+  PRIVATE_PROFILE_TAG_OPTIONS,
+  PRIVATE_SKIN_TONE_OPTIONS,
   privateDataReducer,
   privateAlbumSettingsFormSchema,
   privateMediaFormSchema,
   privateProfileFormSchema,
   privateProviderServiceFormSchema,
-  splitList,
+  isPrivateBodyTypeCode,
+  isPrivateProfileTagCode,
+  isPrivateSkinToneCode,
   type AdminGirlService,
   type PrivateAlbumSettings,
   type PrivateAlbumSettingsFormData,
@@ -128,8 +133,12 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
       }
       reducerDispatch(result.data)
       toast.success(mutationSuccessMessage(result.data))
+      if (result.data.type === "UPSERT_PROFILE") {
+        setSelectedGirlId(null)
+        router.replace("/dashboard/business/private?section=providers", { scroll: false })
+      }
     })
-  }, [])
+  }, [router])
 
   const switchSection = (next: PrivateSection, girlId?: string) => {
     setSection(next)
@@ -197,17 +206,27 @@ function ProviderList({ data, permissions, today, onOpenProvider }: { data: Priv
 
   const providers = useMemo(() => {
     const keyword = search.trim().toLowerCase()
-    return data.girls.filter((girl) => girl.incall_enabled).filter((girl) => {
-      const profile = data.profiles.find((item) => item.girl_id === girl.id)
+    const incallGirls = data.girls.filter((girl) => girl.incall_enabled)
+    const profilesByGirlId = new Map(data.profiles.map((profile) => [profile.girl_id, profile]))
+    const readinessByGirlId = new Map(
+      incallGirls.map((girl) => [girl.id, getProviderReadiness(data, girl, today)])
+    )
+    return incallGirls.filter((girl) => {
+      const profile = profilesByGirlId.get(girl.id)
       const available = data.availabilitySettings.some((item) => item.girl_id === girl.id && item.is_available)
-      const ready = getProviderReadiness(data, girl, today).ready
+      const ready = readinessByGirlId.get(girl.id)?.ready ?? false
       const matchesSearch = !keyword || girl.name.toLowerCase().includes(keyword) || girl.username.toLowerCase().includes(keyword) || String(girl.girl_number).includes(keyword)
       return matchesSearch &&
         (publishFilter === "all" || (publishFilter === "published" ? profile?.is_published : !profile?.is_published)) &&
         (readinessFilter === "all" || (readinessFilter === "ready" ? ready : !ready)) &&
         (availabilityFilter === "all" || (availabilityFilter === "available" ? available : !available)) &&
         (locationFilter === "all" || (locationFilter === "none" ? !girl.incall_location_id : girl.incall_location_id === locationFilter))
-    }).sort((a, b) => (data.profiles.find((item) => item.girl_id === a.id)?.sort_order ?? 999) - (data.profiles.find((item) => item.girl_id === b.id)?.sort_order ?? 999))
+    }).sort((a, b) => {
+      const readinessOrder = Number(readinessByGirlId.get(b.id)?.ready ?? false) - Number(readinessByGirlId.get(a.id)?.ready ?? false)
+      if (readinessOrder !== 0) return readinessOrder
+      const sortOrder = (profilesByGirlId.get(a.id)?.sort_order ?? 999) - (profilesByGirlId.get(b.id)?.sort_order ?? 999)
+      return sortOrder !== 0 ? sortOrder : a.girl_number - b.girl_number
+    })
   }, [data, search, publishFilter, readinessFilter, availabilityFilter, locationFilter, today])
 
   useEffect(() => setPage(1), [search, publishFilter, readinessFilter, availabilityFilter, locationFilter])
@@ -302,11 +321,120 @@ function ProfilePanel({ girl, data, dispatch, permissions, readiness }: { girl: 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const form = useForm<PrivateProfileFormData>({ resolver: zodResolver(privateProfileFormSchema) as any, defaultValues: profileDefaults(profile) })
   useEffect(() => form.reset(profileDefaults(profile)), [profile, form, girl.id])
-  const save = (values: PrivateProfileFormData) => { const now = new Date().toISOString(); dispatch({ type: "UPSERT_PROFILE", value: { ...(profile || { ...createAuditFields(now), girl_id: girl.id }), introduction: profile?.introduction || { en: "" }, bio: { ...(profile?.bio || {}), en: values.bio_en, zh: values.bio_zh || "", th: values.bio_th || "" }, personal_tags: { ...(profile?.personal_tags || {}), en: splitList(values.personal_tags_en) }, skin_tone: { ...(profile?.skin_tone || {}), en: values.skin_tone_en }, body_type: { ...(profile?.body_type || {}), en: values.body_type_en }, display_age: values.display_age, badge: values.badge === "none" ? null : values.badge, sort_order: values.sort_order, is_published: values.is_published, health_certified: values.health_certified, booking_url: values.booking_url, updated_by: null, updated_at: now } }) }
-  return <div className="space-y-4"><ReadinessDetails readiness={readiness} /><Card><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Private Profile</CardTitle>{profile && <Button variant="ghost" size="sm" className="text-destructive" disabled={!permissions.canManageContent} onClick={() => setDeleteOpen(true)}><Trash2 className="mr-2 h-4 w-4" />删除资料</Button>}</CardHeader><CardContent><Form {...form}><form onSubmit={form.handleSubmit(save)} className="space-y-4"><FormField control={form.control} name="bio_en" render={({ field }) => <FormItem><FormLabel>详情介绍（EN）</FormLabel><FormControl><Textarea rows={5} {...field} /></FormControl><FormMessage /></FormItem>} /><details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">中文与泰文介绍</summary><div className="mt-3 grid gap-4"><FormField control={form.control} name="bio_zh" render={({ field }) => <FormItem><FormLabel>详情（ZH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /><FormField control={form.control} name="bio_th" render={({ field }) => <FormItem><FormLabel>详情（TH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} /></div></details><FormField control={form.control} name="personal_tags_en" render={({ field }) => <FormItem><FormLabel>个性标签（EN，逗号分隔）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /><div className="grid gap-3 sm:grid-cols-2"><FormField control={form.control} name="skin_tone_en" render={({ field }) => <FormItem><FormLabel>肤色展示（EN）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="body_type_en" render={({ field }) => <FormItem><FormLabel>体型展示（EN）</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} /></div><div className="grid gap-3 sm:grid-cols-3"><FormField control={form.control} name="display_age" render={({ field }) => <FormItem><FormLabel>公开年龄</FormLabel><FormControl><Input type="number" min={20} max={99} value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : event.target.value)} /></FormControl><FormMessage /></FormItem>} /><FormField control={form.control} name="badge" render={({ field }) => <FormItem><FormLabel>Private 标签</FormLabel><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="none">无</SelectItem><SelectItem value="hot">hot</SelectItem><SelectItem value="new">new</SelectItem><SelectItem value="signature">signature</SelectItem><SelectItem value="vip">vip</SelectItem></SelectContent></Select></FormItem>} /><FormField control={form.control} name="sort_order" render={({ field }) => <FormItem><FormLabel>排序</FormLabel><FormControl><Input type="number" min={0} {...field} /></FormControl><FormMessage /></FormItem>} /></div><FormField control={form.control} name="booking_url" render={({ field }) => <FormItem><FormLabel>预约 HTTPS URL</FormLabel><FormControl><Input placeholder="https://..." {...field} /></FormControl><FormMessage /></FormItem>} /><div className="grid gap-3 sm:grid-cols-2"><FormField control={form.control} name="health_certified" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>Private 健康认证</FormLabel><p className="text-xs text-muted-foreground">不能直接映射原 is_verified</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} /><FormField control={form.control} name="is_published" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>发布 Private 资料</FormLabel><p className="text-xs text-muted-foreground">仍需满足完整公开链路</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} /></div><Button type="submit" disabled={!permissions.canManageContent}>{profile ? "保存资料" : "创建资料"}</Button></form></Form></CardContent></Card><AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除 Private Profile？</AlertDialogTitle><AlertDialogDescription>将删除真实 private_profiles 记录。媒体、服务和排班是独立关联，不会被自动删除，但该技师将无法公开。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => { dispatch({ type: "DELETE_PROFILE", girlId: girl.id }); setDeleteOpen(false) }}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>
+  const save = (values: PrivateProfileFormData) => { const now = new Date().toISOString(); dispatch({ type: "UPSERT_PROFILE", value: { ...(profile || { ...createAuditFields(now), girl_id: girl.id }), introduction: profile?.introduction || { en: "" }, bio: { ...(profile?.bio || {}), en: values.bio_en, zh: values.bio_zh || "", th: values.bio_th || "" }, personal_tags: { ...(profile?.personal_tags || {}), en: values.personal_tag_codes }, skin_tone: { ...(profile?.skin_tone || {}), en: values.skin_tone_code }, body_type: { ...(profile?.body_type || {}), en: values.body_type_code }, display_age: values.display_age, badge: values.badge === "none" ? null : values.badge, sort_order: values.sort_order, is_published: values.is_published, health_certified: values.health_certified, booking_url: values.booking_url, updated_by: null, updated_at: now } }) }
+  return (
+    <div className="space-y-4">
+      <ReadinessDetails readiness={readiness} />
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="text-base">Private Profile</CardTitle>
+          {profile && <Button variant="ghost" size="sm" className="text-destructive" disabled={!permissions.canManageContent} onClick={() => setDeleteOpen(true)}><Trash2 className="mr-2 h-4 w-4" />删除资料</Button>}
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(save)} className="space-y-4">
+              <FormField control={form.control} name="bio_en" render={({ field }) => <FormItem><FormLabel>详情介绍（EN）</FormLabel><FormControl><Textarea rows={5} {...field} /></FormControl><FormMessage /></FormItem>} />
+              <details className="rounded-lg border p-3">
+                <summary className="cursor-pointer text-sm font-medium">中文与泰文介绍</summary>
+                <div className="mt-3 grid gap-4">
+                  <FormField control={form.control} name="bio_zh" render={({ field }) => <FormItem><FormLabel>详情（ZH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} />
+                  <FormField control={form.control} name="bio_th" render={({ field }) => <FormItem><FormLabel>详情（TH）</FormLabel><FormControl><Textarea {...field} /></FormControl></FormItem>} />
+                </div>
+              </details>
+              <FormField
+                control={form.control}
+                name="personal_tag_codes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Private 技师标签（可多选）</FormLabel>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                      {PRIVATE_PROFILE_TAG_OPTIONS.map((option) => {
+                        const checked = field.value.includes(option.code)
+                        return (
+                          <label key={option.code} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(nextChecked) => field.onChange(
+                                nextChecked
+                                  ? [...field.value, option.code]
+                                  : field.value.filter((code) => code !== option.code)
+                              )}
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="skin_tone_code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>肤色</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="请选择肤色" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PRIVATE_SKIN_TONE_OPTIONS.map((option) => <SelectItem key={option.code} value={option.code}>{option.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="body_type_code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>身材</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="请选择身材" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PRIVATE_BODY_TYPE_OPTIONS.map((option) => <SelectItem key={option.code} value={option.code}>{option.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <FormField control={form.control} name="display_age" render={({ field }) => <FormItem><FormLabel>公开年龄</FormLabel><FormControl><Input type="number" min={20} max={99} value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : event.target.value)} /></FormControl><FormMessage /></FormItem>} />
+                <FormField control={form.control} name="badge" render={({ field }) => <FormItem><FormLabel>Private 徽章</FormLabel><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="none">无</SelectItem><SelectItem value="hot">hot</SelectItem><SelectItem value="new">new</SelectItem><SelectItem value="signature">signature</SelectItem><SelectItem value="vip">vip</SelectItem></SelectContent></Select></FormItem>} />
+                <FormField control={form.control} name="sort_order" render={({ field }) => <FormItem><FormLabel>排序</FormLabel><FormControl><Input type="number" min={0} {...field} /></FormControl><FormMessage /></FormItem>} />
+              </div>
+              <FormField control={form.control} name="booking_url" render={({ field }) => <FormItem><FormLabel>预约 HTTPS URL</FormLabel><FormControl><Input placeholder="https://..." {...field} /></FormControl><FormMessage /></FormItem>} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField control={form.control} name="health_certified" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>Private 健康认证</FormLabel><p className="text-xs text-muted-foreground">不能直接映射原 is_verified</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
+                <FormField control={form.control} name="is_published" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><div><FormLabel>发布 Private 资料</FormLabel><p className="text-xs text-muted-foreground">仍需满足完整公开链路</p></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
+              </div>
+              <Button type="submit" disabled={!permissions.canManageContent}>{profile ? "保存资料" : "创建资料"}</Button>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除 Private Profile？</AlertDialogTitle>
+            <AlertDialogDescription>将删除真实 private_profiles 记录。媒体、服务和排班是独立关联，不会被自动删除，但该技师将无法公开。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => { dispatch({ type: "DELETE_PROFILE", girlId: girl.id }); setDeleteOpen(false) }}>确认删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
 }
 
-function profileDefaults(profile?: PrivateProfile): PrivateProfileFormData { return { bio_en: profile?.bio.en || "", bio_zh: profile?.bio.zh || "", bio_th: profile?.bio.th || "", personal_tags_en: profile?.personal_tags.en?.join(", ") || "", skin_tone_en: profile?.skin_tone.en || "", body_type_en: profile?.body_type.en || "", display_age: profile?.display_age ?? null, badge: profile?.badge || "none", sort_order: profile?.sort_order ?? 999, is_published: profile?.is_published ?? false, health_certified: profile?.health_certified ?? false, booking_url: profile?.booking_url || "" } }
+function profileDefaults(profile?: PrivateProfile): PrivateProfileFormData { return { bio_en: profile?.bio.en || "", bio_zh: profile?.bio.zh || "", bio_th: profile?.bio.th || "", personal_tag_codes: (profile?.personal_tags.en || []).filter(isPrivateProfileTagCode), skin_tone_code: isPrivateSkinToneCode(profile?.skin_tone.en) ? profile.skin_tone.en : "", body_type_code: isPrivateBodyTypeCode(profile?.body_type.en) ? profile.body_type.en : "", display_age: profile?.display_age ?? null, badge: profile?.badge || "none", sort_order: profile?.sort_order ?? 999, is_published: profile?.is_published ?? false, health_certified: profile?.health_certified ?? false, booking_url: profile?.booking_url || "" } }
 
 function ReadinessDetails({ readiness }: { readiness: ReturnType<typeof getProviderReadiness> }) { return <div className="grid gap-3 sm:grid-cols-2"><Alert className={readiness.ready ? "border-emerald-300" : "border-amber-300"}>{readiness.ready ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}<AlertTitle>{readiness.ready ? "满足公开硬条件" : `${readiness.blockers.length} 项公开阻断`}</AlertTitle><AlertDescription>{readiness.blockers.length ? readiness.blockers.join("、") : "RPC 仍会按当前数据库状态进行最终过滤。"}</AlertDescription></Alert><Alert><CircleAlert className="h-4 w-4" /><AlertTitle>{readiness.warnings.length} 项质量提醒</AlertTitle><AlertDescription>{readiness.warnings.length ? readiness.warnings.join("、") : "暂无质量提醒"}</AlertDescription></Alert></div> }
 
