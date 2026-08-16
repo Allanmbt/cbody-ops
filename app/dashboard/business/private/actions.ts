@@ -203,7 +203,7 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
       categoriesResult,
       albumSettingsResult,
     ] = await Promise.all([
-      db.from("girls").select("id,girl_number,username,name,avatar_url,incall_enabled,incall_location_id,is_verified,is_blocked,deleted_at").eq("incall_enabled", true).is("deleted_at", null).order("girl_number").limit(1000),
+      db.from("girls").select("id,girl_number,username,name,avatar_url,incall_enabled,incall_location_id,is_verified,is_blocked,deleted_at").eq("incall_enabled", true).eq("is_blocked", false).is("deleted_at", null).order("girl_number").limit(1000),
       db.from("private_profiles").select("*").order("sort_order").limit(1000),
       db.from("private_availability_settings").select("*").order("girl_id").limit(1000),
       db.from("private_media").select("*").order("sort_order").limit(5000),
