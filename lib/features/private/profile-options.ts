@@ -79,6 +79,7 @@ export const PRIVATE_PROFILE_TAG_CODES = [
   "sweetheart",
   "stockings",
   "milf",
+  "long_legs",
 ] as const
 
 export type PrivateProfileTagCode = (typeof PRIVATE_PROFILE_TAG_CODES)[number]
@@ -106,6 +107,7 @@ export const PRIVATE_PROFILE_TAG_OPTIONS: ReadonlyArray<{
   { code: "sweetheart", label: "初恋感", english: "Sweetheart" },
   { code: "stockings", label: "丝袜女王", english: "Stocking Queen" },
   { code: "milf", label: "妈妈感", english: "MILF Vibe" },
+  { code: "long_legs", label: "大长腿", english: "Long Legs" },
 ]
 
 export function isPrivateProfileTagCode(value: unknown): value is PrivateProfileTagCode {
