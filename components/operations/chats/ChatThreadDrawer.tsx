@@ -239,10 +239,10 @@ export function ChatThreadDrawer({
                                             )}
 
                                             {/* 关联订单 */}
-                                            {message.order_id && (
+                                            {message.order?.order_number && (
                                                 <div className="mt-1">
                                                     <Badge variant="secondary" className="text-xs">
-                                                        订单: {message.order_id}
+                                                        订单: {message.order.order_number}
                                                     </Badge>
                                                 </div>
                                             )}

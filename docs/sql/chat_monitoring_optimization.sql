@@ -124,7 +124,7 @@ SELECT
   support.display_name AS support_display_name,
   support.avatar_url AS support_avatar_url,
 
-  -- 关联订单（通过子查询获取第一个关联订单）
+  -- 关联订单（按订单创建时间获取最近一笔）
   (
     SELECT json_build_object(
       'order_number', o.order_number,
@@ -133,6 +133,7 @@ SELECT
     FROM chat_messages cm
     INNER JOIN orders o ON cm.order_id = o.id
     WHERE cm.thread_id = ct.id AND cm.order_id IS NOT NULL
+    ORDER BY o.created_at DESC, cm.created_at DESC, o.id DESC
     LIMIT 1
   ) AS related_order
 

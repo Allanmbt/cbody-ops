@@ -441,6 +441,7 @@ export async function getChatMessages(threadId: string, page = 1, limit = 50) {
         attachment_url,
         attachment_meta,
         order_id,
+        order:orders!order_id(order_number),
         created_at
       `, { count: 'exact' })
             .eq('thread_id', threadId)
