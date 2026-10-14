@@ -22,6 +22,7 @@ import {
   Plus,
   PlayCircle,
   Search,
+  Save,
   Shirt,
   Store,
   Trash2,
@@ -32,7 +33,7 @@ import { toast } from "sonner"
 import { AvailabilityPanel } from "@/components/private/AvailabilityPanel"
 import { CatalogPanel } from "@/components/private/CatalogPanel"
 import { VenuesPanel } from "@/components/private/VenuesPanel"
-import { applyPrivateMutation } from "@/app/dashboard/business/private/actions"
+import { applyPrivateMutation, updatePrivateProviderSort } from "@/app/dashboard/business/private/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -140,6 +141,17 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
     })
   }, [router])
 
+  const updateProviderSort = useCallback(async (girlId: string, sortOrder: number) => {
+    const result = await updatePrivateProviderSort(girlId, sortOrder)
+    if (!result.ok) {
+      toast.error(result.error)
+      return false
+    }
+    reducerDispatch({ type: "UPSERT_PROFILE", value: result.data })
+    toast.success("技师排序已更新")
+    return true
+  }, [])
+
   const switchSection = (next: PrivateSection, girlId?: string) => {
     setSection(next)
     const params = new URLSearchParams({ section: next })
@@ -175,7 +187,7 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
 
       <Tabs value={section} onValueChange={(value) => switchSection(value as PrivateSection)} className="space-y-4">
         <div className="overflow-x-auto pb-1"><TabsList className="min-w-max"><TabsTrigger value="providers"><Users />Private 技师</TabsTrigger><TabsTrigger value="availability"><CalendarDays />排班管理</TabsTrigger><TabsTrigger value="catalog"><Shirt />服务与制服</TabsTrigger><TabsTrigger value="venues"><MapPin />场所与地址</TabsTrigger></TabsList></div>
-        <TabsContent value="providers"><ProviderList data={data} permissions={permissions} today={today} onOpenProvider={openProvider} /></TabsContent>
+        <TabsContent value="providers"><ProviderList data={data} permissions={permissions} today={today} onOpenProvider={openProvider} onUpdateSort={updateProviderSort} /></TabsContent>
         <TabsContent value="availability"><AvailabilityPanel data={data} dispatch={dispatch} permissions={permissions} /></TabsContent>
         <TabsContent value="catalog"><CatalogPanel data={data} dispatch={dispatch} permissions={permissions} /></TabsContent>
         <TabsContent value="venues"><VenuesPanel data={data} dispatch={dispatch} permissions={permissions} focusLocationId={focusLocationId} /></TabsContent>
@@ -194,7 +206,7 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
   )
 }
 
-function ProviderList({ data, permissions, today, onOpenProvider }: { data: PrivateDataset; permissions: PrivatePagePermissions; today: string; onOpenProvider: (girlId: string) => void }) {
+function ProviderList({ data, permissions, today, onOpenProvider, onUpdateSort }: { data: PrivateDataset; permissions: PrivatePagePermissions; today: string; onOpenProvider: (girlId: string) => void; onUpdateSort: (girlId: string, sortOrder: number) => Promise<boolean> }) {
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all")
@@ -202,7 +214,7 @@ function ProviderList({ data, permissions, today, onOpenProvider }: { data: Priv
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>("all")
   const [locationFilter, setLocationFilter] = useState("all")
   const [page, setPage] = useState(1)
-  const limit = 10
+  const limit = 20
 
   const providers = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -222,10 +234,10 @@ function ProviderList({ data, permissions, today, onOpenProvider }: { data: Priv
         (availabilityFilter === "all" || (availabilityFilter === "available" ? available : !available)) &&
         (locationFilter === "all" || (locationFilter === "none" ? !girl.incall_location_id : girl.incall_location_id === locationFilter))
     }).sort((a, b) => {
-      const readinessOrder = Number(readinessByGirlId.get(b.id)?.ready ?? false) - Number(readinessByGirlId.get(a.id)?.ready ?? false)
-      if (readinessOrder !== 0) return readinessOrder
       const sortOrder = (profilesByGirlId.get(a.id)?.sort_order ?? 999) - (profilesByGirlId.get(b.id)?.sort_order ?? 999)
-      return sortOrder !== 0 ? sortOrder : a.girl_number - b.girl_number
+      if (sortOrder !== 0) return sortOrder
+      const readinessOrder = Number(readinessByGirlId.get(b.id)?.ready ?? false) - Number(readinessByGirlId.get(a.id)?.ready ?? false)
+      return readinessOrder !== 0 ? readinessOrder : a.girl_number - b.girl_number
     })
   }, [data, search, publishFilter, readinessFilter, availabilityFilter, locationFilter, today])
 
@@ -237,8 +249,8 @@ function ProviderList({ data, permissions, today, onOpenProvider }: { data: Priv
   return <div className="space-y-4">
     <Card><CardContent className="flex flex-wrap gap-3 p-4"><form className="flex min-w-[260px] flex-1 gap-2" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()) }}><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="搜索工号、姓名或 username" className="pl-9" /></div><Button type="submit"><Search className="mr-2 h-4 w-4" />搜索</Button></form><FilterSelect value={publishFilter} onChange={(value) => setPublishFilter(value as PublishFilter)} items={[['all','全部发布状态'],['published','资料已发布'],['draft','资料未发布']]} /><FilterSelect value={readinessFilter} onChange={(value) => setReadinessFilter(value as ReadinessFilter)} items={[['all','全部完整度'],['ready','满足公开条件'],['incomplete','配置不完整']]} /><FilterSelect value={availabilityFilter} onChange={(value) => setAvailabilityFilter(value as AvailabilityFilter)} items={[['all','全部可约状态'],['available','当前可约'],['unavailable','当前不可约/未配置']]} /><Select value={locationFilter} onValueChange={setLocationFilter}><SelectTrigger className="w-full sm:w-[170px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部场所</SelectItem><SelectItem value="none">未分配场所</SelectItem>{data.locations.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button variant="outline" onClick={reset}>重置</Button></CardContent></Card>
     <Card><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Private 技师列表</CardTitle><div className="flex items-center gap-2"><Badge variant="outline">{providers.length} 名</Badge><Button asChild variant="outline" size="sm"><Link href="/dashboard/girls">管理到店资格</Link></Button></div></CardHeader><CardContent>
-      <div className="hidden overflow-x-auto rounded-md border md:block"><Table className="min-w-[900px]"><TableHeader><TableRow><TableHead>技师</TableHead><TableHead>场所</TableHead><TableHead>常规排班</TableHead><TableHead>资源</TableHead><TableHead>排序</TableHead><TableHead>发布条件</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{visible.map((girl) => <ProviderRow key={girl.id} girl={girl} data={data} today={today} onOpen={() => onOpenProvider(girl.id)} />)}{visible.length === 0 && <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">没有符合条件的 Incall 技师</TableCell></TableRow>}</TableBody></Table></div>
-      <div className="space-y-3 md:hidden">{visible.map((girl) => <ProviderMobileCard key={girl.id} girl={girl} data={data} today={today} onOpen={() => onOpenProvider(girl.id)} />)}</div>
+      <div className="hidden overflow-x-auto rounded-md border md:block"><Table className="min-w-[900px]"><TableHeader><TableRow><TableHead>技师</TableHead><TableHead>场所</TableHead><TableHead>常规排班</TableHead><TableHead>资源</TableHead><TableHead>排序</TableHead><TableHead>发布条件</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{visible.map((girl) => <ProviderRow key={girl.id} girl={girl} data={data} today={today} canManage={permissions.canManageContent} onUpdateSort={onUpdateSort} onOpen={() => onOpenProvider(girl.id)} />)}{visible.length === 0 && <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">没有符合条件的 Incall 技师</TableCell></TableRow>}</TableBody></Table></div>
+      <div className="space-y-3 md:hidden">{visible.map((girl) => <ProviderMobileCard key={girl.id} girl={girl} data={data} today={today} canManage={permissions.canManageContent} onUpdateSort={onUpdateSort} onOpen={() => onOpenProvider(girl.id)} />)}</div>
       {providers.length > limit && <div className="mt-4 flex items-center justify-between"><span className="text-sm text-muted-foreground">显示 {(page - 1) * limit + 1}–{Math.min(page * limit, providers.length)}，共 {providers.length} 名</span><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft className="h-4 w-4" />上一页</Button><span className="text-sm">第 {page} 页</span><Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>下一页<ChevronRight className="h-4 w-4" /></Button></div></div>}
       {!permissions.canManageContent && <p className="mt-4 text-xs text-muted-foreground">当前角色为 support：可查看全部内容，仅排班模块可新增或修改。</p>}
     </CardContent></Card>
@@ -247,20 +259,55 @@ function ProviderList({ data, permissions, today, onOpenProvider }: { data: Priv
 
 function FilterSelect({ value, onChange, items }: { value: string; onChange: (value: string) => void; items: [string, string][] }) { return <Select value={value} onValueChange={onChange}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue /></SelectTrigger><SelectContent>{items.map(([itemValue, label]) => <SelectItem key={itemValue} value={itemValue}>{label}</SelectItem>)}</SelectContent></Select> }
 
-function ProviderRow({ girl, data, today, onOpen }: { girl: PrivateGirl; data: PrivateDataset; today: string; onOpen: () => void }) {
+function ProviderRow({ girl, data, today, canManage, onUpdateSort, onOpen }: { girl: PrivateGirl; data: PrivateDataset; today: string; canManage: boolean; onUpdateSort: (girlId: string, sortOrder: number) => Promise<boolean>; onOpen: () => void }) {
   const profile = data.profiles.find((item) => item.girl_id === girl.id)
   const location = data.locations.find((item) => item.id === girl.incall_location_id)
   const availability = data.availabilitySettings.find((item) => item.girl_id === girl.id)
   const mediaCount = data.media.filter((item) => item.girl_id === girl.id).length
   const serviceCount = getPublishedProviderServices(data, girl.id).length
   const readiness = getProviderReadiness(data, girl, today)
-  return <TableRow><TableCell><ProviderIdentity girl={girl} profile={profile} /></TableCell><TableCell><div className="max-w-[180px] truncate">{location?.name || "未分配"}</div>{!location && <span className="text-xs text-amber-600">需在技师管理设置</span>}</TableCell><TableCell>{availability ? <><Badge variant={availability.is_available ? "default" : "secondary"}>{availability.is_available ? "可约" : "不可约"}</Badge><div className="mt-1 text-xs text-muted-foreground">{formatAvailabilityTime(availability.start_time, availability.end_time)}</div></> : <Badge variant="outline">未配置</Badge>}</TableCell><TableCell><div className="text-sm">{serviceCount} 服务 · {mediaCount} 媒体</div><div className="text-xs text-muted-foreground">{girl.category_names.length} 分类</div></TableCell><TableCell>{profile?.sort_order ?? "—"}</TableCell><TableCell><ReadinessBadge readiness={readiness} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={onOpen}>配置</Button></TableCell></TableRow>
+  return <TableRow><TableCell><ProviderIdentity girl={girl} profile={profile} /></TableCell><TableCell><div className="max-w-[180px] truncate">{location?.name || "未分配"}</div>{!location && <span className="text-xs text-amber-600">需在技师管理设置</span>}</TableCell><TableCell>{availability ? <><Badge variant={availability.is_available ? "default" : "secondary"}>{availability.is_available ? "可约" : "不可约"}</Badge><div className="mt-1 text-xs text-muted-foreground">{formatAvailabilityTime(availability.start_time, availability.end_time)}</div></> : <Badge variant="outline">未配置</Badge>}</TableCell><TableCell><div className="text-sm">{serviceCount} 服务 · {mediaCount} 媒体</div><div className="text-xs text-muted-foreground">{girl.category_names.length} 分类</div></TableCell><TableCell><ProviderSortEditor girlId={girl.id} sortOrder={profile?.sort_order ?? 999} canManage={canManage} onSave={onUpdateSort} /></TableCell><TableCell><ReadinessBadge readiness={readiness} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={onOpen}>配置</Button></TableCell></TableRow>
 }
 
-function ProviderMobileCard({ girl, data, today, onOpen }: { girl: PrivateGirl; data: PrivateDataset; today: string; onOpen: () => void }) {
+function ProviderMobileCard({ girl, data, today, canManage, onUpdateSort, onOpen }: { girl: PrivateGirl; data: PrivateDataset; today: string; canManage: boolean; onUpdateSort: (girlId: string, sortOrder: number) => Promise<boolean>; onOpen: () => void }) {
   const profile = data.profiles.find((item) => item.girl_id === girl.id)
   const availability = data.availabilitySettings.find((item) => item.girl_id === girl.id)
-  return <div className="rounded-lg border p-4"><div className="flex items-start justify-between gap-3"><ProviderIdentity girl={girl} profile={profile} /><ReadinessBadge readiness={getProviderReadiness(data, girl, today)} /></div><div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div><span className="text-muted-foreground">当前：</span>{availability?.is_available ? "可约" : "不可约/未配置"}</div><div><span className="text-muted-foreground">排序：</span>{profile?.sort_order ?? "—"}</div></div><Button className="mt-4 w-full" variant="outline" onClick={onOpen}>打开 Private 配置</Button></div>
+  return <div className="rounded-lg border p-4"><div className="flex items-start justify-between gap-3"><ProviderIdentity girl={girl} profile={profile} /><ReadinessBadge readiness={getProviderReadiness(data, girl, today)} /></div><div className="mt-3 grid grid-cols-2 items-center gap-2 text-sm"><div><span className="text-muted-foreground">当前：</span>{availability?.is_available ? "可约" : "不可约/未配置"}</div><div className="flex items-center gap-2"><span className="text-muted-foreground">排序：</span><ProviderSortEditor girlId={girl.id} sortOrder={profile?.sort_order ?? 999} canManage={canManage} onSave={onUpdateSort} /></div></div><Button className="mt-4 w-full" variant="outline" onClick={onOpen}>打开 Private 配置</Button></div>
+}
+
+function ProviderSortEditor({ girlId, sortOrder, canManage, onSave }: { girlId: string; sortOrder: number; canManage: boolean; onSave: (girlId: string, sortOrder: number) => Promise<boolean> }) {
+  const [value, setValue] = useState(String(sortOrder))
+  const [isPending, startTransition] = useTransition()
+  useEffect(() => setValue(String(sortOrder)), [girlId, sortOrder])
+
+  const parsedValue = Number(value)
+  const isValid = value.trim() !== "" && Number.isInteger(parsedValue) && parsedValue >= 0
+  const hasChanged = isValid && parsedValue !== sortOrder
+
+  return (
+    <form className="flex items-center gap-1.5" onSubmit={(event) => {
+      event.preventDefault()
+      if (!hasChanged || isPending) return
+      startTransition(async () => {
+        const saved = await onSave(girlId, parsedValue)
+        if (!saved) setValue(String(sortOrder))
+      })
+    }}>
+      <Input
+        type="number"
+        min={0}
+        step={1}
+        value={value}
+        disabled={!canManage || isPending}
+        onChange={(event) => setValue(event.target.value)}
+        className="h-8 w-20"
+        aria-label="Private 技师排序"
+      />
+      <Button type="submit" variant="outline" size="icon" className="h-8 w-8" disabled={!canManage || !hasChanged || isPending} aria-label="保存排序">
+        <Save className="h-3.5 w-3.5" />
+      </Button>
+    </form>
+  )
 }
 
 function ProviderIdentity({ girl, profile }: { girl: PrivateGirl; profile?: PrivateProfile }) {

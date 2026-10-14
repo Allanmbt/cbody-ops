@@ -138,6 +138,11 @@ const albumSettingsRecordSchema = z.object({
   slide_duration_seconds: z.number().int().min(3).max(10),
 })
 
+const providerSortSchema = z.object({
+  girlId: uuidSchema,
+  sortOrder: z.number().int("排序必须是整数").min(0, "排序不能小于 0"),
+})
+
 function firstIssue(error: unknown): string {
   if (error instanceof z.ZodError) return error.issues[0]?.message || "数据格式错误"
   return error instanceof Error ? error.message : "操作失败"
@@ -331,6 +336,54 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
     return { ok: true, data }
   } catch (error) {
     console.error("[到店管理] 读取真实数据失败:", error)
+    return { ok: false, error: firstIssue(error) }
+  }
+}
+
+export async function updatePrivateProviderSort(
+  girlId: string,
+  sortOrder: number
+): Promise<ActionResponse<PrivateProfile>> {
+  try {
+    const admin = await requireAdmin(["superadmin", "admin"])
+    const value = providerSortSchema.parse({ girlId, sortOrder })
+    const db = getSupabaseAdminClient() as any
+    const now = new Date().toISOString()
+
+    await assertIncallGirl(db, value.girlId)
+
+    const { data: existing, error: existingError } = await db
+      .from("private_profiles")
+      .select("sort_order")
+      .eq("girl_id", value.girlId)
+      .maybeSingle()
+    if (existingError) throw new Error(existingError.message)
+
+    const query = existing
+      ? db
+          .from("private_profiles")
+          .update({ sort_order: value.sortOrder, updated_by: admin.id, updated_at: now })
+          .eq("girl_id", value.girlId)
+      : db
+          .from("private_profiles")
+          .insert({
+            girl_id: value.girlId,
+            sort_order: value.sortOrder,
+            created_by: admin.id,
+            updated_by: admin.id,
+          })
+
+    const { data, error } = await query.select("*").single()
+    if (error) throw new Error(error.message)
+
+    await audit(admin.id, existing ? "private_profile_sort_update" : "private_profile_sort_create", value.girlId, {
+      before: existing?.sort_order ?? null,
+      after: value.sortOrder,
+    })
+
+    return { ok: true, data: data as PrivateProfile }
+  } catch (error) {
+    console.error("[到店管理] 快捷修改技师排序失败:", error)
     return { ok: false, error: firstIssue(error) }
   }
 }
