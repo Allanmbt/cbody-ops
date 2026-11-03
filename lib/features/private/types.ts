@@ -219,6 +219,64 @@ export interface PrivatePagePermissions {
   canManageContent: boolean
   canManageAvailability: boolean
   canDeleteAvailability: boolean
+  canViewOrderStats: boolean
 }
 
-export type PrivateSection = "providers" | "availability" | "catalog" | "venues"
+export type PrivateOrderPeriodMode = "month" | "year"
+
+export interface PrivateOrderStatsQuery {
+  period_mode: PrivateOrderPeriodMode
+  period_value: string
+  location_key: string | null
+  page: number
+  page_size: number
+}
+
+export interface PrivateOrderStatsSummary {
+  order_count: number
+  sales_amount: number
+  platform_gross_profit: number
+}
+
+export interface PrivateOrderLocationStats extends PrivateOrderStatsSummary {
+  location_key: string
+  location_name: string
+}
+
+export interface PrivateOrderMonthStats extends PrivateOrderStatsSummary {
+  month: string
+}
+
+export interface PrivateOrderStatsRow {
+  id: string
+  order_number: string
+  completed_at: string
+  settled_at: string | null
+  location_key: string
+  location_name: string
+  girl_id: string
+  girl_number: number
+  girl_name: string
+  service_name: LocalizedText
+  service_duration: number
+  total_amount: number
+  service_commission_rate: number
+  extra_commission_rate: number
+  platform_should_get: number
+}
+
+export interface PrivateOrderStatsResult {
+  summary: PrivateOrderStatsSummary
+  location_options: Array<Pick<PrivateOrderLocationStats, "location_key" | "location_name">>
+  locations: PrivateOrderLocationStats[]
+  months: PrivateOrderMonthStats[]
+  orders: PrivateOrderStatsRow[]
+  pagination: {
+    page: number
+    page_size: number
+    total: number
+    total_pages: number
+  }
+}
+
+export type PrivateSection = "providers" | "availability" | "catalog" | "venues" | "orders"

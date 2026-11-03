@@ -9,6 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import {
   AlertCircle,
+  BarChart3,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -32,6 +33,7 @@ import { toast } from "sonner"
 
 import { AvailabilityPanel } from "@/components/private/AvailabilityPanel"
 import { CatalogPanel } from "@/components/private/CatalogPanel"
+import { PrivateOrderStatsPanel } from "@/components/private/PrivateOrderStatsPanel"
 import { VenuesPanel } from "@/components/private/VenuesPanel"
 import { applyPrivateMutation, updatePrivateProviderSort } from "@/app/dashboard/business/private/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -186,11 +188,12 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
       </div>
 
       <Tabs value={section} onValueChange={(value) => switchSection(value as PrivateSection)} className="space-y-4">
-        <div className="overflow-x-auto pb-1"><TabsList className="min-w-max"><TabsTrigger value="providers"><Users />Private 技师</TabsTrigger><TabsTrigger value="availability"><CalendarDays />排班管理</TabsTrigger><TabsTrigger value="catalog"><Shirt />服务与制服</TabsTrigger><TabsTrigger value="venues"><MapPin />场所与地址</TabsTrigger></TabsList></div>
+        <div className="overflow-x-auto pb-1"><TabsList className="min-w-max"><TabsTrigger value="providers"><Users />Private 技师</TabsTrigger><TabsTrigger value="availability"><CalendarDays />排班管理</TabsTrigger><TabsTrigger value="catalog"><Shirt />服务与制服</TabsTrigger><TabsTrigger value="venues"><MapPin />场所与地址</TabsTrigger>{permissions.canViewOrderStats && <TabsTrigger value="orders"><BarChart3 />订单统计</TabsTrigger>}</TabsList></div>
         <TabsContent value="providers"><ProviderList data={data} permissions={permissions} today={today} onOpenProvider={openProvider} onUpdateSort={updateProviderSort} /></TabsContent>
         <TabsContent value="availability"><AvailabilityPanel data={data} dispatch={dispatch} permissions={permissions} /></TabsContent>
         <TabsContent value="catalog"><CatalogPanel data={data} dispatch={dispatch} permissions={permissions} /></TabsContent>
         <TabsContent value="venues"><VenuesPanel data={data} dispatch={dispatch} permissions={permissions} focusLocationId={focusLocationId} /></TabsContent>
+        {permissions.canViewOrderStats && <TabsContent value="orders"><PrivateOrderStatsPanel /></TabsContent>}
       </Tabs>
 
       <ProviderSheet

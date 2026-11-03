@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth"
 import type { PrivatePagePermissions, PrivateSection } from "@/lib/features/private"
 import { getPrivateManagementData } from "./actions"
 
-const validSections = new Set<PrivateSection>(["providers", "availability", "catalog", "venues"])
+const validSections = new Set<PrivateSection>(["providers", "availability", "catalog", "venues", "orders"])
 
 export default async function PrivateManagementPage({
   searchParams,
@@ -24,14 +24,19 @@ export default async function PrivateManagementPage({
   }
 
   const params = await searchParams
-  const initialSection = validSections.has(params.section as PrivateSection)
+  const requestedSection = validSections.has(params.section as PrivateSection)
     ? params.section as PrivateSection
     : "providers"
+  const canViewOrderStats = admin.role === "superadmin" || admin.role === "admin"
+  const initialSection = requestedSection === "orders" && !canViewOrderStats
+    ? "providers"
+    : requestedSection
   const permissions: PrivatePagePermissions = {
     role: admin.role,
     canManageContent: admin.role === "superadmin" || admin.role === "admin",
     canManageAvailability: true,
     canDeleteAvailability: admin.role === "superadmin" || admin.role === "admin",
+    canViewOrderStats,
   }
   const dataResult = await getPrivateManagementData()
   if (!dataResult.ok) {

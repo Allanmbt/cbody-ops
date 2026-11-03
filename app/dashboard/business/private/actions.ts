@@ -10,6 +10,7 @@ import {
   privateAvailabilitySettingFormSchema,
   privateLocationFormSchema,
   privateMediaFormSchema,
+  privateOrderStatsQuerySchema,
   privateProfileFormSchema,
   privateProviderServiceFormSchema,
   privateServiceSettingFormSchema,
@@ -21,6 +22,8 @@ import {
   type PrivateLocationContent,
   type PrivateMedia,
   type PrivateMutationAction,
+  type PrivateOrderStatsQuery,
+  type PrivateOrderStatsResult,
   type PrivateProfile,
   type PrivateProviderService,
   type PrivateProviderServiceAttire,
@@ -169,6 +172,59 @@ function displayName(value: unknown): string {
 
 function assertQuery(label: string, result: { error: { message: string } | null }): void {
   if (result.error) throw new Error(`${label}读取失败：${result.error.message}`)
+}
+
+function numberValue(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function normalizeOrderStats(data: any): PrivateOrderStatsResult {
+  const normalizeSummary = (value: any) => ({
+    order_count: numberValue(value?.order_count),
+    sales_amount: numberValue(value?.sales_amount),
+    platform_gross_profit: numberValue(value?.platform_gross_profit),
+  })
+
+  return {
+    summary: normalizeSummary(data?.summary),
+    location_options: (data?.location_options || []).map((item: any) => ({
+      location_key: String(item.location_key || "unknown"),
+      location_name: String(item.location_name || "未知场所"),
+    })),
+    locations: (data?.locations || []).map((item: any) => ({
+      ...normalizeSummary(item),
+      location_key: String(item.location_key || "unknown"),
+      location_name: String(item.location_name || "未知场所"),
+    })),
+    months: (data?.months || []).map((item: any) => ({
+      ...normalizeSummary(item),
+      month: String(item.month || ""),
+    })),
+    orders: (data?.orders || []).map((item: any) => ({
+      id: String(item.id),
+      order_number: String(item.order_number || ""),
+      completed_at: String(item.completed_at || ""),
+      settled_at: item.settled_at ? String(item.settled_at) : null,
+      location_key: String(item.location_key || "unknown"),
+      location_name: String(item.location_name || "未知场所"),
+      girl_id: String(item.girl_id || ""),
+      girl_number: numberValue(item.girl_number),
+      girl_name: String(item.girl_name || "未知技师"),
+      service_name: textMap(item.service_name),
+      service_duration: numberValue(item.service_duration),
+      total_amount: numberValue(item.total_amount),
+      service_commission_rate: numberValue(item.service_commission_rate),
+      extra_commission_rate: numberValue(item.extra_commission_rate),
+      platform_should_get: numberValue(item.platform_should_get),
+    })),
+    pagination: {
+      page: numberValue(data?.pagination?.page) || 1,
+      page_size: numberValue(data?.pagination?.page_size) || 20,
+      total: numberValue(data?.pagination?.total),
+      total_pages: numberValue(data?.pagination?.total_pages),
+    },
+  }
 }
 
 async function assertIncallGirl(db: any, girlId: string): Promise<void> {
@@ -336,6 +392,29 @@ export async function getPrivateManagementData(): Promise<ActionResponse<Private
     return { ok: true, data }
   } catch (error) {
     console.error("[到店管理] 读取真实数据失败:", error)
+    return { ok: false, error: firstIssue(error) }
+  }
+}
+
+export async function getPrivateIncallOrderStats(
+  params: PrivateOrderStatsQuery
+): Promise<ActionResponse<PrivateOrderStatsResult>> {
+  try {
+    await requireAdmin(["superadmin", "admin"])
+    const validated = privateOrderStatsQuerySchema.parse(params)
+    const db = getSupabaseAdminClient() as any
+    const { data, error } = await db.rpc("get_private_incall_order_stats", {
+      p_period_mode: validated.period_mode,
+      p_period_value: validated.period_value,
+      p_location_key: validated.location_key,
+      p_page: validated.page,
+      p_page_size: validated.page_size,
+    })
+
+    if (error) throw new Error(error.message)
+    return { ok: true, data: normalizeOrderStats(data) }
+  } catch (error) {
+    console.error("[到店订单统计] 查询失败:", error)
     return { ok: false, error: firstIssue(error) }
   }
 }

@@ -130,6 +130,29 @@ export const privateLocationFormSchema = z.object({
   is_published: z.boolean(),
 })
 
+export const privateOrderStatsQuerySchema = z.object({
+  period_mode: z.enum(["month", "year"]),
+  period_value: z.string().trim(),
+  location_key: z.string().trim().min(1).max(100).nullable(),
+  page: z.coerce.number().int().min(1),
+  page_size: z.coerce.number().int().min(1).max(50),
+}).superRefine((value, ctx) => {
+  const pattern = value.period_mode === "month" ? /^\d{4}-(0[1-9]|1[0-2])$/ : /^\d{4}$/
+  if (!pattern.test(value.period_value)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["period_value"],
+      message: value.period_mode === "month" ? "月份格式无效" : "年份格式无效",
+    })
+    return
+  }
+
+  const year = Number(value.period_value.slice(0, 4))
+  if (year < 2000 || year > 2100) {
+    ctx.addIssue({ code: "custom", path: ["period_value"], message: "年份必须在 2000–2100 之间" })
+  }
+})
+
 export type PrivateProfileFormData = z.infer<typeof privateProfileFormSchema>
 export type PrivateMediaFormData = z.infer<typeof privateMediaFormSchema>
 export type PrivateAlbumSettingsFormData = z.infer<typeof privateAlbumSettingsFormSchema>
@@ -138,3 +161,4 @@ export type PrivateServiceSettingFormData = z.infer<typeof privateServiceSetting
 export type PrivateProviderServiceFormData = z.infer<typeof privateProviderServiceFormSchema>
 export type PrivateAttireFormData = z.infer<typeof privateAttireFormSchema>
 export type PrivateLocationFormData = z.infer<typeof privateLocationFormSchema>
+export type PrivateOrderStatsQueryData = z.infer<typeof privateOrderStatsQuerySchema>
