@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Clock3,
   ReceiptText,
   RotateCcw,
   Search,
@@ -20,6 +21,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type {
+  PrivateIncallLocation,
   PrivateOrderPeriodMode,
   PrivateOrderStatsQuery,
   PrivateOrderStatsResult,
@@ -83,7 +85,7 @@ function serviceTitle(value: Record<string, string>): string {
   return value.zh || value.en || value.th || "未命名服务"
 }
 
-export function PrivateOrderStatsPanel() {
+export function PrivateOrderStatsPanel({ locations }: { locations: PrivateIncallLocation[] }) {
   const defaults = useMemo(currentFinancePeriod, [])
   const [draft, setDraft] = useState<FilterDraft>({
     periodMode: "month",
@@ -101,6 +103,18 @@ export function PrivateOrderStatsPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const locationOptions = useMemo(() => {
+    const options = new Map<string, string>()
+    for (const location of locations) {
+      options.set(location.id, `${location.name}${location.is_active ? "" : "（已停用）"}`)
+    }
+    for (const location of data?.location_options || []) {
+      if (!options.has(location.location_key)) {
+        options.set(location.location_key, location.location_name)
+      }
+    }
+    return [...options].map(([location_key, location_name]) => ({ location_key, location_name }))
+  }, [data?.location_options, locations])
 
   useEffect(() => {
     let cancelled = false
@@ -198,7 +212,7 @@ export function PrivateOrderStatsPanel() {
               <SelectTrigger aria-label="选择门店"><SelectValue placeholder="全部门店" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL_LOCATIONS}>全部门店</SelectItem>
-                {(data?.location_options || []).map((location) => (
+                {locationOptions.map((location) => (
                   <SelectItem key={location.location_key} value={location.location_key}>
                     {location.location_name}
                   </SelectItem>
@@ -237,10 +251,11 @@ export function PrivateOrderStatsPanel() {
 
       {data && (
         <div className={loading ? "pointer-events-none space-y-4 opacity-60" : "space-y-4"} aria-busy={loading}>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryCard title="总单数" value={`${data.summary.order_count.toLocaleString()} 单`} icon={<ReceiptText className="h-4 w-4 text-muted-foreground" />} />
             <SummaryCard title="销售额" value={formatCurrency(data.summary.sales_amount)} icon={<CircleDollarSign className="h-4 w-4 text-muted-foreground" />} />
-            <SummaryCard title="平台毛收益" value={formatCurrency(data.summary.platform_gross_profit)} icon={<Store className="h-4 w-4 text-muted-foreground" />} />
+            <SummaryCard title="加钟利润" value={formatCurrency(data.summary.add_time_profit)} description={`${data.summary.add_time_count} 次 · ${data.summary.add_time_duration_minutes} 分钟`} icon={<Clock3 className="h-4 w-4 text-amber-600" />} />
+            <SummaryCard title="平台毛收益" value={formatCurrency(data.summary.platform_gross_profit)} description={`已包含加钟 ${formatCurrency(data.summary.add_time_profit)}`} icon={<Store className="h-4 w-4 text-muted-foreground" />} />
           </div>
 
           {query.period_mode === "year" && <MonthlyStatsTable data={data} />}
@@ -252,13 +267,13 @@ export function PrivateOrderStatsPanel() {
   )
 }
 
-function SummaryCard({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
+function SummaryCard({ title, value, description, icon }: { title: string; value: string; description?: string; icon: React.ReactNode }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>{icon}
       </CardHeader>
-      <CardContent><div className="text-2xl font-bold tabular-nums">{value}</div></CardContent>
+      <CardContent><div className="text-2xl font-bold tabular-nums">{value}</div>{description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}</CardContent>
     </Card>
   )
 }
@@ -269,9 +284,9 @@ function MonthlyStatsTable({ data }: { data: PrivateOrderStatsResult }) {
       <CardHeader><CardTitle className="text-base">年度月度明细</CardTitle></CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>
-          <TableHeader><TableRow><TableHead>月份</TableHead><TableHead className="text-right">订单</TableHead><TableHead className="text-right">销售额</TableHead><TableHead className="text-right">平台毛收益</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>月份</TableHead><TableHead className="text-right">订单</TableHead><TableHead className="text-right">销售额</TableHead><TableHead className="text-right">加钟利润</TableHead><TableHead className="text-right">平台毛收益</TableHead></TableRow></TableHeader>
           <TableBody>
-            {data.months.map((item) => <TableRow key={item.month}><TableCell className="font-medium">{formatMonth(item.month)}</TableCell><TableCell className="text-right tabular-nums">{item.order_count}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.sales_amount)}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.platform_gross_profit)}</TableCell></TableRow>)}
+            {data.months.map((item) => <TableRow key={item.month}><TableCell className="font-medium">{formatMonth(item.month)}</TableCell><TableCell className="text-right tabular-nums">{item.order_count}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.sales_amount)}</TableCell><TableCell className="text-right tabular-nums text-amber-700 dark:text-amber-300">{formatCurrency(item.add_time_profit)}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.platform_gross_profit)}</TableCell></TableRow>)}
           </TableBody>
         </Table>
       </CardContent>
@@ -285,10 +300,10 @@ function LocationStatsTable({ data }: { data: PrivateOrderStatsResult }) {
       <CardHeader><CardTitle className="text-base">门店数据</CardTitle></CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>
-          <TableHeader><TableRow><TableHead>门店/场所</TableHead><TableHead className="text-right">订单</TableHead><TableHead className="text-right">销售额</TableHead><TableHead className="text-right">平台毛收益</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>门店/场所</TableHead><TableHead className="text-right">订单</TableHead><TableHead className="text-right">销售额</TableHead><TableHead className="text-right">加钟利润</TableHead><TableHead className="text-right">平台毛收益</TableHead></TableRow></TableHeader>
           <TableBody>
-            {data.locations.map((item) => <TableRow key={item.location_key}><TableCell className="font-medium">{item.location_name}</TableCell><TableCell className="text-right tabular-nums">{item.order_count}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.sales_amount)}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.platform_gross_profit)}</TableCell></TableRow>)}
-            {data.locations.length === 0 && <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">当前期间暂无符合条件的订单</TableCell></TableRow>}
+            {data.locations.map((item) => <TableRow key={item.location_key}><TableCell className="font-medium">{item.location_name}</TableCell><TableCell className="text-right tabular-nums">{item.order_count}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.sales_amount)}</TableCell><TableCell className="text-right tabular-nums text-amber-700 dark:text-amber-300">{formatCurrency(item.add_time_profit)}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.platform_gross_profit)}</TableCell></TableRow>)}
+            {data.locations.length === 0 && <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">当前期间暂无符合条件的订单</TableCell></TableRow>}
           </TableBody>
         </Table>
       </CardContent>
@@ -310,20 +325,21 @@ function OrderDetailsTable({ data, onPageChange }: { data: PrivateOrderStatsResu
       <CardContent>
         <div className="overflow-x-auto rounded-md border">
           <Table>
-            <TableHeader><TableRow><TableHead>完成时间/订单</TableHead><TableHead>门店/技师</TableHead><TableHead>服务</TableHead><TableHead className="text-right">销售额</TableHead><TableHead className="text-right">提成比例</TableHead><TableHead className="text-right">平台毛收益</TableHead><TableHead>核验时间</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>完成时间/订单</TableHead><TableHead>门店/技师</TableHead><TableHead>服务</TableHead><TableHead className="text-right">销售额</TableHead><TableHead className="text-right">服务提成</TableHead><TableHead className="text-right">加钟利润</TableHead><TableHead className="text-right">平台总收益</TableHead><TableHead>核验时间</TableHead></TableRow></TableHeader>
             <TableBody>
               {data.orders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="min-w-40"><div>{formatDateTime(order.completed_at)}</div><div className="text-xs text-muted-foreground">{order.order_number}</div></TableCell>
                   <TableCell className="min-w-40"><div className="font-medium">{order.location_name}</div><div className="text-xs text-muted-foreground">#{order.girl_number} · {order.girl_name}</div></TableCell>
-                  <TableCell className="min-w-36"><div>{serviceTitle(order.service_name)}</div><div className="text-xs text-muted-foreground">{order.service_duration} 分钟</div></TableCell>
+                  <TableCell className="min-w-40"><div>{serviceTitle(order.service_name)}</div><div className="text-xs text-muted-foreground">{order.service_duration} 分钟</div>{order.add_time_count > 0 && <Badge variant="outline" className="mt-1 border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">加钟 {order.add_time_count} 次 · {order.add_time_duration_minutes} 分钟</Badge>}</TableCell>
                   <TableCell className="text-right font-medium tabular-nums">{formatCurrency(order.total_amount)}</TableCell>
-                  <TableCell className="min-w-32 text-right text-xs"><div>服务 {formatRate(order.service_commission_rate)}</div><div className="text-muted-foreground">额外 {formatRate(order.extra_commission_rate)}</div></TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">{formatCurrency(order.platform_should_get)}</TableCell>
+                  <TableCell className="min-w-28 text-right text-xs"><div>{formatRate(order.service_commission_rate)}</div><div className="text-muted-foreground">{formatCurrency(order.platform_should_get)}</div></TableCell>
+                  <TableCell className="min-w-28 text-right font-medium tabular-nums text-amber-700 dark:text-amber-300">{order.add_time_count > 0 ? formatCurrency(order.add_time_commission_thb) : "—"}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">{formatCurrency(order.total_platform_profit)}</TableCell>
                   <TableCell className="min-w-36 text-muted-foreground">{formatDateTime(order.settled_at)}</TableCell>
                 </TableRow>
               ))}
-              {data.orders.length === 0 && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">暂无订单明细</TableCell></TableRow>}
+              {data.orders.length === 0 && <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">暂无订单明细</TableCell></TableRow>}
             </TableBody>
           </Table>
         </div>

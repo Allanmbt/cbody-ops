@@ -183,6 +183,9 @@ function normalizeOrderStats(data: any): PrivateOrderStatsResult {
   const normalizeSummary = (value: any) => ({
     order_count: numberValue(value?.order_count),
     sales_amount: numberValue(value?.sales_amount),
+    add_time_count: numberValue(value?.add_time_count),
+    add_time_duration_minutes: numberValue(value?.add_time_duration_minutes),
+    add_time_profit: numberValue(value?.add_time_profit),
     platform_gross_profit: numberValue(value?.platform_gross_profit),
   })
 
@@ -215,8 +218,11 @@ function normalizeOrderStats(data: any): PrivateOrderStatsResult {
       service_duration: numberValue(item.service_duration),
       total_amount: numberValue(item.total_amount),
       service_commission_rate: numberValue(item.service_commission_rate),
-      extra_commission_rate: numberValue(item.extra_commission_rate),
       platform_should_get: numberValue(item.platform_should_get),
+      add_time_count: numberValue(item.add_time_count),
+      add_time_duration_minutes: numberValue(item.add_time_duration_minutes),
+      add_time_commission_thb: numberValue(item.add_time_commission_thb),
+      total_platform_profit: numberValue(item.total_platform_profit),
     })),
     pagination: {
       page: numberValue(data?.pagination?.page) || 1,

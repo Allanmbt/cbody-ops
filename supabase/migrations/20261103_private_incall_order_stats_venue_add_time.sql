@@ -1,5 +1,6 @@
--- Private 到店订单统计：一次 RPC 返回期间汇总、门店/月度拆分和分页明细。
--- 仅使用订单与结算快照，不修改任何业务表或历史数据。
+-- 修正 Private 到店订单统计：
+-- 1. 历史地址快照缺少 location_id 时按场所名称匹配，避免全部归入 unknown。
+-- 2. 按 order_time_extensions 有效记录汇总多次加钟利润，并累计到平台总收益。
 
 CREATE OR REPLACE FUNCTION public.get_private_incall_order_stats(
   p_period_mode TEXT,
@@ -51,15 +52,33 @@ BEGIN
 
   v_offset := (p_page - 1) * p_page_size;
 
-  WITH period_orders AS MATERIALIZED (
+  WITH add_time_stats AS MATERIALIZED (
+    SELECT
+      extension.order_id,
+      COUNT(*)::INTEGER AS add_time_count,
+      COALESCE(SUM(extension.duration_minutes), 0)::INTEGER AS add_time_duration_minutes,
+      COALESCE(SUM(extension.commission_thb_snapshot), 0)::NUMERIC(10, 2) AS add_time_commission_thb
+    FROM public.order_time_extensions AS extension
+    WHERE extension.settlement_status <> 'rejected'
+    GROUP BY extension.order_id
+  ),
+  period_orders AS MATERIALIZED (
     SELECT
       o.id,
       o.order_number,
       o.completed_at,
       os.settled_at,
-      COALESCE(NULLIF(o.incall_location_snapshot ->> 'location_id', ''), 'unknown') AS location_key,
       COALESCE(
-        NULLIF(location.name, ''),
+        matched_location.id::TEXT,
+        NULLIF(o.incall_location_snapshot ->> 'location_id', ''),
+        CASE
+          WHEN NULLIF(BTRIM(o.incall_location_snapshot ->> 'name'), '') IS NOT NULL
+            THEN 'name:' || LOWER(REGEXP_REPLACE(BTRIM(o.incall_location_snapshot ->> 'name'), '\s+', ' ', 'g'))
+        END,
+        'unknown'
+      ) AS location_key,
+      COALESCE(
+        NULLIF(matched_location.name, ''),
         NULLIF(o.incall_location_snapshot ->> 'name', ''),
         '未知场所'
       ) AS location_name,
@@ -70,15 +89,40 @@ BEGIN
       o.service_duration,
       o.total_amount,
       os.service_commission_rate,
-      os.extra_commission_rate,
-      os.platform_should_get
+      ROUND(
+        (os.service_fee * os.service_commission_rate)
+        + (os.extra_fee * os.extra_commission_rate),
+        2
+      ) AS platform_should_get,
+      COALESCE(add_time.add_time_count, 0) AS add_time_count,
+      COALESCE(add_time.add_time_duration_minutes, 0) AS add_time_duration_minutes,
+      COALESCE(add_time.add_time_commission_thb, 0)::NUMERIC(10, 2) AS add_time_commission_thb,
+      (
+        ROUND(
+          (os.service_fee * os.service_commission_rate)
+          + (os.extra_fee * os.extra_commission_rate),
+          2
+        ) + COALESCE(add_time.add_time_commission_thb, 0)
+      )::NUMERIC(10, 2) AS total_platform_profit
     FROM public.orders AS o
     INNER JOIN public.order_settlements AS os
       ON os.order_id = o.id
      AND os.settlement_status = 'settled'
     LEFT JOIN public.girls AS g ON g.id = o.girl_id
-    LEFT JOIN public.incall_locations AS location
-      ON location.id::TEXT = o.incall_location_snapshot ->> 'location_id'
+    LEFT JOIN add_time_stats AS add_time ON add_time.order_id = o.id
+    LEFT JOIN LATERAL (
+      SELECT location.id, location.name
+      FROM public.incall_locations AS location
+      WHERE location.id::TEXT = NULLIF(o.incall_location_snapshot ->> 'location_id', '')
+         OR LOWER(BTRIM(location.name)) = LOWER(BTRIM(o.incall_location_snapshot ->> 'name'))
+      ORDER BY
+        CASE
+          WHEN location.id::TEXT = NULLIF(o.incall_location_snapshot ->> 'location_id', '') THEN 0
+          ELSE 1
+        END,
+        location.created_at
+      LIMIT 1
+    ) AS matched_location ON TRUE
     WHERE o.service_type = 'incall'
       AND o.status = 'completed'
       AND o.completed_at >= v_start_at
@@ -93,7 +137,10 @@ BEGIN
     SELECT
       COUNT(*) AS order_count,
       COALESCE(SUM(total_amount), 0) AS sales_amount,
-      COALESCE(SUM(platform_should_get), 0) AS platform_gross_profit
+      COALESCE(SUM(add_time_count), 0) AS add_time_count,
+      COALESCE(SUM(add_time_duration_minutes), 0) AS add_time_duration_minutes,
+      COALESCE(SUM(add_time_commission_thb), 0) AS add_time_profit,
+      COALESCE(SUM(total_platform_profit), 0) AS platform_gross_profit
     FROM filtered_orders
   ),
   location_options AS (
@@ -107,7 +154,10 @@ BEGIN
       MAX(location_name) AS location_name,
       COUNT(*) AS order_count,
       COALESCE(SUM(total_amount), 0) AS sales_amount,
-      COALESCE(SUM(platform_should_get), 0) AS platform_gross_profit
+      COALESCE(SUM(add_time_count), 0) AS add_time_count,
+      COALESCE(SUM(add_time_duration_minutes), 0) AS add_time_duration_minutes,
+      COALESCE(SUM(add_time_commission_thb), 0) AS add_time_profit,
+      COALESCE(SUM(total_platform_profit), 0) AS platform_gross_profit
     FROM filtered_orders
     GROUP BY location_key
   ),
@@ -124,7 +174,10 @@ BEGIN
       ) AS month,
       COUNT(*) AS order_count,
       COALESCE(SUM(total_amount), 0) AS sales_amount,
-      COALESCE(SUM(platform_should_get), 0) AS platform_gross_profit
+      COALESCE(SUM(add_time_count), 0) AS add_time_count,
+      COALESCE(SUM(add_time_duration_minutes), 0) AS add_time_duration_minutes,
+      COALESCE(SUM(add_time_commission_thb), 0) AS add_time_profit,
+      COALESCE(SUM(total_platform_profit), 0) AS platform_gross_profit
     FROM filtered_orders
     WHERE p_period_mode = 'year'
     GROUP BY 1
@@ -140,6 +193,9 @@ BEGIN
       SELECT jsonb_build_object(
         'order_count', order_count,
         'sales_amount', sales_amount,
+        'add_time_count', add_time_count,
+        'add_time_duration_minutes', add_time_duration_minutes,
+        'add_time_profit', add_time_profit,
         'platform_gross_profit', platform_gross_profit
       )
       FROM totals
@@ -158,6 +214,9 @@ BEGIN
           'location_name', location_name,
           'order_count', order_count,
           'sales_amount', sales_amount,
+          'add_time_count', add_time_count,
+          'add_time_duration_minutes', add_time_duration_minutes,
+          'add_time_profit', add_time_profit,
           'platform_gross_profit', platform_gross_profit
         )
         ORDER BY sales_amount DESC, location_name
@@ -170,6 +229,9 @@ BEGIN
           'month', series.month,
           'order_count', COALESCE(stats.order_count, 0),
           'sales_amount', COALESCE(stats.sales_amount, 0),
+          'add_time_count', COALESCE(stats.add_time_count, 0),
+          'add_time_duration_minutes', COALESCE(stats.add_time_duration_minutes, 0),
+          'add_time_profit', COALESCE(stats.add_time_profit, 0),
           'platform_gross_profit', COALESCE(stats.platform_gross_profit, 0)
         )
         ORDER BY series.month
@@ -205,4 +267,4 @@ GRANT EXECUTE ON FUNCTION public.get_private_incall_order_stats(TEXT, TEXT, TEXT
   TO service_role;
 
 COMMENT ON FUNCTION public.get_private_incall_order_stats(TEXT, TEXT, TEXT, INTEGER, INTEGER)
-  IS 'Private Incall 已完成且已核验订单统计，按泰国财务月返回汇总与分页明细。';
+  IS 'Private Incall 已完成且已核验订单统计；兼容历史场所快照并包含有效加钟佣金。';

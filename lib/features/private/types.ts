@@ -235,6 +235,9 @@ export interface PrivateOrderStatsQuery {
 export interface PrivateOrderStatsSummary {
   order_count: number
   sales_amount: number
+  add_time_count: number
+  add_time_duration_minutes: number
+  add_time_profit: number
   platform_gross_profit: number
 }
 
@@ -261,8 +264,11 @@ export interface PrivateOrderStatsRow {
   service_duration: number
   total_amount: number
   service_commission_rate: number
-  extra_commission_rate: number
   platform_should_get: number
+  add_time_count: number
+  add_time_duration_minutes: number
+  add_time_commission_thb: number
+  total_platform_profit: number
 }
 
 export interface PrivateOrderStatsResult {

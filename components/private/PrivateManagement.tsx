@@ -193,7 +193,7 @@ export function PrivateManagement({ initialData, permissions, initialSection = "
         <TabsContent value="availability"><AvailabilityPanel data={data} dispatch={dispatch} permissions={permissions} /></TabsContent>
         <TabsContent value="catalog"><CatalogPanel data={data} dispatch={dispatch} permissions={permissions} /></TabsContent>
         <TabsContent value="venues"><VenuesPanel data={data} dispatch={dispatch} permissions={permissions} focusLocationId={focusLocationId} /></TabsContent>
-        {permissions.canViewOrderStats && <TabsContent value="orders"><PrivateOrderStatsPanel /></TabsContent>}
+        {permissions.canViewOrderStats && <TabsContent value="orders"><PrivateOrderStatsPanel locations={data.locations} /></TabsContent>}
       </Tabs>
 
       <ProviderSheet
