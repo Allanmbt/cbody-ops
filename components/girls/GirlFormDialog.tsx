@@ -1073,7 +1073,8 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                                 <FormLabel>专业</FormLabel>
                                                 <FormControl>
                                                     <Input
-                                                        placeholder="90-60-90"
+                                                        placeholder="请输入专业信息（最多30个字符）"
+                                                        maxLength={30}
                                                         {...field}
                                                         value={field.value || ''}
                                                         disabled={loading}

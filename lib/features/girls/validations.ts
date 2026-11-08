@@ -48,7 +48,7 @@ export const girlFormSchema = z.object({
     birth_date: z.string().nullable().optional().or(z.literal("")),
     height: z.number().int("身高必须是整数").min(100, "身高至少100cm").max(250, "身高不能超过250cm").nullable().optional(),
     weight: z.number().int("体重必须是整数").min(30, "体重至少30kg").max(200, "体重不能超过200kg").nullable().optional(),
-    measurements: z.string().max(15, "三围不能超过15个字符").nullable().optional().or(z.literal("")),
+    measurements: z.string().max(30, "专业不能超过30个字符").nullable().optional().or(z.literal("")),
     gender: z.union([z.literal(0), z.literal(1)], { message: "请选择性别" }),
     languages: languagesSchema,
     tags: tagsContentSchema,
