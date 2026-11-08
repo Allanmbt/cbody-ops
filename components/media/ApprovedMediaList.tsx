@@ -15,7 +15,7 @@ import { MediaPreview } from '@/components/media/MediaPreview'
 import { MediaThumbnail } from '@/components/media/MediaThumbnail'
 import { UpdateLevelDialog } from '@/components/media/UpdateLevelDialog'
 import { BatchUpdateLevelDialog } from '@/components/media/BatchUpdateLevelDialog'
-import { getMediaPlatformLabel, type MediaListItem, type MediaPlatformVisibility } from '@/lib/features/media'
+import { getMediaPlatformLabel, type MediaListItem, type MediaPlatformVisibility, type BatchUpdateMediaLevelData } from '@/lib/features/media'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { LoadingSpinner } from '@/components/ui/loading'
 
@@ -152,21 +152,21 @@ export function ApprovedMediaList() {
         }
     }
 
-    const handleBatchUpdateLevel = async (level: number) => {
+    const handleBatchUpdateLevel = async (settings: Omit<BatchUpdateMediaLevelData, 'ids'>): Promise<boolean> => {
         if (!admin?.id) {
             toast.error('未找到管理员信息')
-            return
+            return false
         }
 
         try {
             const result = await batchUpdateMediaLevel({
                 ids: selectedIds,
-                min_user_level: level
+                ...settings
             })
 
             if (!result.success) {
                 toast.error(result.error || '批量修改失败')
-                return
+                return false
             }
 
             const updatedCount = result.updatedCount || 0
@@ -175,14 +175,16 @@ export function ApprovedMediaList() {
             if (skippedCount > 0) {
                 toast.success(`已修改 ${updatedCount} 条，跳过 ${skippedCount} 条非已发布媒体`)
             } else {
-                toast.success(`已批量修改 ${updatedCount} 条媒体的可见等级`)
+                toast.success(`已批量修改 ${updatedCount} 条媒体的展示设置`)
             }
 
             setSelectedIds([])
             setShowBatchUpdateLevel(false)
-            fetchData()
+            void fetchData()
+            return true
         } catch {
             toast.error('批量修改失败')
+            return false
         }
     }
 
@@ -224,7 +226,7 @@ export function ApprovedMediaList() {
                     {selectedIds.length > 0 && (
                         <Button size="sm" onClick={() => setShowBatchUpdateLevel(true)} className="cursor-pointer">
                             <Edit className="mr-1 h-4 w-4" />
-                            批量修改等级 ({selectedIds.length})
+                            批量编辑 ({selectedIds.length})
                         </Button>
                     )}
                 </CardTitle>

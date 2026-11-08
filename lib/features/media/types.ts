@@ -83,9 +83,9 @@ export interface BatchApproveData {
     visible_on_android?: boolean
 }
 
-export interface BatchUpdateMediaLevelData {
+export interface BatchUpdateMediaLevelData extends Partial<MediaPlatformVisibility> {
     ids: string[]
-    min_user_level: number
+    min_user_level?: number
 }
 
 export interface BatchRejectData {

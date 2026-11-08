@@ -944,9 +944,7 @@ export async function updateMediaLevel(data: unknown): Promise<{ success: boolea
     }
 }
 
-/**
- * 恢复为待审核状态（从驳回箱恢复）
- */
+/** 批量修改已发布媒体等级及平台范围，省略的字段保留原值。 */
 export async function batchUpdateMediaLevel(data: unknown): Promise<{
     success: boolean
     updatedCount?: number
@@ -955,49 +953,37 @@ export async function batchUpdateMediaLevel(data: unknown): Promise<{
 }> {
     try {
         const admin = await requireAdmin(['superadmin', 'admin'])
-        console.log('[Media Actions] Batch updating media level, admin:', admin.id)
 
         const supabase = getSupabaseAdminClient()
         const validated = batchUpdateMediaLevelSchema.parse(data)
         const { ids, min_user_level } = validated
+        const platformPatch = getMediaPlatformPatch(validated)
 
-        const { data: existingMedia, error: fetchError } = await (supabase as any)
-            .from('girls_media')
-            .select('id, status')
-            .in('id', ids)
-
-        if (fetchError) {
-            console.error('Error fetching media for batch level update:', fetchError)
-            return { success: false, error: `获取媒体失败: ${fetchError.message}` }
-        }
-
-        const approvedIds = (existingMedia || [])
-            .filter((item: any) => item.status === 'approved')
-            .map((item: any) => item.id)
-
-        if (approvedIds.length === 0) {
-            return { success: false, error: '选中的媒体均不是已发布状态，无法批量修改可见等级' }
-        }
-
-        const { error: updateError } = await (supabase as any)
+        // 一次更新并返回实际成功 ID，状态变化和不存在的记录均计为跳过。
+        const { data: updated, error: updateError } = await (supabase as any)
             .from('girls_media')
             .update({
-                min_user_level,
-                updated_at: new Date().toISOString()
+                ...(min_user_level === undefined ? {} : { min_user_level }),
+                ...platformPatch,
+                updated_at: new Date().toISOString(),
             })
-            .in('id', approvedIds)
+            .in('id', ids)
             .eq('status', 'approved')
+            .select('id')
 
         if (updateError) {
-            console.error('Error batch updating media level:', updateError)
-            return { success: false, error: `批量修改失败: ${updateError.message}` }
+            console.error('批量修改媒体展示设置失败:', updateError)
+            return { success: false, error: '批量修改失败，请稍后重试' }
         }
+        const updatedIds = (updated || []).map((item: { id: string }) => item.id)
+        if (updatedIds.length === 0) return { success: false, error: '没有可更新的已发布媒体，请刷新后重试' }
+        await logMediaPlatformSettings(supabase, admin.id, updatedIds, platformPatch)
 
         revalidatePath('/dashboard/media')
         return {
             success: true,
-            updatedCount: approvedIds.length,
-            skippedCount: ids.length - approvedIds.length
+            updatedCount: updatedIds.length,
+            skippedCount: ids.length - updatedIds.length
         }
     } catch (error) {
         console.error('Error in batchUpdateMediaLevel:', error)

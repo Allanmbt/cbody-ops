@@ -41,9 +41,13 @@ export const batchApproveMediaSchema = z.object({
 }).refine(validPlatformVisibility, platformVisibilityError)
 
 export const batchUpdateMediaLevelSchema = z.object({
-    ids: z.array(z.string().uuid()).min(1, '至少选择一个媒体'),
-    min_user_level: z.number().int().min(0).max(9).default(0),
-})
+    ids: z.array(z.string().uuid()).min(1, '至少选择一个媒体').max(100, '一次最多修改100个媒体').transform(ids => [...new Set(ids)]),
+    min_user_level: z.number().int().min(0).max(9).optional(),
+    ...platformVisibilityFields,
+}).refine(validPlatformVisibility, platformVisibilityError)
+    .refine(data => data.min_user_level !== undefined || data.visible_on_ios !== undefined, {
+        message: '请至少选择一项需要修改的设置',
+    })
 
 export const batchRejectMediaSchema = z.object({
     ids: z.array(z.string().uuid()).min(1, '至少选择一个媒体'),

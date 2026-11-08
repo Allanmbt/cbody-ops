@@ -220,3 +220,55 @@ test('SQL 静态检查：视图只末尾加列，回滚恢复原列顺序；不�
         assert.doesNotMatch(sql, /CREATE (?:UNIQUE )?INDEX|(?:CREATE|ALTER|DROP) POLICY|ALTER TABLE[^;]*ROW LEVEL SECURITY|UPDATE public\.girls_media/i)
     }
 })
+
+test('批量平台编辑支持三种范围，保留每条媒体的不同等级，仅记录实际更新项目', async () => {
+    for (const scope of ['all', 'android_web', 'web']) {
+        const h = harness([
+            fixture({ status: 'approved', min_user_level: 3 }),
+            fixture({ id: otherId, status: 'approved', min_user_level: 7 }),
+        ])
+        const visibility = buildMediaPlatformVisibility(scope)
+        const result = await h.actions.batchUpdateMediaLevel({ ids: [mediaId, otherId], ...visibility })
+        assert.equal(result.success, true)
+        assert.equal(result.updatedCount, 2)
+        assert.equal(result.skippedCount, 0)
+        assert.deepEqual(h.rows.map(row => row.min_user_level), [3, 7])
+        assert.ok(h.rows.every(row => row.visible_on_ios === visibility.visible_on_ios && row.visible_on_android === visibility.visible_on_android))
+        assert.equal(h.writes.length, 1)
+        assert.equal(h.audits.length, 1)
+        assert.deepEqual(h.audits[0].operation_details.media_ids, [mediaId, otherId])
+    }
+})
+
+test('批量等级和平台可同时修改，跳过待审核及不存在的记录，重复 ID 不重复计数', async () => {
+    const h = harness([fixture({ status: 'approved' }), fixture({ id: otherId, status: 'pending' })])
+    const missing = '30000000-0000-4000-8000-000000000001'
+    const result = await h.actions.batchUpdateMediaLevel({ ids: [mediaId, mediaId, otherId, missing], min_user_level: 0, ...buildMediaPlatformVisibility('all') })
+    assert.equal(result.success, true)
+    assert.equal(result.updatedCount, 1)
+    assert.equal(result.skippedCount, 2)
+    assert.equal(h.rows[0].min_user_level, 0)
+    assert.equal(h.rows[0].visible_on_ios, true)
+    assert.equal(h.rows[1].visible_on_ios, false)
+    assert.deepEqual(h.audits[0].operation_details.media_ids, [mediaId])
+})
+
+test('批量空修改、非法组合、单个平台字段和无权限不得写入', async () => {
+    for (const settings of [{}, { visible_on_ios: true }, { visible_on_ios: true, visible_on_android: false }, { min_user_level: 1.5 }]) {
+        const h = harness([fixture({ status: 'approved' })])
+        assert.equal((await h.actions.batchUpdateMediaLevel({ ids: [mediaId], ...settings })).success, false)
+        assert.equal(h.writes.length, 0)
+        assert.equal(h.audits.length, 0)
+    }
+    const h = harness([fixture({ status: 'approved' })], { unauthorized: true })
+    assert.equal((await h.actions.batchUpdateMediaLevel({ ids: [mediaId], ...buildMediaPlatformVisibility('all') })).success, false)
+    assert.equal(h.writes.length, 0)
+})
+
+test('批量写入失败或没有已发布记录时返回失败，不写审计', async () => {
+    for (const [rows, options] of [[[fixture()], {}], [[fixture({ status: 'approved' })], { failId: mediaId }]]) {
+        const h = harness(rows, options)
+        assert.equal((await h.actions.batchUpdateMediaLevel({ ids: [mediaId], ...buildMediaPlatformVisibility('all') })).success, false)
+        assert.equal(h.audits.length, 0)
+    }
+})
