@@ -15,7 +15,7 @@ import { MediaPreview } from '@/components/media/MediaPreview'
 import { MediaThumbnail } from '@/components/media/MediaThumbnail'
 import { UpdateLevelDialog } from '@/components/media/UpdateLevelDialog'
 import { BatchUpdateLevelDialog } from '@/components/media/BatchUpdateLevelDialog'
-import type { MediaListItem } from '@/lib/features/media'
+import { getMediaPlatformLabel, type MediaListItem, type MediaPlatformVisibility } from '@/lib/features/media'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { LoadingSpinner } from '@/components/ui/loading'
 
@@ -125,27 +125,30 @@ export function ApprovedMediaList() {
         }
     }
 
-    const handleUpdateLevel = async (level: number) => {
+    const handleUpdateLevel = async (level: number, visibility: MediaPlatformVisibility): Promise<boolean> => {
         if (!admin?.id || !editingMedia) {
             toast.error('未找到管理员信息')
-            return
+            return false
         }
 
         try {
             const result = await updateMediaLevel({
                 id: editingMedia.id,
-                min_user_level: level
+                min_user_level: level,
+                ...visibility
             })
             if (!result.success) {
                 toast.error(result.error || '修改失败')
-                return
+                return false
             }
 
-            toast.success('可见等级修改成功')
+            toast.success('媒体展示设置修改成功')
             setEditingMedia(null)
-            fetchData()
+            void fetchData()
+            return true
         } catch {
             toast.error('修改失败')
+            return false
         }
     }
 
@@ -291,6 +294,7 @@ export function ApprovedMediaList() {
                                 <TableHead>技师</TableHead>
                                 <TableHead>类型</TableHead>
                                 <TableHead>会员等级</TableHead>
+                                <TableHead>展示平台</TableHead>
                                 <TableHead>审核人</TableHead>
                                 <TableHead>发布时间</TableHead>
                                 <TableHead className="text-right">操作</TableHead>
@@ -299,7 +303,7 @@ export function ApprovedMediaList() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-8">
+                                    <TableCell colSpan={9} className="py-8">
                                         <div className="flex items-center justify-center">
                                             <LoadingSpinner />
                                         </div>
@@ -307,7 +311,7 @@ export function ApprovedMediaList() {
                                 </TableRow>
                             ) : mediaList.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                                         暂无已发布媒体
                                     </TableCell>
                                 </TableRow>
@@ -335,6 +339,7 @@ export function ApprovedMediaList() {
                                         </TableCell>
                                         <TableCell>{getKindBadge(media.kind)}</TableCell>
                                         <TableCell>{getLevelBadge(media.min_user_level)}</TableCell>
+                                        <TableCell><Badge variant="outline">{getMediaPlatformLabel(media)}</Badge></TableCell>
                                         <TableCell>{media.reviewer_name || '--'}</TableCell>
                                         <TableCell>{media.reviewed_at ? new Date(media.reviewed_at).toLocaleString() : '--'}</TableCell>
                                         <TableCell className="text-right">
@@ -353,7 +358,7 @@ export function ApprovedMediaList() {
                                                     variant="ghost"
                                                     onClick={() => setEditingMedia(media)}
                                                     className="cursor-pointer"
-                                                    title="修改等级"
+                                                    title="编辑展示设置"
                                                 >
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
@@ -413,6 +418,7 @@ export function ApprovedMediaList() {
                 <UpdateLevelDialog
                     open={!!editingMedia}
                     currentLevel={editingMedia.min_user_level}
+                    currentVisibility={editingMedia}
                     onOpenChange={(open) => !open && setEditingMedia(null)}
                     onConfirm={handleUpdateLevel}
                 />

@@ -44,12 +44,12 @@ import { LoadingSpinner } from "@/components/ui/loading"
 import { X, Upload, Search, Loader2, XCircle } from "lucide-react"
 import {
     GIRL_TAG_OPTIONS,
+    GIRL_TAG_MAX_COUNT,
     buildGirlTagsFromIds,
     girlFormSchema,
     hasGirlTagContent,
     matchGirlTagIds,
     type GirlFormData,
-    type LanguageContent,
 } from "@/lib/features/girls"
 import {
     createGirl,
@@ -506,20 +506,9 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
         }
     }
 
-    // 切换固定特点标签；首次触碰后才会替换历史自由标签。
-    const toggleGirlTag = (tagId: number) => {
-        const isSelected = selectedTagIds.includes(tagId)
-
-        if (!isSelected && selectedTagIds.length >= 4) {
-            toast.error("特点标签最多选择 4 个")
-            return
-        }
-
-        const nextTagIds = isSelected
-            ? selectedTagIds.filter((id) => id !== tagId)
-            : [...selectedTagIds, tagId]
-        const nextTags = buildGirlTagsFromIds(nextTagIds) as LanguageContent
-
+    // 仅更新表单草稿，提交成功后才替换数据库中的标签。
+    const updateGirlTags = (nextTagIds: number[]) => {
+        const nextTags = buildGirlTagsFromIds(nextTagIds)
         setSelectedTagIds(nextTagIds)
         setTagsTouched(true)
         setHasLegacyTags(false)
@@ -531,6 +520,17 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
             shouldTouch: true,
             shouldValidate: true,
         })
+    }
+
+    const toggleGirlTag = (tagId: number) => {
+        const isSelected = selectedTagIds.includes(tagId)
+        if (!isSelected && selectedTagIds.length >= GIRL_TAG_MAX_COUNT) {
+            toast.error(`个人标签最多选择 ${GIRL_TAG_MAX_COUNT} 个`)
+            return
+        }
+        updateGirlTags(isSelected
+            ? selectedTagIds.filter((id) => id !== tagId)
+            : [...selectedTagIds, tagId])
     }
 
     return (
@@ -952,7 +952,7 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                             个人标签
                                         </FormLabel>
                                         <p className="text-xs text-muted-foreground mb-2">
-                                            固定标签可选填；选择时请选 2-4 个。泰文仅在后台显示编号，保存时不写入编号。
+                                            个人标签可不选（0–{GIRL_TAG_MAX_COUNT} 个）；选择 1 个即可。编号仅用于后台显示，保存时不写入编号。
                                         </p>
                                         <FormField
                                             control={form.control}
@@ -965,23 +965,34 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
 
                                                             return (
                                                                 <Badge
+                                                                    asChild
                                                                     key={option.id}
                                                                     variant={isSelected ? "default" : "outline"}
                                                                     className="cursor-pointer whitespace-normal text-left leading-5"
-                                                                    onClick={() => toggleGirlTag(option.id)}
                                                                 >
-                                                                    {option.zh} / {option.en} / {option.id}. {option.th}
-                                                                    {isSelected && <X className="ml-1 h-3 w-3 shrink-0" />}
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-pressed={isSelected}
+                                                                        onClick={() => toggleGirlTag(option.id)}
+                                                                    >
+                                                                        {option.zh} / {option.en} / {option.id}. {option.th}
+                                                                        {isSelected && <X className="ml-1 h-3 w-3 shrink-0" />}
+                                                                    </button>
                                                                 </Badge>
                                                             )
                                                         })}
                                                     </div>
+                                                    {(hasLegacyTags || selectedTagIds.length > 0) && (
+                                                        <Button type="button" variant="ghost" size="sm" onClick={() => updateGirlTags([])}>
+                                                            清空标签
+                                                        </Button>
+                                                    )}
                                                     <FormDescription className="text-xs">
                                                         {hasLegacyTags && !tagsTouched
                                                             ? '当前为旧版标签；未重新选择时将按原值保留。'
                                                             : selectedTagIds.length > 0
-                                                                ? `已选择 ${selectedTagIds.length} 个特点标签`
-                                                                : '当前未选择特点标签'
+                                                                ? `已选择 ${selectedTagIds.length} / ${GIRL_TAG_MAX_COUNT} 个个人标签，保存后生效`
+                                                                : '当前未选择个人标签，可直接提交'
                                                         }
                                                     </FormDescription>
                                                     <FormMessage />
@@ -1059,7 +1070,7 @@ export function GirlFormDialog({ open, onOpenChange, girl, onSuccess }: GirlForm
                                         name="measurements"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>三围</FormLabel>
+                                                <FormLabel>专业</FormLabel>
                                                 <FormControl>
                                                     <Input
                                                         placeholder="90-60-90"

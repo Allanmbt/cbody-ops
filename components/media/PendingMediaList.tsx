@@ -16,7 +16,7 @@ import { MediaThumbnail } from '@/components/media/MediaThumbnail'
 import { RejectDialog } from '@/components/media/RejectDialog'
 import { BatchApproveDialog } from '@/components/media/BatchApproveDialog'
 import { BatchRejectDialog } from '@/components/media/BatchRejectDialog'
-import type { MediaListItem } from '@/lib/features/media'
+import type { MediaListItem, MediaPlatformVisibility } from '@/lib/features/media'
 import { useCurrentAdmin } from '@/hooks/use-current-admin'
 import { LoadingSpinner } from '@/components/ui/loading'
 
@@ -97,25 +97,28 @@ export function PendingMediaList() {
         setSelectedIds([...selectedIds, id])
     }
 
-    const handleBatchApprove = async (minUserLevel: number) => {
+    const handleBatchApprove = async (minUserLevel: number, visibility: MediaPlatformVisibility): Promise<boolean> => {
         if (!admin?.id) {
             toast.error('未找到管理员信息')
-            return
+            return false
         }
 
         try {
-            const result = await batchApproveMedia({ ids: selectedIds, min_user_level: minUserLevel })
+            const result = await batchApproveMedia({ ids: selectedIds, min_user_level: minUserLevel, ...visibility })
             if (!result.success) {
                 toast.error(result.error || '批量审核失败')
-                return
+                return false
             }
 
-            toast.success(`已批量通过 ${selectedIds.length} 个媒体`)
+            if (result.error) toast.warning(result.error)
+            else toast.success(`已批量通过 ${selectedIds.length} 个媒体`)
             setSelectedIds([])
             setShowBatchApprove(false)
-            fetchData()
+            void fetchData()
+            return true
         } catch {
             toast.error('批量审核失败')
+            return false
         }
     }
 

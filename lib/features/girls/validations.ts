@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { matchGirlTagIds } from "./tags"
+import { GIRL_TAG_MAX_COUNT, matchGirlTagIds } from "./tags"
 
 // 必填的多语言内容验证（例如：profile）
 const languageContentSchema = z.object({
@@ -76,11 +76,11 @@ export const girlFormSchema = z.object({
     }
 
     const matchedTagIds = matchGirlTagIds(data.tags)
-    if (matchedTagIds === null || matchedTagIds.length === 1 || matchedTagIds.length > 4) {
+    if (matchedTagIds === null || matchedTagIds.length > GIRL_TAG_MAX_COUNT) {
         ctx.addIssue({
             code: "custom",
             path: ["tags"],
-            message: "特点标签可不选；选择时请选 2-4 个",
+            message: `个人标签可不选；最多选择 ${GIRL_TAG_MAX_COUNT} 个最新标签`,
         })
     }
 })

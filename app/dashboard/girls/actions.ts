@@ -633,6 +633,10 @@ export async function updateGirl(id: string, formData: GirlFormData): Promise<Ap
 
         // 准备更新数据
         const { category_ids, ...girlData } = validatedData
+        // 未操作标签时不回写旧快照，保留数据库当前值，也避免覆盖其他端的更新。
+        if (!validatedData.tags_catalog_touched) {
+            delete (girlData as Partial<GirlFormData>).tags
+        }
         delete (girlData as Partial<GirlFormData>).tags_catalog_touched
 
         // 更新技师

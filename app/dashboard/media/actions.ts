@@ -5,6 +5,8 @@ import { requireAdmin } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import {
     approveMediaSchema,
+    updateMediaSettingsSchema,
+    getMediaPlatformPatch,
     rejectMediaSchema,
     batchApproveMediaSchema,
     batchUpdateMediaLevelSchema,
@@ -14,7 +16,7 @@ import {
     signUrlSchema,
     mediaListParamsSchema
 } from '@/lib/features/media'
-// 审计日志已移除 - 媒体管理不再记录操作日志
+// 平台设置操作单独记录审计，不改变其他媒体操作。
 import type {
     MediaListItem,
     PaginatedMediaResponse,
@@ -23,6 +25,24 @@ import type {
 } from '@/lib/features/media'
 
 // 注意：现在统一使用 getSupabaseAdminClient()，不再需要单独创建客户端
+
+/** 只记录本次明确提交的平台设置；批量操作合并记录。 */
+async function logMediaPlatformSettings(
+    supabase: ReturnType<typeof getSupabaseAdminClient>,
+    adminId: string,
+    mediaIds: string[],
+    visibility: { visible_on_ios?: boolean; visible_on_android?: boolean },
+): Promise<void> {
+    if (visibility.visible_on_ios === undefined || mediaIds.length === 0) return
+    const { error } = await (supabase as any).from('admin_operation_logs').insert({
+        operator_id: adminId,
+        // 日志表要求目标管理员非空；媒体目标记录在 operation_details 中。
+        target_admin_id: adminId,
+        operation_type: 'update_media_platform_visibility',
+        operation_details: { media_ids: mediaIds, ...visibility },
+    })
+    if (error) console.error('记录媒体平台设置审计失败:', error)
+}
 
 /**
  * 从 tmp-uploads 拷贝文件到 girls-media
@@ -232,6 +252,8 @@ export async function getMediaList(params: unknown): Promise<PaginatedMediaRespo
             provider: item.provider,
             meta: item.meta,
             min_user_level: item.min_user_level,
+            visible_on_ios: item.visible_on_ios ?? true,
+            visible_on_android: item.visible_on_android ?? true,
             sort_order: item.sort_order,
             reviewed_by: item.reviewed_by,
             reviewed_at: item.reviewed_at,
@@ -326,6 +348,7 @@ export async function approveMedia(data: unknown): Promise<{ success: boolean; e
         // 验证参数
         const validated = approveMediaSchema.parse(data)
         const { id, min_user_level } = validated
+        const platformPatch = getMediaPlatformPatch(validated)
 
         // 获取媒体信息
         const { data: media, error: fetchError } = await (supabase as any)
@@ -369,6 +392,7 @@ export async function approveMedia(data: unknown): Promise<{ success: boolean; e
                 .update({
                     status: 'approved',
                     min_user_level,
+                    ...platformPatch,
                     reviewed_by: admin.id,
                     reviewed_at: new Date().toISOString(),
                     meta: newMeta,
@@ -381,6 +405,7 @@ export async function approveMedia(data: unknown): Promise<{ success: boolean; e
             }
 
             console.log('[Media Actions] Cloudflare media approved successfully')
+            await logMediaPlatformSettings(supabase, admin.id, [id], platformPatch)
             revalidatePath('/dashboard/media')
             return { success: true }
         }
@@ -442,6 +467,7 @@ export async function approveMedia(data: unknown): Promise<{ success: boolean; e
             .update({
                 status: 'approved',
                 min_user_level,
+                ...platformPatch,
                 reviewed_by: admin.id,
                 reviewed_at: new Date().toISOString(),
                 storage_key: newStorageKey,
@@ -457,6 +483,7 @@ export async function approveMedia(data: unknown): Promise<{ success: boolean; e
 
         console.log('[Media Actions] Media approved successfully')
 
+        await logMediaPlatformSettings(supabase, admin.id, [id], platformPatch)
         revalidatePath('/dashboard/media')
         return { success: true }
     } catch (error) {
@@ -534,6 +561,7 @@ export async function batchApproveMedia(data: unknown): Promise<{ success: boole
 
         const validated = batchApproveMediaSchema.parse(data)
         const { ids, min_user_level } = validated
+        const platformPatch = getMediaPlatformPatch(validated)
 
         // 获取所有媒体信息
         const { data: mediaList, error: fetchError } = await (supabase as any)
@@ -547,7 +575,8 @@ export async function batchApproveMedia(data: unknown): Promise<{ success: boole
 
         // 逐个处理文件拷贝
         const successIds: string[] = []
-        const failedIds: string[] = []
+        const foundIds = new Set<string>(mediaList.map((media: { id: string }) => media.id))
+        const failedIds: string[] = ids.filter(id => !foundIds.has(id))
 
         for (const media of mediaList) {
             try {
@@ -571,6 +600,7 @@ export async function batchApproveMedia(data: unknown): Promise<{ success: boole
                         .update({
                             status: 'approved',
                             min_user_level,
+                            ...platformPatch,
                             reviewed_by: admin.id,
                             reviewed_at: new Date().toISOString(),
                             meta: newMeta,
@@ -635,6 +665,7 @@ export async function batchApproveMedia(data: unknown): Promise<{ success: boole
                     .update({
                         status: 'approved',
                         min_user_level,
+                        ...platformPatch,
                         reviewed_by: admin.id,
                         reviewed_at: new Date().toISOString(),
                         storage_key: newStorageKey,
@@ -657,11 +688,12 @@ export async function batchApproveMedia(data: unknown): Promise<{ success: boole
 
         console.log(`[Batch Approve] Success: ${successIds.length}, Failed: ${failedIds.length}`)
 
+        await logMediaPlatformSettings(supabase, admin.id, successIds, platformPatch)
         revalidatePath('/dashboard/media')
 
         if (failedIds.length > 0) {
             return {
-                success: true,
+                success: successIds.length > 0,
                 error: `部分媒体审批失败: ${successIds.length} 成功, ${failedIds.length} 失败`
             }
         }
@@ -873,9 +905,9 @@ export async function generateSignedUrl(data: unknown): Promise<SignUrlResponse 
 }
 
 /**
- * 修改媒体的会员等级
+ * 修改已发布媒体的会员等级和平台展示设置，兼容仅传等级的旧调用。
  */
-export async function updateMediaLevel(data: { id: string; min_user_level: number }): Promise<{ success: boolean; error?: string }> {
+export async function updateMediaLevel(data: unknown): Promise<{ success: boolean; error?: string }> {
     try {
         // 验证管理员权限（只有管理员和超级管理员可以修改媒体等级）
         const admin = await requireAdmin(['superadmin', 'admin'])
@@ -884,25 +916,26 @@ export async function updateMediaLevel(data: { id: string; min_user_level: numbe
         // 使用统一的 Admin 客户端
         const supabase = getSupabaseAdminClient()
 
-        const { id, min_user_level } = data
+        const validated = updateMediaSettingsSchema.parse(data)
+        const { id, min_user_level } = validated
+        const platformPatch = getMediaPlatformPatch(validated)
 
-        // 验证等级范围
-        if (min_user_level < 0 || min_user_level > 10) {
-            return { success: false, error: '会员等级必须在 0-10 之间' }
-        }
-
-        // 更新等级
-        const { error } = await (supabase as any)
+        // 等级和平台在同一次更新中保存；省略的平台字段不回写。
+        const { data: updated, error } = await (supabase as any)
             .from('girls_media')
-            .update({ min_user_level })
+            .update({ min_user_level, ...platformPatch, updated_at: new Date().toISOString() })
             .eq('id', id)
             .eq('status', 'approved') // 只能修改已发布的媒体
+            .select('id')
+            .maybeSingle()
 
         if (error) {
             console.error('Error updating media level:', error)
             return { success: false, error: `更新失败: ${error.message}` }
         }
 
+        if (!updated) return { success: false, error: '媒体不存在或尚未发布，请刷新后重试' }
+        await logMediaPlatformSettings(supabase, admin.id, [id], platformPatch)
         revalidatePath('/dashboard/media')
         return { success: true }
     } catch (error) {

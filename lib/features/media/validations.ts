@@ -4,10 +4,30 @@ export const mediaKindSchema = z.enum(['image', 'video', 'live_photo'])
 
 export const mediaStatusSchema = z.enum(['pending', 'approved', 'rejected'])
 
+// 两个字段必须同时提供或同时省略；省略时保留已有平台设置。
+const platformVisibilityFields = {
+    visible_on_ios: z.boolean().optional(),
+    visible_on_android: z.boolean().optional(),
+}
+
+const validPlatformVisibility = (data: { visible_on_ios?: boolean; visible_on_android?: boolean }) =>
+    (data.visible_on_ios === undefined && data.visible_on_android === undefined) ||
+    (data.visible_on_ios !== undefined && data.visible_on_android !== undefined &&
+        (!data.visible_on_ios || data.visible_on_android))
+
+const platformVisibilityError = { message: '请选择全部平台、Android＋Web或仅 Web', path: ['visible_on_ios'] }
+
 export const approveMediaSchema = z.object({
     id: z.string().uuid('无效的媒体 ID'),
     min_user_level: z.number().int().min(0).max(10).default(0),
-})
+    ...platformVisibilityFields,
+}).refine(validPlatformVisibility, platformVisibilityError)
+
+export const updateMediaSettingsSchema = z.object({
+    id: z.string().uuid('无效的媒体 ID'),
+    min_user_level: z.number().int().min(0).max(10),
+    ...platformVisibilityFields,
+}).refine(validPlatformVisibility, platformVisibilityError)
 
 export const rejectMediaSchema = z.object({
     id: z.string().uuid('无效的媒体 ID'),
@@ -17,7 +37,8 @@ export const rejectMediaSchema = z.object({
 export const batchApproveMediaSchema = z.object({
     ids: z.array(z.string().uuid()).min(1, '至少选择一个媒体'),
     min_user_level: z.number().int().min(0).max(10).default(0),
-})
+    ...platformVisibilityFields,
+}).refine(validPlatformVisibility, platformVisibilityError)
 
 export const batchUpdateMediaLevelSchema = z.object({
     ids: z.array(z.string().uuid()).min(1, '至少选择一个媒体'),

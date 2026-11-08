@@ -3,6 +3,11 @@
 export type MediaKind = 'image' | 'video' | 'live_photo'
 export type MediaStatus = 'pending' | 'approved' | 'rejected'
 
+export interface MediaPlatformVisibility {
+    visible_on_ios: boolean
+    visible_on_android: boolean
+}
+
 export interface MediaMeta {
     mime?: string
     size?: number
@@ -19,7 +24,7 @@ export interface MediaMeta {
     }
 }
 
-export interface GirlMedia {
+export interface GirlMedia extends MediaPlatformVisibility {
     id: string
     girl_id: string
     kind: MediaKind
@@ -62,6 +67,8 @@ export interface MediaListParams {
 export interface ApproveMediaData {
     id: string
     min_user_level: number
+    visible_on_ios?: boolean
+    visible_on_android?: boolean
 }
 
 export interface RejectMediaData {
@@ -72,6 +79,8 @@ export interface RejectMediaData {
 export interface BatchApproveData {
     ids: string[]
     min_user_level: number
+    visible_on_ios?: boolean
+    visible_on_android?: boolean
 }
 
 export interface BatchUpdateMediaLevelData {

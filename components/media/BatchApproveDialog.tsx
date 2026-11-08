@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -13,11 +13,13 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2 } from 'lucide-react'
+import { MediaPlatformSelect } from './MediaPlatformSelect'
+import { buildMediaPlatformVisibility, type MediaPlatformScope, type MediaPlatformVisibility } from '@/lib/features/media'
 
 interface BatchApproveDialogProps {
     open: boolean
     onClose: () => void
-    onConfirm: (minUserLevel: number) => Promise<void>
+    onConfirm: (minUserLevel: number, visibility: MediaPlatformVisibility) => Promise<boolean>
     count: number
 }
 
@@ -37,18 +39,24 @@ const LEVEL_OPTIONS = [
 export function BatchApproveDialog({ open, onClose, onConfirm, count }: BatchApproveDialogProps) {
     const [minUserLevel, setMinUserLevel] = useState('0')
     const [isLoading, setIsLoading] = useState(false)
+    const [scope, setScope] = useState<MediaPlatformScope>('all')
+
+    useEffect(() => {
+        if (open) { setMinUserLevel('0'); setScope('all') }
+    }, [open])
 
     const handleConfirm = async () => {
+        if (isLoading) return
         setIsLoading(true)
         try {
-            await onConfirm(Number(minUserLevel))
+            if (await onConfirm(Number(minUserLevel), buildMediaPlatformVisibility(scope))) onClose()
         } finally {
             setIsLoading(false)
         }
     }
 
     return (
-        <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+        <Dialog open={open} onOpenChange={(nextOpen) => !isLoading && !nextOpen && onClose()}>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>批量审核通过</DialogTitle>
@@ -57,7 +65,7 @@ export function BatchApproveDialog({ open, onClose, onConfirm, count }: BatchApp
                 <div className="space-y-4 py-4">
                     <div className="space-y-2">
                         <Label htmlFor="level">会员可见等级</Label>
-                        <Select value={minUserLevel} onValueChange={setMinUserLevel}>
+                        <Select disabled={isLoading} value={minUserLevel} onValueChange={setMinUserLevel}>
                             <SelectTrigger id="level">
                                 <SelectValue />
                             </SelectTrigger>
@@ -71,6 +79,7 @@ export function BatchApproveDialog({ open, onClose, onConfirm, count }: BatchApp
                         </Select>
                         <p className="text-xs text-muted-foreground">设置查看该媒体所需的最低会员等级。</p>
                     </div>
+                    <MediaPlatformSelect value={scope} onChange={setScope} disabled={isLoading} />
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose} disabled={isLoading}>

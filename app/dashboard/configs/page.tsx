@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LoadingSpinner } from "@/components/ui/loading"
-import { ChevronRight, DollarSign, Bell, Globe, MessageSquare, Trash2 } from "lucide-react"
+import { ChevronRight, DollarSign, Bell, Globe, MessageSquare, Trash2, Images } from "lucide-react"
 import { toast } from "sonner"
 import { getConfigsList } from "./actions"
 import type { AppConfig } from "@/lib/features/configs"
@@ -25,6 +25,16 @@ interface ConfigCard {
 }
 
 const configCards: ConfigCard[] = [
+  {
+    key: "slides",
+    title: "首页幻灯片",
+    description: "管理首页最多 3 张幻灯片图片及点击跳转",
+    icon: <Images className="size-8" />,
+    href: "/dashboard/configs/slides",
+    badge: "已启用",
+    namespace: "home",
+    config_key: "slides",
+  },
   {
     key: "fare",
     title: "车费计价配置",
@@ -122,6 +132,9 @@ export default function ConfigsPage() {
 
   // 过滤配置卡片（聊天清理仅超级管理员可见）
   const visibleCards = configCards.filter(card => {
+    if (card.key === 'slides') {
+      return admin?.role === 'superadmin' || admin?.role === 'admin'
+    }
     if (card.key === 'chat-cleanup') {
       return admin?.role === 'superadmin'
     }

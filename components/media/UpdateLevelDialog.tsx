@@ -12,11 +12,16 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
+import { Loader2 } from 'lucide-react'
+import { MediaPlatformSelect } from './MediaPlatformSelect'
+import { buildMediaPlatformVisibility, getMediaPlatformScope, type MediaPlatformScope, type MediaPlatformVisibility } from '@/lib/features/media'
+
 interface UpdateLevelDialogProps {
     open: boolean
     currentLevel: number
+    currentVisibility: MediaPlatformVisibility
     onOpenChange: (open: boolean) => void
-    onConfirm: (level: number) => void
+    onConfirm: (level: number, visibility: MediaPlatformVisibility) => Promise<boolean>
 }
 
 const LEVEL_OPTIONS = [
@@ -32,30 +37,38 @@ const LEVEL_OPTIONS = [
     { value: '9', label: '9 - VIP9' },
 ]
 
-export function UpdateLevelDialog({ open, currentLevel, onOpenChange, onConfirm }: UpdateLevelDialogProps) {
+export function UpdateLevelDialog({ open, currentLevel, currentVisibility, onOpenChange, onConfirm }: UpdateLevelDialogProps) {
     const [level, setLevel] = useState(currentLevel.toString())
+    const [scope, setScope] = useState<MediaPlatformScope>('all')
+    const [isLoading, setIsLoading] = useState(false)
 
     useEffect(() => {
         if (open) {
             setLevel(currentLevel.toString())
+            setScope(getMediaPlatformScope({ visible_on_ios: currentVisibility.visible_on_ios, visible_on_android: currentVisibility.visible_on_android }))
         }
-    }, [currentLevel, open])
+    }, [currentLevel, currentVisibility.visible_on_ios, currentVisibility.visible_on_android, open])
 
-    const handleConfirm = () => {
-        onConfirm(Number(level))
-        onOpenChange(false)
+    const handleConfirm = async () => {
+        if (isLoading) return
+        setIsLoading(true)
+        try {
+            if (await onConfirm(Number(level), buildMediaPlatformVisibility(scope))) onOpenChange(false)
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={(nextOpen) => { if (!isLoading) onOpenChange(nextOpen) }}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>修改可见等级</DialogTitle>
+                    <DialogTitle>编辑媒体展示设置</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                     <div className="space-y-2">
                         <Label>选择会员等级（0-9）</Label>
-                        <Select value={level} onValueChange={setLevel}>
+                        <Select disabled={isLoading} value={level} onValueChange={setLevel}>
                             <SelectTrigger>
                                 <SelectValue />
                             </SelectTrigger>
@@ -68,13 +81,15 @@ export function UpdateLevelDialog({ open, currentLevel, onOpenChange, onConfirm 
                             </SelectContent>
                         </Select>
                     </div>
+                    <MediaPlatformSelect value={scope} onChange={setScope} disabled={isLoading} />
                 </div>
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button disabled={isLoading} variant="outline" onClick={() => onOpenChange(false)}>
                         取消
                     </Button>
-                    <Button onClick={handleConfirm} className="cursor-pointer">
-                        确认修改
+                    <Button disabled={isLoading} onClick={handleConfirm} className="cursor-pointer">
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {isLoading ? '保存中...' : '确认修改'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

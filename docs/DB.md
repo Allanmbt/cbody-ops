@@ -1,8 +1,8 @@
 # CBODY上门服务平台数据库设计文档
 
-> **最近更新：2026-08-06（Asia/Shanghai）**
+> **最近更新：2026-11-08（Asia/Tokyo）**
 >
-> 本次新增 `private_availability_settings`，用于持续保持技师当前可约状态和每天固定工作时间；原 `private_availability` 每日记录完整保留。原 CBODY / Outcall 表结构未修改。
+> 本次新增独立首页幻灯片表 `home_slides` 和公开 Storage 桶 `home-slides`。此前在 `girls_media` 新增 `visible_on_ios`、`visible_on_android`，并在 `v_admin_media_list` 末尾追加这两列。默认全部平台可见；未修改 RLS、Storage 策略或媒体元数据。
 
 ## 数据库架构概览
 
@@ -254,6 +254,76 @@
 技师工作会话记录表，支持真正的滚动时间窗口统计（最近7天/30天在线时长、月度收入等），替代锚点累加方式，数据永远准确。订单完成和技师下线时自动记录。
 
 
+## home_slides（首页幻灯片表）
+
+首页分类导航上方的宣传图片配置，Web、iOS、Android 共用。仅后台管理员管理，最多 3 张幻灯片，每张可上传中英泰 3 套封面；没有记录时客户端隐藏整个区域。
+
+| 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
+|--------|----------|------|--------|------|
+| slot | SMALLINT | 是 | - | 主键，固定位置 1–3，按升序播放 |
+| image_path | TEXT | 是 | - | 默认封面对象路径，供旧客户端兼容；按 en → zh → th 自动选取 |
+| image_paths | JSONB | 是 | `{}` | 中英泰封面路径映射，键为 en/zh/th；至少提供一种语言，写入时由触发器补齐旧调用 |
+| link_type | TEXT | 是 | `'none'` | `none` 不跳转；`internal` 应用内页面；`external` 外部链接 |
+| link_target | TEXT | 否 | NULL | 内部相对路径或完整 HTTPS 地址，不跳转时必须为 NULL |
+| created_at | TIMESTAMPTZ | 是 | now() | 创建时间 |
+| updated_at | TIMESTAMPTZ | 是 | now() | 修改时间；更新、删除时匹配原值，防止覆盖其他管理员的修改 |
+
+**索引**：
+- PRIMARY KEY (slot)。仅 0–3 条记录，不新增其他索引，不分页、不统计。
+
+**CHECK 约束**：
+- `home_slides_image_paths_check` 调用 `valid_home_slide_images(slot, image_paths)`：非空 JSON 对象，仅允许 en/zh/th，值均为规范对象路径且属于当前 slot。最多三个语言键，图片最多 3 × 3 个，但仍只有三条幻灯片记录。
+- `slot BETWEEN 1 AND 3`，结合主键限制最多 3 条；空位置不插入占位记录。
+- `image_path` 为 `{slot}/{随机UUID}.jpg|png|webp`，路径首段必须等于该记录的位置。
+- `link_type IN ('none','internal','external')`；`none` 必须对应 NULL 目标。
+- 其他目标非空且不超过 2048 字符，不允许空白、反斜杠、控制字符或编码的控制字符/反斜杠。
+- 内部路径为单个 `/` 开头，不允许 `//` 或 `/%2f` 开头；外部目标必须为无账号密码的 HTTPS 地址。后台另用 URL 解析器和一次解码校验，不预置或猜测客户端路由。
+
+**多语言封面结构示例**：
+```json
+{
+  "en": "1/550e8400-e29b-41d4-a716-446655440000.jpg",
+  "zh": "1/550e8400-e29b-41d4-a716-446655440001.png",
+  "th": "1/550e8400-e29b-41d4-a716-446655440002.webp"
+}
+```
+
+**触发器**：
+- `home_slides_images` 调用 `sync_home_slide_images()`：自动维护默认 `image_path`；兼容旧调用只上传默认图或只改跳转，不丢失其他语言封面。升级将原封面填入 `image_paths.en`，不移动或删除图片。
+- `home_slides_updated_at` 调用 `touch_home_slide_updated_at()`；更新时保留 `created_at`，将 `updated_at` 设为数据库当前时间与旧值加 1 微秒的较大值，确保版本标记变化。
+
+**Storage 存储约定**：
+- 独立公开桶：`home-slides`（Public），最大文件 5242880 字节（5 MiB），允许 `image/jpeg`、`image/png`、`image/webp`，不修改原 `upload` 桶。
+- 路径：`{slot}/{随机UUID}.{jpg|png|webp}`。后台生成正确扩展名，不使用原始文件名；上传后自动形成目录，无需手动建立文件夹。
+- 图片原样上传，不压缩、不裁剪、不转换格式。建议 2.8:1，如 1120×400；后台预览使用 16px 圆角；管理界面分别选择中文、English、ไทย 上传或替换，跳转设置由三种语言共用。
+- 公开 URL 为 `<Supabase项目URL>/storage/v1/object/public/home-slides/<image_path>`，也可用 SDK 的 `storage.from('home-slides').getPublicUrl(image_path)` 生成；表内不保存临时签名 URL。
+- 安装 SQL 会自动创建桶。若预先手动创建同名桶，需设 Public、5 MiB、三种 MIME；已有设置不匹配时安装事务报错回滚，不静默更改已有桶。
+- 如手动上传，仍须使用规范 UUID 文件名和位置目录，并写入正确表记录；仅在 Storage 上传不会自动发布。Ops 上传入口会同时完成发布，日常无需手动操作 Storage。
+- 上传由管理员 Server Action 获取限定路径签名，浏览器直传 Storage，保存前服务端核对对象存在、MIME、大小及位置。上传凭据不得提供给普通客户端。
+- 替换先上传并保存新记录，成功后清理无引用旧图；失败清理本次未发布新图。删除先移除记录，再清理文件；清理失败提示人工检查，不影响已发布图片。关闭浏览器或中断网络仍可能残留未发布文件，可在桶内人工清理。
+
+**三端读取约定**：
+```typescript
+const { data, error } = await supabase
+  .from('home_slides')
+  .select('slot,image_path,image_paths,link_type,link_target,updated_at')
+  .order('slot', { ascending: true })
+  .limit(3)
+```
+- 客户端选图：`image_paths[当前语言] || image_paths.en || image_path`。同一条记录对应一张幻灯片，不把语言封面展开为多张播放；未接入多语言的旧客户端仍可使用 `image_path`。
+- 空数组：不渲染且不占位；只有一张：静态展示；2–3 张：支持滑动，每 5 秒切换，页面不可见时暂停。整体约 2.8:1、圆角 16px，放在分类导航上方。
+- `none` 不绑定跳转；`internal` 由各端应用路由器处理，不支持的路径不执行动作；`external` 在 Web 打开外部页面，在 iOS/Android 使用系统浏览器。不要把内部路径拼接为外部链接。
+- 首页加载读取；返回前台且距上次成功读取超过 60 秒时刷新；不轮询、不订阅实时变更。保存仅刷新 Ops 路径缓存，消费端按自身缓存策略获取新值。
+- 当前仓库仅实现 Ops 管理和数据约定；消费端轮播组件与内部路由需在对应客户端仓库接入，不能仅部署 Ops 就自动出现轮播。
+
+**管理和部署**：
+- 入口：`/dashboard/configs/slides`；仅 `superadmin/admin` 管理，三个固定位置提供上传、编辑跳转和删除。
+- 操作记录到 `admin_operation_logs`，类型 `save_home_slide/delete_home_slide`，位置和变更快照位于 `operation_details`；必填 `target_admin_id` 使用当前操作管理员。
+- 首次安装：依次执行 `supabase/migrations/20261108_home_slides.sql` 和 `supabase/migrations/20261108_home_slides_i18n.sql`。前者建表、RLS 和桶，后者增加 `image_paths`、校验函数和同步触发器。已安装基础版时只执行后者，勿重复执行建表 SQL。
+- 多语言升级不增加索引、不改变 RLS、Storage 策略或对象路径。升级会更新最多三条旧记录的语言映射和版本时间，已打开的后台编辑需刷新后继续。
+- 上线：执行安装 SQL → 部署 Ops → 三端接入 → 上传并发布图片。安装前确认已有 `public.is_admin()`、Supabase `anon/authenticated/service_role` 角色及 Storage。
+- 如需撤下展示，可直接删除三个位置的配置，无需改数据库结构。卸载仅移除新增策略、表及触发器函数；新桶应先备份、通过 Storage API 清空后再删除，不能直接删除 `storage.objects` 行替代删除文件。
+
 ## girls_media（技师媒体表）
 
 | 字段名 | 数据类型 | 必填 | 默认值 | 描述 |
@@ -266,6 +336,8 @@
 | thumb_key | TEXT | 否 | NULL | 缩略图/封面路径 |
 | meta | JSONB | 是 | '{}'::jsonb | 轻元数据（mime/size/width/height/duration/live_photo配对信息） |
 | min_user_level | SMALLINT | 是 | 0 | 会员最低可见等级（0=公开） |
+| visible_on_ios | BOOLEAN | 是 | true | 是否在 iOS App 展示 |
+| visible_on_android | BOOLEAN | 是 | true | 是否在 Android App 展示；Web 始终可见 |
 | status | media_status | 是 | 'pending' | 审核状态（pending/approved/rejected） |
 | reviewed_by | UUID | 否 | NULL | 审核人ID |
 | reviewed_at | TIMESTAMPTZ | 否 | NULL | 审核时间 |
@@ -312,6 +384,24 @@
 }
 
 ```
+
+**平台展示设置（2026-11-08 新增）**：
+
+| 后台展示范围 | visible_on_ios | visible_on_android | Web |
+|--------------|----------------|--------------------|-----|
+| 全部平台（默认） | true | true | 可见 |
+| Android＋Web | false | true | 可见 |
+| 仅 Web | false | false | 可见 |
+
+- 两字段必须同时提交或同时省略，后台 Zod 禁止 `(true, false)`；旧调用省略字段时保留已有设置。历史媒体及未传字段的新上传记录默认均为 `true`，无需批量 UPDATE。
+- 此设置用于官方客户端展示筛选，不替代授权；原审核状态、会员等级和媒体直链机制不变。未接入筛选的旧客户端仍按原逻辑显示。
+- iOS 在原媒体查询增加 `.eq('visible_on_ios', true)`；Android 增加 `.eq('visible_on_android', true)`；Web 不增加平台条件。筛选在分页、统计、封面选择之前完成；图片、视频、Live Photo 共用规则，无可见媒体时沿用原空态。
+- 客户端 API/RPC 若显式投影字段，须同步透传字段或在查询内筛选。缓存按平台区分，设置变化后刷新；当前后台仓库不包含三端接入代码。
+- `v_admin_media_list` 在原最后一列 `reviewer_name` 后追加两列，原关联、列顺序和权限保留。
+- **索引：不新增**。复用现有技师、审核状态索引 `idx_gm_girl_sort`、`idx_gm_status`；若已执行媒体优化脚本，还可复用 `idx_girls_media_girl_status`。本次不增加后台平台筛选或平台计数查询。
+- 平台设置写入 `admin_operation_logs`，操作类型 `update_media_platform_visibility`；`operator_id`、必填 `target_admin_id` 均为当前管理员，媒体 ID 列表及平台值放在 `operation_details`，批量审核仅记录成功项目，合并为一条日志。
+- 迁移：`supabase/migrations/20261108_media_platform_visibility.sql`；回滚：`docs/sql/rollback_media_platform_visibility.sql`。回滚在事务中先恢复原视图并保留权限，再删除两列，只移除平台设置，不删除媒体或其他数据。
+- 上线顺序：执行迁移 → 部署后台 → 三端接入并刷新缓存 → 验证后使用受限展示。回滚前先回退平台字段读写；回滚不使用 CASCADE，若有新增依赖须先处理依赖。
 
 ## girls_categories（技师分类关联表）
 

@@ -1,3 +1,7 @@
+> **最近新增：2026-11-08（Asia/Tokyo）**
+>
+> 新增 `home_slides` 首页幻灯片独立表策略及 `home-slides` 公开桶专属策略，不修改原业务表或原 Storage 策略。
+>
 > **最近新增：2026-08-06（Asia/Shanghai）**
 >
 > 本次新增 `private_availability_settings` 常规排班策略；`support` 可读取、新增和修改，只有 `superadmin/admin` 可删除。原有 CBODY / Outcall 表、函数与策略未修改。
@@ -288,6 +292,56 @@ CREATE POLICY "girl_work_sessions.admin.select"
 -- ❌ UPDATE: 历史记录不可修改
 -- ❌ DELETE: 历史记录不可删除（如需清理，由管理员手动执行SQL）
 ```
+
+## home_slides（首页幻灯片）与 home-slides Storage
+
+- 表启用 RLS，`anon/authenticated` 可读取全部 0–3 条公开配置；普通用户无法新增、修改、删除，写入须通过 `public.is_admin()` 检查（活跃 `superadmin/admin`）。
+- Ops 读写、签名上传、文件信息验证和清理均先执行 `requireAdmin(['superadmin','admin'])`，再使用服务端 Admin 客户端；service role 不下发到浏览器。
+- 表的 CHECK 限制三个位置、规范对象路径和跳转类型；`home_slides_updated_at` 更新触发器保证修改版本变化。Ops 修改/删除另匹配旧 `updated_at`，冲突时保留现状并提示刷新。
+
+```sql
+ALTER TABLE public.home_slides ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.home_slides FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.home_slides TO anon, authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.home_slides TO authenticated;
+GRANT ALL ON public.home_slides TO service_role;
+
+CREATE POLICY home_slides_public_select ON public.home_slides
+  FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY home_slides_admin_insert ON public.home_slides
+  FOR INSERT TO authenticated WITH CHECK (public.is_admin());
+CREATE POLICY home_slides_admin_update ON public.home_slides
+  FOR UPDATE TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY home_slides_admin_delete ON public.home_slides
+  FOR DELETE TO authenticated USING (public.is_admin());
+```
+
+独立 `home-slides` 桶设为 Public，允许匿名通过已知公开 URL 下载图片，但不新增匿名对象列表权限。文件上限 5 MiB，允许 JPEG、PNG、WebP。安装脚本自动创建并校验桶；不改变 `upload` 或其他现有桶。
+
+```sql
+CREATE POLICY home_slides_storage_admin_select ON storage.objects
+  FOR SELECT TO authenticated USING (bucket_id = 'home-slides' AND public.is_admin());
+CREATE POLICY home_slides_storage_admin_insert ON storage.objects
+  FOR INSERT TO authenticated WITH CHECK (
+    bucket_id = 'home-slides' AND public.is_admin()
+    AND name ~ '^[1-3]/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$'
+  );
+CREATE POLICY home_slides_storage_admin_update ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (bucket_id = 'home-slides' AND public.is_admin())
+  WITH CHECK (
+    bucket_id = 'home-slides' AND public.is_admin()
+    AND name ~ '^[1-3]/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$'
+  );
+CREATE POLICY home_slides_storage_admin_delete ON storage.objects
+  FOR DELETE TO authenticated USING (bucket_id = 'home-slides' AND public.is_admin());
+```
+
+- 签名上传由已验证管理员生成，限定唯一对象路径并禁止覆盖；持有签名可执行该次上传，因此签名不可公开。浏览器直接上传，不需要向普通用户开放 Storage 写策略。
+- Storage 策略只限定 `home-slides`，不修改其他桶的现有规则；公开图片不是私密资源。
+- 新增触发器函数 `public.touch_home_slide_updated_at()` 和触发器 `home_slides_updated_at` 仅作用于新表，不修改其他表。
+- 多语言字段 `home_slides.image_paths` 沿用同一组表级 RLS，无需新增语言策略；`valid_home_slide_images()` 限定 en/zh/th 及同位置路径，`sync_home_slide_images()` 同步兼容默认图。新增函数和触发器仅作用于此表，公开桶和目录格式不变。
+- 首次安装依次执行 `supabase/migrations/20261108_home_slides.sql`、`supabase/migrations/20261108_home_slides_i18n.sql`；基础版已安装时只执行多语言升级文件。上线后应使用真实匿名、普通用户、管理员 JWT 验证 RLS；本地模拟回归不替代数据库权限验证。
 
 ## girls_media表策略
 
