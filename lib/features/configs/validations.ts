@@ -1,6 +1,8 @@
 import { z } from "zod"
 import { THAILAND_BANKS } from "@/types/banks"
 
+export const iosIncallConfigSchema = z.object({ enabled: z.boolean() })
+
 // 车费计价配置验证模式
 export const fareParamsSchema = z.object({
   // 主计价参数

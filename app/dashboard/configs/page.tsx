@@ -6,10 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LoadingSpinner } from "@/components/ui/loading"
+import { Switch } from "@/components/ui/switch"
 import { ChevronRight, DollarSign, Bell, Globe, MessageSquare, Trash2, Images } from "lucide-react"
 import { toast } from "sonner"
 import { getConfigsList } from "./actions"
+import { saveIOSIncallConfig } from "./visit-actions"
 import type { AppConfig } from "@/lib/features/configs"
+import { IOS_INCALL_CONFIG } from "@/lib/features/configs/visit"
 import { useCurrentAdmin } from "@/hooks/use-current-admin"
 
 // 配置项卡片数据
@@ -102,6 +105,9 @@ export default function ConfigsPage() {
   const { admin, loading: adminLoading } = useCurrentAdmin()
   const [configs, setConfigs] = useState<AppConfig[]>([])
   const [loading, setLoading] = useState(true)
+  const [iosIncallEnabled, setIOSIncallEnabled] = useState<boolean | null>(null)
+  const [savingIOSIncall, setSavingIOSIncall] = useState(false)
+  const canManageIOSIncall = admin?.role === "superadmin" || admin?.role === "admin"
 
   useEffect(() => {
     async function loadConfigs() {
@@ -109,6 +115,15 @@ export default function ConfigsPage() {
         const result = await getConfigsList()
         if (result.ok && result.data) {
           setConfigs(result.data)
+          const config = result.data.find((item) =>
+            item.namespace === IOS_INCALL_CONFIG.namespace &&
+            item.config_key === IOS_INCALL_CONFIG.config_key &&
+            item.scope === IOS_INCALL_CONFIG.scope &&
+            item.scope_id === IOS_INCALL_CONFIG.scope_id &&
+            item.locale === IOS_INCALL_CONFIG.locale &&
+            item.dtype === IOS_INCALL_CONFIG.dtype
+          )
+          setIOSIncallEnabled(config ? config.value_json?.enabled === true : true)
         } else {
           toast.error(result.error || "获取配置列表失败")
         }
@@ -122,6 +137,23 @@ export default function ConfigsPage() {
 
     loadConfigs()
   }, [])
+
+  async function handleIOSIncallChange(enabled: boolean) {
+    setSavingIOSIncall(true)
+    try {
+      const result = await saveIOSIncallConfig(enabled)
+      if (!result.ok) {
+        toast.error(result.error || "保存 iOS Visit 配置失败")
+        return
+      }
+      setIOSIncallEnabled(enabled)
+      toast.success(enabled ? "iOS Visit 已开启" : "iOS Visit 已关闭")
+    } catch {
+      toast.error("网络错误，请稍后重试")
+    } finally {
+      setSavingIOSIncall(false)
+    }
+  }
 
   // 检查配置是否存在
   const isConfigActive = (namespace: string, config_key: string): boolean => {
@@ -158,6 +190,30 @@ export default function ConfigsPage() {
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
+          {canManageIOSIncall && (
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <label htmlFor="ios-incall">iOS 显示 Visit / Incall</label>
+                </CardTitle>
+                <CardDescription id="ios-incall-description">
+                  控制 iOS 客户端的到店服务入口。Android 和网页端照常显示。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex items-center gap-3">
+                <Switch
+                  id="ios-incall"
+                  aria-describedby="ios-incall-description"
+                  checked={iosIncallEnabled ?? false}
+                  disabled={iosIncallEnabled === null || savingIOSIncall}
+                  onCheckedChange={handleIOSIncallChange}
+                />
+                <span className="text-sm text-muted-foreground" aria-live="polite">
+                  {savingIOSIncall ? "保存中…" : iosIncallEnabled === null ? "配置读取失败" : iosIncallEnabled ? "开启" : "关闭"}
+                </span>
+              </CardContent>
+            </Card>
+          )}
           {visibleCards.map((card) => {
             const isActive = isConfigActive(card.namespace, card.config_key)
             const isDisabled = card.badge === "即将开放"
